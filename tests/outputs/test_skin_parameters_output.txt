@@ -1,0 +1,61 @@
+
+─────────────────────────────────────────────────────────────────
+  TestTmax
+  Verified against ICNIRP 2013, Table 4 column).
+─────────────────────────────────────────────────────────────────
+  ✅ test_accepts_um_input
+  ✅ test_boundary_1400nm
+  ✅ test_boundary_400nm
+  ✅ test_boundary_700nm
+  ✅ test_fir
+  ✅ test_nir
+  ✅ test_out_of_range_raises
+  ✅ test_uv
+  ✅ test_visible
+
+─────────────────────────────────────────────────────────────────
+  TestLimitingAperture
+  Verified against ICNIRP 2013, Table 8 (Skin column).
+─────────────────────────────────────────────────────────────────
+  ✅ test_area_11mm
+  ✅ test_area_calculation
+  ✅ test_fir_above_100um_aperture
+  ✅ test_fir_below_100um_aperture
+  ✅ test_uv_aperture
+  ✅ test_vis_nir_aperture
+
+─────────────────────────────────────────────────────────────────
+  TestLargeArea
+  Verified against ICNIRP 2013, ICNIRP 2013, Table 7 note c.
+─────────────────────────────────────────────────────────────────
+  ✅ test_100_to_1000_cm2
+  ✅ test_above_1000_cm2
+  ✅ test_small_beam_returns_none
+
+─────────────────────────────────────────────────────────────────
+  TestUVDerate
+  Verified against ICNIRP 2013, ICNIRP 2013.
+─────────────────────────────────────────────────────────────────
+  ✅ test_boundary_280nm
+  ✅ test_boundary_400nm
+  ✅ test_derate_280_400
+  ✅ test_no_derate_above_400
+  ✅ test_no_derate_below_280
+  ✅ test_preserves_value
+
+─────────────────────────────────────────────────────────────────
+  TestUnitConversions
+  Arithmetic correctness of unit conversions.
+─────────────────────────────────────────────────────────────────
+  ✅ test_array_input
+  ✅ test_average_power
+  ✅ test_irradiance
+  ✅ test_irradiance_zero_time_raises
+  ✅ test_pulse_energy
+  ✅ test_radiant_exposure_to_Jm2
+  ✅ test_radiant_exposure_to_mJ
+  ✅ test_radiant_exposure_to_mJm2
+
+=================================================================
+  RESULTS: 32 passed, 0 failed
+=================================================================
