@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+title: "Laser MPE Calculator (Skin): Maximum Permissible Exposure Calculator for Laser Skin Safety"
+message: "If you use this software, please cite it as below."
+type: software
+license: MIT
+version: 0.1.0
+# date-released: TODO
+repository-code: "https://github.com/itgall/MPE-Calculator-Skin"
+url: "https://octresearch.org/"
+abstract: >-
+  A Python package for computing laser skin maximum permissible exposure (MPE)
+  values with support for single-pulse, CW, and
+  repetitive-pulse exposure regimes. Designed for researchers and laser safety
+  officers working in laser safety, biophotonics, and photonics research.
+keywords:
+  - laser safety
+  - maximum permissible exposure
+  - ICNIRP
+  - biophotonics
+  - skin MPE
+  - OCT
+  - photoacoustic imaging
+authors:
+  # TODO: Add author information before publication
+  - family-names: "LASTNAME"
+    given-names: "FIRSTNAME"
+    # orcid: "https://orcid.org/0000-0000-0000-0000"
+    affiliation: "AFFILIATION"

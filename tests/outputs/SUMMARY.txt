@@ -1,0 +1,13 @@
+Test Suite Summary
+==================
+
+All 330 checks pass across 4 test suites.
+
+Suites:
+  test_skin_mpe.py          — 39 checks (skin MPE across all wavelength bands)
+  test_skin_parameters.py   — 32 checks (T_max, apertures, conversions)
+  test_correction_factors.py — 5 checks (C_A visible/NIR)
+  verify_exhaustive.py      — 254 checks (exhaustive spot-checks vs ICNIRP 2013)
+
+Standard: ICNIRP 2013 (Health Phys. 105(3):271-295)
+Tables verified: 3, 5, 7

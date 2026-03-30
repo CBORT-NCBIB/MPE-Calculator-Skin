@@ -1,0 +1,98 @@
+
+─────────────────────────────────────────────────────────────────
+  TestCorrectionFactors
+  Verified against ICNIRP 2013, Table 3.
+─────────────────────────────────────────────────────────────────
+  ✅ test_CA_above_1050nm
+  ✅ test_CA_at_700nm
+  ✅ test_CA_below_700nm
+  ✅ test_CA_exponential
+
+─────────────────────────────────────────────────────────────────
+  TestUVBand
+  Verified against ICNIRP 2013, ICNIRP Tables 5 and 7 (Ultraviolet).
+─────────────────────────────────────────────────────────────────
+  ✅ test_dual_limit_chooses_lower
+  ✅ test_photochem_180_302
+  ✅ test_photochem_302_315
+  ✅ test_photochem_315_400
+  ✅ test_thermal
+  ✅ test_thermal_out_of_range
+  ✅ test_wrapper_dispatches_uv
+
+─────────────────────────────────────────────────────────────────
+  TestICNIRP_400_1400
+  Verified against ICNIRP 2013, ICNIRP Tables 5 and 7.
+─────────────────────────────────────────────────────────────────
+  ✅ test_row1_1ns_to_100ns
+  ✅ test_row2_100ns_to_10s
+  ✅ test_row3_10s_to_30000s
+
+─────────────────────────────────────────────────────────────────
+  TestICNIRP_1400_1500
+  Verified against ICNIRP 2013, Tables 5 and 7.
+─────────────────────────────────────────────────────────────────
+  ✅ test_row1_1ns_to_1ms
+  ✅ test_row2_1ms_to_10s
+  ✅ test_row3_10s_to_30000s
+
+─────────────────────────────────────────────────────────────────
+  TestICNIRP_1500_1800
+  Verified against ICNIRP 2013, ICNIRP Tables 5 and 7.
+─────────────────────────────────────────────────────────────────
+  ✅ test_row1_1ns_to_10s
+  ✅ test_row2_10s_to_30000s
+
+─────────────────────────────────────────────────────────────────
+  TestICNIRP_1800_2600
+  Verified against ICNIRP 2013, ICNIRP Tables 5 and 7.
+─────────────────────────────────────────────────────────────────
+  ✅ test_row1_1ns_to_1ms
+  ✅ test_row2_1ms_to_10s
+  ✅ test_row3_10s_to_30000s
+
+─────────────────────────────────────────────────────────────────
+  TestICNIRP_2600_1000um
+  Verified against ICNIRP 2013, ICNIRP Tables 5 and 7.
+─────────────────────────────────────────────────────────────────
+  ✅ test_row1_1ns_to_100ns
+  ✅ test_row2_100ns_to_10s
+  ✅ test_row3_10s_to_30000s
+
+─────────────────────────────────────────────────────────────────
+  TestBoundaryConvention
+  Verify the ICNIRP convention: t_1 <= t < t_2.
+─────────────────────────────────────────────────────────────────
+  ✅ test_1400_1500_boundary_at_1e3
+  ✅ test_1800_2600_boundary_at_1e3
+  ✅ test_2600_boundary_at_1e7
+  ✅ test_400_1400_boundary_at_10
+  ✅ test_400_1400_boundary_at_1e7
+  ✅ test_lower_bound_inclusive
+  ✅ test_upper_bound_exclusive
+
+─────────────────────────────────────────────────────────────────
+  TestUltraShortReturnsNan
+  ICNIRP 2013 Tables 5 and 7 start at 10^-9 s. All shorter durations return nan.
+─────────────────────────────────────────────────────────────────
+  ✅ test_all_bands_return_nan_for_sub_ns
+
+─────────────────────────────────────────────────────────────────
+  TestRepetitivePulse
+  Rules 1 and 2 per ICNIRP 2013, ICNIRP 2013 repetitive-pulse rules.
+─────────────────────────────────────────────────────────────────
+  ✅ test_high_prf_limited_by_rule2
+  ✅ test_min_of_rules
+  ✅ test_single_pulse_returns_rule1
+
+─────────────────────────────────────────────────────────────────
+  TestEdgeCases
+  Out-of-range inputs, nm/um equivalence, array inputs.
+─────────────────────────────────────────────────────────────────
+  ✅ test_array_input
+  ✅ test_nm_um_equivalence
+  ✅ test_wavelength_out_of_range
+
+=================================================================
+  RESULTS: 39 passed, 0 failed
+=================================================================
