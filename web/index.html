@@ -276,7 +276,7 @@ var __STD_DATA__ = {
 <script type="text/babel">
 
 var useState=React.useState,useMemo=React.useMemo,useEffect=React.useEffect,useRef=React.useRef;
-var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,ResponsiveContainer=Recharts.ResponsiveContainer,ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend;
+var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,ResponsiveContainer=Recharts.ResponsiveContainer,ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend,Label=Recharts.Label;
 
 
 /* ═══════ STANDARD DATA (loaded from JSON; edit this to change standard) ═══════ */
@@ -947,7 +947,7 @@ function MPETab(p){
 /* ═══════ PA TAB ═══════ */
 /* Seven ICNIRP wavelength bands for multi-band fluence chart (cf. Francis et al. Fig. 2a) */
 var paUid=1;
-function mkPA(wl,tau,T){return{id:paUid++,wl:wl,wlStr:String(wl),wlU:"nm",tau:tau,tauStr:String(tau*1e9),tauU:"ns",T:T,TStr:String(T),TU:"s",show:true};}
+function mkPA(wl,tau,T){return{id:paUid++,wl:wl,wlStr:String(wl),wlU:"nm",tau:tau,tauStr:String(tau*1e9),tauU:"ns",T:T,TStr:String(T),TU:"s",show:true,inTable:true};}
 
 function PATab(p){
   var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
@@ -955,7 +955,7 @@ function PATab(p){
   var _entries=useState([mkPA(532,5e-9,1),mkPA(800,5e-9,1),mkPA(1064,5e-9,1)]);
   var entries=_entries[0],setEntries=_entries[1];
   var _nwl=useState(""),nwl=_nwl[0],setNwl=_nwl[1];
-  var _paCht=useState("fl"),paCht=_paCht[0],setPaCht=_paCht[1];
+  var _paCht=useState("snr"),paCht=_paCht[0],setPaCht=_paCht[1];
   var _cv=useState(0),cv=_cv[0],setCv=_cv[1];
   var _dr=useState(false),dirty=_dr[0],setDirty=_dr[1];
   var flRef=useRef(null),snrRef=useRef(null);
@@ -981,6 +981,7 @@ function PATab(p){
   function addEntry(){var w=parseFloat(nwl)||800;setEntries(function(es){return es.concat([mkPA(w,5e-9,1)]);});setNwl("");setDirty(true);}
   function rmEntry(id){setEntries(function(es){return es.filter(function(e){return e.id!==id;});});setDirty(true);}
   function togShow(id){setEntries(function(es){return es.map(function(e){return e.id===id?Object.assign({},e,{show:!e.show}):e;});});}
+  function togTable(id){setEntries(function(es){return es.map(function(e){return e.id===id?Object.assign({},e,{inTable:!e.inTable}):e;});});}
   function calc(){setCv(function(c){return c+1;});setDirty(false);}
   useEffect(function(){calc();},[]);
 
@@ -1050,9 +1051,6 @@ function PATab(p){
                 <span style={{fontSize:9,color:T.td}}>{bnd(e.wl)} {"\u00b7"} C{"\u2090"} = {CA(e.wl).toFixed(3)}</span>
               </div>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <label style={{fontSize:10,color:T.td,cursor:"pointer",display:"flex",alignItems:"center",gap:4}} onClick={function(){togShow(e.id);}}>
-                  <input type="checkbox" checked={e.show} readOnly style={{accentColor:col,width:12,height:12}}/>Plot
-                </label>
                 {entries.length>1?<button onClick={function(){rmEntry(e.id)}} style={{background:"none",border:"none",color:T.td,cursor:"pointer",fontSize:15}}>{"\u00d7"}</button>:null}
               </div>
             </div>
@@ -1083,7 +1081,18 @@ function PATab(p){
 
       {/* ── Optimal PRF Summary Table ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
-        <div style={secH}>Optimal Repetition Rate Summary</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={secH}>Optimal Repetition Rate Summary</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Include:</span>
+            {entries.map(function(e,ei){var col=WC[ei%WC.length];return(
+              <label key={e.id} style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:11,fontFamily:"monospace",color:e.inTable?col:T.td,opacity:e.inTable?1:0.4}}>
+                <input type="checkbox" checked={e.inTable} onChange={function(){togTable(e.id)}} style={{accentColor:col,width:12,height:12}}/>{e.wl} nm
+              </label>
+            );})}
+          </div>
+        </div>
+        {(function(){var tE=entries.filter(function(e){return e.inTable;});return(
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
           <th style={thS}>{"\u03bb"} (nm)</th>
           <th style={thS}>Pulse Duration</th>
@@ -1094,29 +1103,50 @@ function PATab(p){
           <th style={thS}>Single-Pulse MPE (mJ/cm{"\u00b2"})</th>
           <th style={thS}>Per-Pulse at Optimal (mJ/cm{"\u00b2"})</th>
         </tr></thead>
-        <tbody>{optData.map(function(o){var col=WC[o.idx%WC.length];return (<tr key={o.e.id} style={{borderBottom:"1px solid "+T.bd}}>
-          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,color:col}}>{o.e.wl}</td>
-          <td style={tdSt}>{ft(o.e.tau)}</td>
-          <td style={tdSt}>{ft(o.e.T)}</td>
-          <td style={tdSt}>{isFinite(o.fopt)?numFmt(o.fopt,4):"\u2014"}</td>
-          <td style={tdSt}>{isFinite(o.Nopt)?numFmt(o.Nopt,4):"\u2014"}</td>
-          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,borderBottom:"1px solid "+T.bd}}>{isFinite(o.snrOpt)?o.snrOpt.toFixed(2)+"\u00d7":"\u2014"}</td>
-          <td style={tdSt}>{numFmt(skinMPE(o.e.wl,o.e.tau)*1e3,4)}</td>
-          <td style={tdSt}>{isFinite(o.HatOpt)?numFmt(o.HatOpt*1e3,4):"\u2014"}</td>
-        </tr>);})}</tbody></table></div>
+        <tbody>{tE.map(function(e2){var ei=entries.indexOf(e2);var col=WC[ei%WC.length];
+          var fopt=paOptPRF(e2.wl,e2.tau,e2.T);var snrOpt=isFinite(fopt)?paRelSNR(e2.wl,e2.tau,fopt,e2.T):NaN;
+          var Nopt=isFinite(fopt)?fopt*e2.T:NaN;var HatOpt=isFinite(fopt)?paEffFluence(e2.wl,e2.tau,fopt,e2.T):NaN;
+          return (<tr key={e2.id} style={{borderBottom:"1px solid "+T.bd}}>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,color:col,borderBottom:"1px solid "+T.bd}}>{e2.wl}</td>
+          <td style={tdSt}>{ft(e2.tau)}</td>
+          <td style={tdSt}>{ft(e2.T)}</td>
+          <td style={tdSt}>{isFinite(fopt)?numFmt(fopt,4):"\u2014"}</td>
+          <td style={tdSt}>{isFinite(Nopt)?numFmt(Nopt,4):"\u2014"}</td>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,borderBottom:"1px solid "+T.bd}}>{isFinite(snrOpt)?snrOpt.toFixed(2)+"\u00d7":"\u2014"}</td>
+          <td style={tdSt}>{numFmt(skinMPE(e2.wl,e2.tau)*1e3,4)}</td>
+          <td style={tdSt}>{isFinite(HatOpt)?numFmt(HatOpt*1e3,4):"\u2014"}</td>
+        </tr>);})}</tbody></table></div>);})()}
       </div>
 
       {/* ── Charts ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
           <div style={secH}>Safety-Constrained Analysis</div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <div style={{display:"flex"}}>
-              <button onClick={function(){setPaCht("fl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="fl"?T.ac:T.bd),cursor:"pointer",background:paCht==="fl"?T.ac:"transparent",color:paCht==="fl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>Per-Pulse Fluence vs. PRF</button>
-              <button onClick={function(){setPaCht("snr")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="snr"?T.ac:T.bd),cursor:"pointer",background:paCht==="snr"?T.ac:"transparent",color:paCht==="snr"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>Relative SNR vs. PRF</button>
+              <button onClick={function(){setPaCht("snr")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="snr"?T.ac:T.bd),cursor:"pointer",background:paCht==="snr"?T.ac:"transparent",color:paCht==="snr"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>Relative SNR vs. PRF</button>
+              <button onClick={function(){setPaCht("fl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="fl"?T.ac:T.bd),cursor:"pointer",background:paCht==="fl"?T.ac:"transparent",color:paCht==="fl"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>Per-Pulse Fluence vs. PRF</button>
             </div>
             <button onClick={function(){dlSVG(paCht==="fl"?flRef:snrRef,paCht==="fl"?"fluence_vs_prf.svg":"snr_vs_prf.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} SVG</button>
+            <button onClick={function(){
+              if(paCht==="fl"){
+                var hdr=["repetition_rate_Hz"];showEntries.forEach(function(e){hdr.push(e.wl+"nm_mJ_cm2");});
+                dlCSV(fluenceData.map(function(r){var o={repetition_rate_Hz:r.f};showEntries.forEach(function(e,i){o[e.wl+"nm_mJ_cm2"]=r["w"+i];});return o;}),hdr,"fluence_vs_prf.csv",setMsg);
+              } else {
+                var hdr2=["repetition_rate_Hz"];showEntries.forEach(function(e){hdr2.push(e.wl+"nm_T"+e.T+"s_snr");});
+                dlCSV(snrData.map(function(r){var o={repetition_rate_Hz:r.f};showEntries.forEach(function(e,i){o[e.wl+"nm_T"+e.T+"s_snr"]=r["s"+i];});return o;}),hdr2,"snr_vs_prf.csv",setMsg);
+              }
+            }} style={mkBt(false,T.a2,T)}>{"\u2913"} CSV</button>
           </div>
+        </div>
+        {/* Plot wavelength selector */}
+        <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Plot:</span>
+          {entries.map(function(e,ei){var col=WC[ei%WC.length];return(
+            <label key={e.id} style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:11,fontFamily:"monospace",color:e.show?col:T.td,opacity:e.show?1:0.4}}>
+              <input type="checkbox" checked={e.show} onChange={function(){togShow(e.id)}} style={{accentColor:col,width:12,height:12}}/>{e.wl} nm
+            </label>
+          );})}
         </div>
 
         {paCht==="fl"?(
@@ -1125,19 +1155,23 @@ function PATab(p){
               Per-Pulse Fluence Limit (mJ/cm{"\u00b2"}) vs. Repetition Rate
               <span style={{fontSize:9,color:T.td,marginLeft:8}}>Dots mark Rule 1/Rule 2 crossover (optimal PRF)</span>
             </div>
-            <ResponsiveContainer width="100%" height={380}>
-              <LineChart data={fluenceData} margin={{top:8,right:16,bottom:24,left:12}}>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={fluenceData} margin={{top:8,right:16,bottom:32,left:12}}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.gr}/>
-                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Pulse Repetition Frequency (Hz)",position:"insideBottom",offset:-14,style:{fontSize:10,fill:T.td}}}/>
-                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Per-Pulse Fluence Limit (mJ/cm\u00b2)",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/>
+                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}>
+                  <Label value="Pulse Repetition Frequency (Hz)" position="insideBottom" offset={-18} style={{fontSize:10,fill:T.td}}/>
+                </XAxis>
+                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65}>
+                  <Label value={"Per-Pulse Fluence Limit (mJ/cm\u00b2)"} angle={-90} position="insideLeft" offset={0} style={{fontSize:10,fill:T.td,textAnchor:"middle"}}/>
+                </YAxis>
                 <RTooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var wi=parseInt(String(n).replace("w",""),10);var en=showEntries[wi];return[numFmt(Number(v),4)+" mJ/cm\u00b2",en?en.wl+" nm":""]}}/>
                 {showEntries.map(function(e,i){
-                  return <Line key={"fl"+e.id} dataKey={"w"+i} stroke={WC[i%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm"} connectNulls={true} isAnimationActive={false}/>;
+                  return <Line key={"fl"+e.id} dataKey={"w"+i} stroke={WC[entries.indexOf(e)%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm"} connectNulls={true} isAnimationActive={false}/>;
                 })}
-                {showEntries.length>1?<Legend wrapperStyle={{fontSize:10,fontFamily:"monospace"}}/>:null}
+                {showEntries.length>1?<Legend verticalAlign="top" wrapperStyle={{fontSize:10,fontFamily:"monospace",paddingBottom:4}}/>:null}
                 {flCross.map(function(cr){
                   if(!isFinite(cr.f)||!isFinite(cr.H)||cr.f<1||cr.f>3e5)return null;
-                  return <ReferenceDot key={"fc"+cr.idx} x={cr.f} y={cr.H} r={5} fill={WC[cr.idx%WC.length]} stroke={T.card} strokeWidth={1.5}/>;
+                  return <ReferenceDot key={"fc"+cr.idx} x={cr.f} y={cr.H} r={5} fill={WC[entries.indexOf(showEntries[cr.idx])%WC.length]} stroke={T.card} strokeWidth={1.5}/>;
                 })}
               </LineChart>
             </ResponsiveContainer>
@@ -1148,17 +1182,21 @@ function PATab(p){
               Relative SNR vs. Repetition Rate
               <span style={{fontSize:9,color:T.td,marginLeft:8}}>Dots mark optimal PRF (f*) for each wavelength</span>
             </div>
-            <ResponsiveContainer width="100%" height={380}>
-              <LineChart data={snrData} margin={{top:8,right:16,bottom:24,left:12}}>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={snrData} margin={{top:8,right:16,bottom:32,left:12}}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.gr}/>
-                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Pulse Repetition Frequency (Hz)",position:"insideBottom",offset:-14,style:{fontSize:10,fill:T.td}}}/>
-                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Relative SNR (\u221aN \u00d7 H / H\u2080)",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/>
+                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}>
+                  <Label value="Pulse Repetition Frequency (Hz)" position="insideBottom" offset={-18} style={{fontSize:10,fill:T.td}}/>
+                </XAxis>
+                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65}>
+                  <Label value={"Relative SNR (\u221aN \u00d7 H / H\u2080)"} angle={-90} position="insideLeft" offset={0} style={{fontSize:10,fill:T.td,textAnchor:"middle"}}/>
+                </YAxis>
                 <RTooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var si2=parseInt(String(n).replace("s",""),10);var en=showEntries[si2];return[Number(v).toFixed(3)+"\u00d7",en?en.wl+" nm, T="+ft(en.T):""]}}/>
-                {showEntries.map(function(e,i){return <Line key={"snr"+e.id} dataKey={"s"+i} stroke={WC[i%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm (T="+ft(e.T)+")"} connectNulls={true} isAnimationActive={false}/>;})
+                {showEntries.map(function(e,i){return <Line key={"snr"+e.id} dataKey={"s"+i} stroke={WC[entries.indexOf(e)%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm (T="+ft(e.T)+")"} connectNulls={true} isAnimationActive={false}/>;})
                 }
-                {showEntries.length>1?<Legend wrapperStyle={{fontSize:10,fontFamily:"monospace"}}/>:null}
+                {showEntries.length>1?<Legend verticalAlign="top" wrapperStyle={{fontSize:10,fontFamily:"monospace",paddingBottom:4}}/>:null}
                 <ReferenceLine y={1} stroke={T.bl} strokeDasharray="4 4" label={{value:"N=1",position:"right",style:{fontSize:9,fill:T.td}}}/>
-                {optData.map(function(o){if(!isFinite(o.fopt)||!isFinite(o.snrOpt)||o.snrOpt<=0)return null;return <ReferenceDot key={"opt"+o.idx} x={o.fopt} y={o.snrOpt} r={6} fill={WC[o.idx%WC.length]} stroke={T.card} strokeWidth={2}/>;})
+                {optData.map(function(o){if(!isFinite(o.fopt)||!isFinite(o.snrOpt)||o.snrOpt<=0)return null;return <ReferenceDot key={"opt"+o.idx} x={o.fopt} y={o.snrOpt} r={6} fill={WC[entries.indexOf(showEntries[o.idx])%WC.length]} stroke={T.card} strokeWidth={2}/>;})
                 }
               </LineChart>
             </ResponsiveContainer>

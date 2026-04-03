@@ -87,7 +87,7 @@ var __STD_DATA__ = {std_json};
 <script type="text/babel">
 
 var useState=React.useState,useMemo=React.useMemo,useEffect=React.useEffect,useRef=React.useRef;
-var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,ResponsiveContainer=Recharts.ResponsiveContainer,ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend;
+var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,ResponsiveContainer=Recharts.ResponsiveContainer,ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend,Label=Recharts.Label;
 
 {jsx_body}
 

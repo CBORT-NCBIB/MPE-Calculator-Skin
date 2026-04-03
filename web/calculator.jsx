@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot, ResponsiveContainer, ReferenceLine, Legend } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot, ResponsiveContainer, ReferenceLine, Legend, Label } from "recharts";
 
 /* ═══════ STANDARD DATA (loaded from JSON; edit this to change standard) ═══════ */
 var _std = (typeof __STD_DATA__ !== "undefined") ? __STD_DATA__ : {"standard":{"name":"ICNIRP 2013","short_name":"ICNIRP 2013","reference":"Health Phys. 105(3):271\u2013295","year":2013,"organization":"International Commission on Non-Ionizing Radiation Protection","tables_used":"Tables 3, 5, 7","notes":"Skin exposure limits only. Ocular limits are not included.","unit":"J/cm\u00b2","wl_range_nm":[180,1000000],"dur_range_s":[1e-09,30000]},"correction_factors":{"CA":{"description":"Wavelength correction factor for 400\u20131400 nm skin MPE (Table 3, p. 282)","applies_to_bands":["Visible/Near-IR"],"default_outside_range":1.0,"regions":[{"wl_min_nm":400,"wl_max_nm":700,"type":"constant","value":1.0,"note":"400 \u2264 \u03bb < 700 nm"},{"wl_min_nm":700,"wl_max_nm":1050,"type":"power10","coefficient":0.002,"offset_nm":700,"note":"C_A = 10^(0.002 \u00d7 (\u03bb_nm \u2212 700))"},{"wl_min_nm":1050,"wl_max_nm":1400,"type":"constant","value":5.0,"note":"1050 \u2264 \u03bb \u2264 1400 nm"}]}},"uv_discrete_steps":{"description":"UV photochemical MPE for 302\u2013315 nm (Table 5). Discrete 1-nm steps. Values in J/cm\u00b2. Each entry gives the upper wavelength boundary and the MPE below that boundary.","note":"Left-inclusive, right-exclusive. For \u03bb in [302, 303): H = 4e-3, for [303, 304): H = 6e-3, etc.","steps":[{"wl_upper_nm":303,"H_J_cm2":0.004,"H_J_m2":40},{"wl_upper_nm":304,"H_J_cm2":0.006,"H_J_m2":60},{"wl_upper_nm":305,"H_J_cm2":0.01,"H_J_m2":100},{"wl_upper_nm":306,"H_J_cm2":0.016,"H_J_m2":160},{"wl_upper_nm":307,"H_J_cm2":0.025,"H_J_m2":250},{"wl_upper_nm":308,"H_J_cm2":0.04,"H_J_m2":400},{"wl_upper_nm":309,"H_J_cm2":0.063,"H_J_m2":630},{"wl_upper_nm":310,"H_J_cm2":0.1,"H_J_m2":1000},{"wl_upper_nm":311,"H_J_cm2":0.16,"H_J_m2":1600},{"wl_upper_nm":312,"H_J_cm2":0.25,"H_J_m2":2500},{"wl_upper_nm":313,"H_J_cm2":0.4,"H_J_m2":4000}],"fallback_H_J_cm2":0.63,"fallback_note":"313\u2013315 nm: 6.3 kJ/m\u00b2 = 0.63 J/cm\u00b2"},"display_bands":[{"name":"UV","wl_start_nm":180,"wl_end_nm":400},{"name":"Visible","wl_start_nm":400,"wl_end_nm":700},{"name":"Near-IR","wl_start_nm":700,"wl_end_nm":1400},{"name":"Far-IR","wl_start_nm":1400,"wl_end_nm":1000000}],"bands":[{"name":"UV","wl_min_nm":180,"wl_max_nm":400,"mode":"dual_limit","combination":"min","note":"MPE = min(thermal, photochemical). Table 5, pp. 283\u2013284.","thermal":{"description":"UV thermal limit: 5.6 t^0.25 kJ/m\u00b2 = 0.56 t^0.25 J/cm\u00b2. Listed as 'Also not to exceed' in Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"H = 0.56 \u00d7 t^0.25 J/cm\u00b2"}]},"photochemical":{"description":"UV photochemical limit. Wavelength-dependent sub-regions.","regions":[{"wl_min_nm":180,"wl_max_nm":302,"t_min_s":1e-09,"t_max_s":30000,"formula":"constant","a":0.003,"note":"30 J/m\u00b2 = 3\u00d710\u207b\u00b3 J/cm\u00b2"},{"wl_min_nm":302,"wl_max_nm":315,"t_min_s":1e-09,"t_max_s":30000,"formula":"discrete","lookup":"uv_discrete_steps","note":"Discrete 1-nm step values from Table 5"},{"wl_min_nm":315,"wl_max_nm":400,"t_min_s":10,"t_max_s":30000,"formula":"constant","a":1.0,"below_t_min":"not_applicable","note":"10 kJ/m\u00b2 = 1.0 J/cm\u00b2 for t \u2265 10 s. Below 10 s: photochemical undefined, only thermal applies."}]}},{"name":"Visible/Near-IR","wl_min_nm":400,"wl_max_nm":1400,"mode":"single","uses_ca":true,"note":"Table 7, p. 285. All sub-regions multiply by C_A.","regions":[{"t_min_s":1e-09,"t_max_s":1e-07,"formula":"ca_constant","a":0.02,"note":"200 C_A J/m\u00b2 = 0.02 C_A J/cm\u00b2"},{"t_min_s":1e-07,"t_max_s":10,"formula":"ca_power","a":1.1,"b":0.25,"note":"11 C_A t^0.25 kJ/m\u00b2 = 1.1 C_A t^0.25 J/cm\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"ca_linear","a":0.2,"note":"2.0 C_A kW/m\u00b2 = 0.2 C_A W/cm\u00b2 \u2192 H = 0.2 C_A t J/cm\u00b2"}]},{"name":"FIR 1400\u20131500","wl_min_nm":1400,"wl_max_nm":1500,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":0.001,"formula":"constant","a":0.1,"note":"1 kJ/m\u00b2 = 0.1 J/cm\u00b2"},{"t_min_s":0.001,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 1500\u20131800","wl_min_nm":1500,"wl_max_nm":1800,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":10,"formula":"constant","a":1.0,"note":"10 kJ/m\u00b2 = 1.0 J/cm\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 1800\u20132600","wl_min_nm":1800,"wl_max_nm":2600,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":0.001,"formula":"constant","a":0.1,"note":"1.0 kJ/m\u00b2 = 0.1 J/cm\u00b2"},{"t_min_s":0.001,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 2600\u20131 mm","wl_min_nm":2600,"wl_max_nm":1000000,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":1e-07,"formula":"constant","a":0.01,"note":"100 J/m\u00b2 = 0.01 J/cm\u00b2"},{"t_min_s":1e-07,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]}],"supplementary":{"t_max":{"description":"Recommended maximum anticipated exposure durations for skin (Table 4, Diffuse column).","regions":[{"wl_min_nm":180,"wl_max_nm":400,"t_max_s":30000,"note":"UV"},{"wl_min_nm":400,"wl_max_nm":700,"t_max_s":600,"note":"Visible"},{"wl_min_nm":700,"wl_max_nm":1400,"t_max_s":600,"note":"Near-IR"},{"wl_min_nm":1400,"wl_max_nm":1000000,"t_max_s":10,"note":"Far-IR"}]},"limiting_apertures":{"description":"Limiting aperture diameters for skin MPE averaging (Table 8, Skin column).","regions":[{"wl_min_nm":180,"wl_max_nm":100000,"diameter_mm":3.5,"note":"180 nm to 100 \u00b5m"},{"wl_min_nm":100000,"wl_max_nm":1000000,"diameter_mm":11.0,"note":"100 \u00b5m to 1 mm"}]},"large_area_correction":{"description":"MPE correction for large beam cross-sections (\u03bb > 1.4 \u00b5m, t > 10 s). Table 7 note c.","threshold_cm2":100,"cap_cm2":1000,"formula_mW_cm2":"10000 / A_s","cap_mW_cm2":10},"uv_successive_day_derate":{"description":"De-rating factor for UV (280\u2013400 nm) on successive days.","wl_min_nm":280,"wl_max_nm":400,"factor":2.5}}};
@@ -669,7 +669,7 @@ function MPETab(p){
 /* ═══════ PA TAB ═══════ */
 /* Seven ICNIRP wavelength bands for multi-band fluence chart (cf. Francis et al. Fig. 2a) */
 var paUid=1;
-function mkPA(wl,tau,T){return{id:paUid++,wl:wl,wlStr:String(wl),wlU:"nm",tau:tau,tauStr:String(tau*1e9),tauU:"ns",T:T,TStr:String(T),TU:"s",show:true};}
+function mkPA(wl,tau,T){return{id:paUid++,wl:wl,wlStr:String(wl),wlU:"nm",tau:tau,tauStr:String(tau*1e9),tauU:"ns",T:T,TStr:String(T),TU:"s",show:true,inTable:true};}
 
 function PATab(p){
   var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
@@ -677,7 +677,7 @@ function PATab(p){
   var _entries=useState([mkPA(532,5e-9,1),mkPA(800,5e-9,1),mkPA(1064,5e-9,1)]);
   var entries=_entries[0],setEntries=_entries[1];
   var _nwl=useState(""),nwl=_nwl[0],setNwl=_nwl[1];
-  var _paCht=useState("fl"),paCht=_paCht[0],setPaCht=_paCht[1];
+  var _paCht=useState("snr"),paCht=_paCht[0],setPaCht=_paCht[1];
   var _cv=useState(0),cv=_cv[0],setCv=_cv[1];
   var _dr=useState(false),dirty=_dr[0],setDirty=_dr[1];
   var flRef=useRef(null),snrRef=useRef(null);
@@ -703,6 +703,7 @@ function PATab(p){
   function addEntry(){var w=parseFloat(nwl)||800;setEntries(function(es){return es.concat([mkPA(w,5e-9,1)]);});setNwl("");setDirty(true);}
   function rmEntry(id){setEntries(function(es){return es.filter(function(e){return e.id!==id;});});setDirty(true);}
   function togShow(id){setEntries(function(es){return es.map(function(e){return e.id===id?Object.assign({},e,{show:!e.show}):e;});});}
+  function togTable(id){setEntries(function(es){return es.map(function(e){return e.id===id?Object.assign({},e,{inTable:!e.inTable}):e;});});}
   function calc(){setCv(function(c){return c+1;});setDirty(false);}
   useEffect(function(){calc();},[]);
 
@@ -772,9 +773,6 @@ function PATab(p){
                 <span style={{fontSize:9,color:T.td}}>{bnd(e.wl)} {"\u00b7"} C{"\u2090"} = {CA(e.wl).toFixed(3)}</span>
               </div>
               <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <label style={{fontSize:10,color:T.td,cursor:"pointer",display:"flex",alignItems:"center",gap:4}} onClick={function(){togShow(e.id);}}>
-                  <input type="checkbox" checked={e.show} readOnly style={{accentColor:col,width:12,height:12}}/>Plot
-                </label>
                 {entries.length>1?<button onClick={function(){rmEntry(e.id)}} style={{background:"none",border:"none",color:T.td,cursor:"pointer",fontSize:15}}>{"\u00d7"}</button>:null}
               </div>
             </div>
@@ -805,7 +803,18 @@ function PATab(p){
 
       {/* ── Optimal PRF Summary Table ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
-        <div style={secH}>Optimal Repetition Rate Summary</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={secH}>Optimal Repetition Rate Summary</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+            <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Include:</span>
+            {entries.map(function(e,ei){var col=WC[ei%WC.length];return(
+              <label key={e.id} style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:11,fontFamily:"monospace",color:e.inTable?col:T.td,opacity:e.inTable?1:0.4}}>
+                <input type="checkbox" checked={e.inTable} onChange={function(){togTable(e.id)}} style={{accentColor:col,width:12,height:12}}/>{e.wl} nm
+              </label>
+            );})}
+          </div>
+        </div>
+        {(function(){var tE=entries.filter(function(e){return e.inTable;});return(
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
           <th style={thS}>{"\u03bb"} (nm)</th>
           <th style={thS}>Pulse Duration</th>
@@ -816,29 +825,50 @@ function PATab(p){
           <th style={thS}>Single-Pulse MPE (mJ/cm{"\u00b2"})</th>
           <th style={thS}>Per-Pulse at Optimal (mJ/cm{"\u00b2"})</th>
         </tr></thead>
-        <tbody>{optData.map(function(o){var col=WC[o.idx%WC.length];return (<tr key={o.e.id} style={{borderBottom:"1px solid "+T.bd}}>
-          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,color:col}}>{o.e.wl}</td>
-          <td style={tdSt}>{ft(o.e.tau)}</td>
-          <td style={tdSt}>{ft(o.e.T)}</td>
-          <td style={tdSt}>{isFinite(o.fopt)?numFmt(o.fopt,4):"\u2014"}</td>
-          <td style={tdSt}>{isFinite(o.Nopt)?numFmt(o.Nopt,4):"\u2014"}</td>
-          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,borderBottom:"1px solid "+T.bd}}>{isFinite(o.snrOpt)?o.snrOpt.toFixed(2)+"\u00d7":"\u2014"}</td>
-          <td style={tdSt}>{numFmt(skinMPE(o.e.wl,o.e.tau)*1e3,4)}</td>
-          <td style={tdSt}>{isFinite(o.HatOpt)?numFmt(o.HatOpt*1e3,4):"\u2014"}</td>
-        </tr>);})}</tbody></table></div>
+        <tbody>{tE.map(function(e2){var ei=entries.indexOf(e2);var col=WC[ei%WC.length];
+          var fopt=paOptPRF(e2.wl,e2.tau,e2.T);var snrOpt=isFinite(fopt)?paRelSNR(e2.wl,e2.tau,fopt,e2.T):NaN;
+          var Nopt=isFinite(fopt)?fopt*e2.T:NaN;var HatOpt=isFinite(fopt)?paEffFluence(e2.wl,e2.tau,fopt,e2.T):NaN;
+          return (<tr key={e2.id} style={{borderBottom:"1px solid "+T.bd}}>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,color:col,borderBottom:"1px solid "+T.bd}}>{e2.wl}</td>
+          <td style={tdSt}>{ft(e2.tau)}</td>
+          <td style={tdSt}>{ft(e2.T)}</td>
+          <td style={tdSt}>{isFinite(fopt)?numFmt(fopt,4):"\u2014"}</td>
+          <td style={tdSt}>{isFinite(Nopt)?numFmt(Nopt,4):"\u2014"}</td>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700,borderBottom:"1px solid "+T.bd}}>{isFinite(snrOpt)?snrOpt.toFixed(2)+"\u00d7":"\u2014"}</td>
+          <td style={tdSt}>{numFmt(skinMPE(e2.wl,e2.tau)*1e3,4)}</td>
+          <td style={tdSt}>{isFinite(HatOpt)?numFmt(HatOpt*1e3,4):"\u2014"}</td>
+        </tr>);})}</tbody></table></div>);})()}
       </div>
 
       {/* ── Charts ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
           <div style={secH}>Safety-Constrained Analysis</div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
             <div style={{display:"flex"}}>
-              <button onClick={function(){setPaCht("fl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="fl"?T.ac:T.bd),cursor:"pointer",background:paCht==="fl"?T.ac:"transparent",color:paCht==="fl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>Per-Pulse Fluence vs. PRF</button>
-              <button onClick={function(){setPaCht("snr")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="snr"?T.ac:T.bd),cursor:"pointer",background:paCht==="snr"?T.ac:"transparent",color:paCht==="snr"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>Relative SNR vs. PRF</button>
+              <button onClick={function(){setPaCht("snr")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="snr"?T.ac:T.bd),cursor:"pointer",background:paCht==="snr"?T.ac:"transparent",color:paCht==="snr"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>Relative SNR vs. PRF</button>
+              <button onClick={function(){setPaCht("fl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="fl"?T.ac:T.bd),cursor:"pointer",background:paCht==="fl"?T.ac:"transparent",color:paCht==="fl"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>Per-Pulse Fluence vs. PRF</button>
             </div>
             <button onClick={function(){dlSVG(paCht==="fl"?flRef:snrRef,paCht==="fl"?"fluence_vs_prf.svg":"snr_vs_prf.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} SVG</button>
+            <button onClick={function(){
+              if(paCht==="fl"){
+                var hdr=["repetition_rate_Hz"];showEntries.forEach(function(e){hdr.push(e.wl+"nm_mJ_cm2");});
+                dlCSV(fluenceData.map(function(r){var o={repetition_rate_Hz:r.f};showEntries.forEach(function(e,i){o[e.wl+"nm_mJ_cm2"]=r["w"+i];});return o;}),hdr,"fluence_vs_prf.csv",setMsg);
+              } else {
+                var hdr2=["repetition_rate_Hz"];showEntries.forEach(function(e){hdr2.push(e.wl+"nm_T"+e.T+"s_snr");});
+                dlCSV(snrData.map(function(r){var o={repetition_rate_Hz:r.f};showEntries.forEach(function(e,i){o[e.wl+"nm_T"+e.T+"s_snr"]=r["s"+i];});return o;}),hdr2,"snr_vs_prf.csv",setMsg);
+              }
+            }} style={mkBt(false,T.a2,T)}>{"\u2913"} CSV</button>
           </div>
+        </div>
+        {/* Plot wavelength selector */}
+        <div style={{display:"flex",gap:8,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Plot:</span>
+          {entries.map(function(e,ei){var col=WC[ei%WC.length];return(
+            <label key={e.id} style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:11,fontFamily:"monospace",color:e.show?col:T.td,opacity:e.show?1:0.4}}>
+              <input type="checkbox" checked={e.show} onChange={function(){togShow(e.id)}} style={{accentColor:col,width:12,height:12}}/>{e.wl} nm
+            </label>
+          );})}
         </div>
 
         {paCht==="fl"?(
@@ -847,19 +877,23 @@ function PATab(p){
               Per-Pulse Fluence Limit (mJ/cm{"\u00b2"}) vs. Repetition Rate
               <span style={{fontSize:9,color:T.td,marginLeft:8}}>Dots mark Rule 1/Rule 2 crossover (optimal PRF)</span>
             </div>
-            <ResponsiveContainer width="100%" height={380}>
-              <LineChart data={fluenceData} margin={{top:8,right:16,bottom:24,left:12}}>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={fluenceData} margin={{top:8,right:16,bottom:32,left:12}}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.gr}/>
-                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Pulse Repetition Frequency (Hz)",position:"insideBottom",offset:-14,style:{fontSize:10,fill:T.td}}}/>
-                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Per-Pulse Fluence Limit (mJ/cm\u00b2)",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/>
+                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}>
+                  <Label value="Pulse Repetition Frequency (Hz)" position="insideBottom" offset={-18} style={{fontSize:10,fill:T.td}}/>
+                </XAxis>
+                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65}>
+                  <Label value={"Per-Pulse Fluence Limit (mJ/cm\u00b2)"} angle={-90} position="insideLeft" offset={0} style={{fontSize:10,fill:T.td,textAnchor:"middle"}}/>
+                </YAxis>
                 <Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var wi=parseInt(String(n).replace("w",""),10);var en=showEntries[wi];return[numFmt(Number(v),4)+" mJ/cm\u00b2",en?en.wl+" nm":""]}}/>
                 {showEntries.map(function(e,i){
-                  return <Line key={"fl"+e.id} dataKey={"w"+i} stroke={WC[i%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm"} connectNulls={true} isAnimationActive={false}/>;
+                  return <Line key={"fl"+e.id} dataKey={"w"+i} stroke={WC[entries.indexOf(e)%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm"} connectNulls={true} isAnimationActive={false}/>;
                 })}
-                {showEntries.length>1?<Legend wrapperStyle={{fontSize:10,fontFamily:"monospace"}}/>:null}
+                {showEntries.length>1?<Legend verticalAlign="top" wrapperStyle={{fontSize:10,fontFamily:"monospace",paddingBottom:4}}/>:null}
                 {flCross.map(function(cr){
                   if(!isFinite(cr.f)||!isFinite(cr.H)||cr.f<1||cr.f>3e5)return null;
-                  return <ReferenceDot key={"fc"+cr.idx} x={cr.f} y={cr.H} r={5} fill={WC[cr.idx%WC.length]} stroke={T.card} strokeWidth={1.5}/>;
+                  return <ReferenceDot key={"fc"+cr.idx} x={cr.f} y={cr.H} r={5} fill={WC[entries.indexOf(showEntries[cr.idx])%WC.length]} stroke={T.card} strokeWidth={1.5}/>;
                 })}
               </LineChart>
             </ResponsiveContainer>
@@ -870,17 +904,21 @@ function PATab(p){
               Relative SNR vs. Repetition Rate
               <span style={{fontSize:9,color:T.td,marginLeft:8}}>Dots mark optimal PRF (f*) for each wavelength</span>
             </div>
-            <ResponsiveContainer width="100%" height={380}>
-              <LineChart data={snrData} margin={{top:8,right:16,bottom:24,left:12}}>
+            <ResponsiveContainer width="100%" height={400}>
+              <LineChart data={snrData} margin={{top:8,right:16,bottom:32,left:12}}>
                 <CartesianGrid strokeDasharray="3 3" stroke={T.gr}/>
-                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Pulse Repetition Frequency (Hz)",position:"insideBottom",offset:-14,style:{fontSize:10,fill:T.td}}}/>
-                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Relative SNR (\u221aN \u00d7 H / H\u2080)",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/>
+                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}>
+                  <Label value="Pulse Repetition Frequency (Hz)" position="insideBottom" offset={-18} style={{fontSize:10,fill:T.td}}/>
+                </XAxis>
+                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65}>
+                  <Label value={"Relative SNR (\u221aN \u00d7 H / H\u2080)"} angle={-90} position="insideLeft" offset={0} style={{fontSize:10,fill:T.td,textAnchor:"middle"}}/>
+                </YAxis>
                 <Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var si2=parseInt(String(n).replace("s",""),10);var en=showEntries[si2];return[Number(v).toFixed(3)+"\u00d7",en?en.wl+" nm, T="+ft(en.T):""]}}/>
-                {showEntries.map(function(e,i){return <Line key={"snr"+e.id} dataKey={"s"+i} stroke={WC[i%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm (T="+ft(e.T)+")"} connectNulls={true} isAnimationActive={false}/>;})
+                {showEntries.map(function(e,i){return <Line key={"snr"+e.id} dataKey={"s"+i} stroke={WC[entries.indexOf(e)%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm (T="+ft(e.T)+")"} connectNulls={true} isAnimationActive={false}/>;})
                 }
-                {showEntries.length>1?<Legend wrapperStyle={{fontSize:10,fontFamily:"monospace"}}/>:null}
+                {showEntries.length>1?<Legend verticalAlign="top" wrapperStyle={{fontSize:10,fontFamily:"monospace",paddingBottom:4}}/>:null}
                 <ReferenceLine y={1} stroke={T.bl} strokeDasharray="4 4" label={{value:"N=1",position:"right",style:{fontSize:9,fill:T.td}}}/>
-                {optData.map(function(o){if(!isFinite(o.fopt)||!isFinite(o.snrOpt)||o.snrOpt<=0)return null;return <ReferenceDot key={"opt"+o.idx} x={o.fopt} y={o.snrOpt} r={6} fill={WC[o.idx%WC.length]} stroke={T.card} strokeWidth={2}/>;})
+                {optData.map(function(o){if(!isFinite(o.fopt)||!isFinite(o.snrOpt)||o.snrOpt<=0)return null;return <ReferenceDot key={"opt"+o.idx} x={o.fopt} y={o.snrOpt} r={6} fill={WC[entries.indexOf(showEntries[o.idx])%WC.length]} stroke={T.card} strokeWidth={2}/>;})
                 }
               </LineChart>
             </ResponsiveContainer>
