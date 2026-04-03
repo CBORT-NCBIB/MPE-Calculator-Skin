@@ -99,7 +99,7 @@ function paOptPRF(wl,tau,T){var hs=skinMPE(wl,tau),hT=skinMPE(wl,T);if(!isFinite
 /* ═══════ BEAM GEOMETRY & LIMITING APERTURE (ICNIRP 2013 Table 8, Table 7 note b, p. 288) ═══════ */
 /*
  * Limiting aperture: the diameter over which radiant exposure is averaged
- * for comparison with the MPE. For skin:
+ * for comparison with the MPE. For the skin:
  *   λ < 100 µm:  3.5 mm  (Table 8)
  *   λ ≥ 100 µm:  11 mm   (Table 8)
  *
