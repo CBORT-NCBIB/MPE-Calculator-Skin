@@ -2,9 +2,7 @@
 
 **Laser Maximum Permissible Exposure (MPE) Calculator for Skin**
 
-A Python package for computing laser skin MPE values with support for single-pulse, CW, and repetitive-pulse exposure regimes. Designed for researchers, laser safety officers, and engineers working in biophotonics (OCT, photoacoustic imaging, confocal microscopy), laser manufacturing, telecommunications, and any application requiring laser skin safety evaluation.
-
-Associated with [OCT Research](https://octresearch.org/).
+A Python package for computing laser skin MPE values with support for single-pulse, CW, and repetitive-pulse exposure regimes. Designed for researchers, laser safety officers, and engineers working in biophotonics (OCT, photoacoustic imaging, confocal microscopy) and any application requiring laser skin safety evaluation.
 
 <p align="center">
   <img src="docs/images/skin_mpe_overview.png" alt="Skin MPE vs exposure duration" width="65%">
@@ -24,7 +22,7 @@ Associated with [OCT Research](https://octresearch.org/).
 - **Repetitive-pulse rules:** Rule 1 (single-pulse limit) and Rule 2 (average power), 
 - **Supporting calculations:** T_max lookup, limiting apertures, large area correction, UV successive-day de-rating
 - **Unit conversions:** J/cm², mJ/cm², W/cm², mW/cm², pulse energy, average power
-- **Verification:** Automated checks against hand-computed values from the standard
+- **Verification:** Checks against hand-computed values from the standard
 
 ## Standards Compliance
 
@@ -40,7 +38,7 @@ All values are verified against the loaded standard (default: ICNIRP 2013).
 | Large area correction | Beam area > 100 cm² for λ > 1.4 µm, t > 10 s |
 | UV de-rating | Successive-day de-rating for 280–400 nm |
 
-Boundary conventions follow the standard exactly: `t₁ ≤ t < t₂` and `λ₁ ≤ λ < λ₂`.
+Boundary conventions follow the ICNIRP standard: `t₁ ≤ t < t₂` and `λ₁ ≤ λ < λ₂`.
 
 
 ## Installation
@@ -55,7 +53,7 @@ cd MPE-Calculator-Skin
 pip install -e .
 ```
 
-Once installed, you can import `laser_mpe` from any Python script or notebook on your system. See the [Quick Start](#quick-start) section below for usage examples, and [`docs/API.md`](docs/API.md) for the complete API reference.
+Once installed, you can import `laser_mpe` from any Python script or notebook on your system. See the [Quick Start](#quick-start) section below for usage examples, and [`docs/API.md`](docs/API.md) for the API reference.
 
 ### For contributors (development setup)
 
@@ -134,7 +132,7 @@ print(f"{radiant_exposure_convert(H, 'mJ/cm2')} mJ/cm²")
 
 ## Testing
 
-325 automated checks across 4 test suites, verified against hand-computed values from the standard:
+There are four test scripts to verify values against the standard:
 
 ```
 Test Script                                 Checks
@@ -154,7 +152,7 @@ python tests/test_correction_factors.py
 python tests/verify_exhaustive.py
 ```
 
-Full test outputs are available in [`tests/outputs/`](tests/outputs/).
+Test outputs are available in [`tests/outputs/`](tests/outputs/).
 
 ## Package Structure
 
@@ -164,9 +162,9 @@ MPE-Calculator-Skin/
 │   ├── __init__.py              # Public API
 │   ├── engine.py                # Core data-driven MPE engine
 │   ├── correction_factors.py    # Cₐ correction factor
-│   ├── legacy.py              # Backward-compatible ICNIRP function names
-│   ├── repetitive_pulse.py     # Rules 1 and 2
-│   └── skin_parameters.py      # T_max, apertures, conversions
+│   ├── legacy.py                # Backward-compatible ICNIRP function names
+│   ├── repetitive_pulse.py      # Rules 1 and 2
+│   └── skin_parameters.py       # T_max, apertures, conversions
 ├── web/
 │   ├── index.html               # Standalone interactive calculator
 │   ├── calculator.jsx           # React component source
@@ -177,14 +175,14 @@ MPE-Calculator-Skin/
 │   │   └── README.md            # Schema documentation
 │   └── README.md                # Web deployment guide
 ├── tests/
-│   ├── outputs/                 # Full test output logs
-│   └── *.py                     # 4 test suites (329 checks)
+│   ├── outputs/                 # Test output logs
+│   └── *.py                     # 4 test scripts (329 checks)
 ├── examples/
 │   ├── README.md                # What each example does
 │   ├── outputs/                 # Expected output for cross-checking
 │   └── *.py                     # 4 example scripts
 ├── docs/
-│   ├── API.md                   # Complete API reference
+│   ├── API.md                   # API reference
 │   └── images/                  # Figures
 ├── LICENSE                      # MIT
 ├── README.md
@@ -197,9 +195,9 @@ MPE-Calculator-Skin/
 
 An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
 
-## Roadmap
+## Project roadmap
 
-- [x] Skin MPE (all bands, 180 nm–1000 µm)
+- [x] Skin MPE calculations (180 nm–1000 µm)
 - [x] UV dual-limit logic
 - [x] Repetitive-pulse Rules 1 and 2
 - [x] T_max, limiting apertures, large area correction, UV de-rating
