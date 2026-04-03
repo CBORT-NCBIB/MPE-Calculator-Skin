@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laser Skin MPE Calculator</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:system-ui,sans-serif}
+    #root{min-height:100vh}
+    .ls{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5;color:#525960;font-family:monospace;font-size:14px;gap:12px}
+    .ls .err{color:#D55E00;font-size:12px;max-width:600px;text-align:center;line-height:1.5}
+  </style>
+</head>
+<body>
+<div id="root"><div class="ls"><div id="lt">Loading calculator...</div><div id="le" class="err"></div></div></div>
+
+<script>var le=[];function se(n){return function(){le.push(n);document.getElementById('le').textContent='Failed to load: '+le.join(', ')+'.';}}</script>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" onerror="se('React')()"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" onerror="se('Babel')()"></script>
+
+<script>
+// Standard data (injected from ./standards/icnirp_2013.json)
+var __STD_DATA__ = {
+  "standard": {
+    "name": "ICNIRP 2013",
+    "short_name": "ICNIRP 2013",
+    "reference": "Health Phys. 105(3):271\u2013295",
+    "year": 2013,
+    "organization": "International Commission on Non-Ionizing Radiation Protection",
+    "tables_used": "Tables 3, 5, 7",
+    "notes": "Skin exposure limits only. Ocular limits are not included.",
+    "unit": "J/cm\u00b2",
+    "wl_range_nm": [180, 1000000],
+    "dur_range_s": [1e-9, 30000]
+  },
+
+  "correction_factors": {
+    "CA": {
+      "description": "Wavelength correction factor for 400\u20131400 nm skin MPE (Table 3, p. 282)",
+      "applies_to_bands": ["Visible/Near-IR"],
+      "default_outside_range": 1.0,
+      "regions": [
+        {
+          "wl_min_nm": 400,
+          "wl_max_nm": 700,
+          "type": "constant",
+          "value": 1.0,
+          "note": "400 \u2264 \u03bb < 700 nm"
+        },
+        {
+          "wl_min_nm": 700,
+          "wl_max_nm": 1050,
+          "type": "power10",
+          "coefficient": 0.002,
+          "offset_nm": 700,
+          "note": "C_A = 10^(0.002 \u00d7 (\u03bb_nm \u2212 700))"
+        },
+        {
+          "wl_min_nm": 1050,
+          "wl_max_nm": 1400,
+          "type": "constant",
+          "value": 5.0,
+          "note": "1050 \u2264 \u03bb \u2264 1400 nm"
+        }
+      ]
+    }
+  },
+
+  "uv_discrete_steps": {
+    "description": "UV photochemical MPE for 302\u2013315 nm (Table 5). Discrete 1-nm steps. Values in J/cm\u00b2. Each entry gives the upper wavelength boundary and the MPE below that boundary.",
+    "note": "Left-inclusive, right-exclusive. For \u03bb in [302, 303): H = 4e-3, for [303, 304): H = 6e-3, etc.",
+    "steps": [
+      {"wl_upper_nm": 303, "H_J_cm2": 4e-3,   "H_J_m2": 40},
+      {"wl_upper_nm": 304, "H_J_cm2": 6e-3,   "H_J_m2": 60},
+      {"wl_upper_nm": 305, "H_J_cm2": 1e-2,   "H_J_m2": 100},
+      {"wl_upper_nm": 306, "H_J_cm2": 1.6e-2, "H_J_m2": 160},
+      {"wl_upper_nm": 307, "H_J_cm2": 2.5e-2, "H_J_m2": 250},
+      {"wl_upper_nm": 308, "H_J_cm2": 4e-2,   "H_J_m2": 400},
+      {"wl_upper_nm": 309, "H_J_cm2": 6.3e-2, "H_J_m2": 630},
+      {"wl_upper_nm": 310, "H_J_cm2": 1e-1,   "H_J_m2": 1000},
+      {"wl_upper_nm": 311, "H_J_cm2": 1.6e-1, "H_J_m2": 1600},
+      {"wl_upper_nm": 312, "H_J_cm2": 2.5e-1, "H_J_m2": 2500},
+      {"wl_upper_nm": 313, "H_J_cm2": 4e-1,   "H_J_m2": 4000}
+    ],
+    "fallback_H_J_cm2": 6.3e-1,
+    "fallback_note": "313\u2013315 nm: 6.3 kJ/m\u00b2 = 0.63 J/cm\u00b2"
+  },
+
+  "display_bands": [
+    {"name": "UV",       "wl_start_nm": 180,    "wl_end_nm": 400},
+    {"name": "Visible",  "wl_start_nm": 400,    "wl_end_nm": 700},
+    {"name": "Near-IR",  "wl_start_nm": 700,    "wl_end_nm": 1400},
+    {"name": "Far-IR",   "wl_start_nm": 1400,   "wl_end_nm": 1000000}
+  ],
+
+  "bands": [
+    {
+      "name": "UV",
+      "wl_min_nm": 180,
+      "wl_max_nm": 400,
+      "mode": "dual_limit",
+      "combination": "min",
+      "note": "MPE = min(thermal, photochemical). Table 5, pp. 283\u2013284.",
+      "thermal": {
+        "description": "UV thermal limit: 5.6 t^0.25 kJ/m\u00b2 = 0.56 t^0.25 J/cm\u00b2. Listed as 'Also not to exceed' in Table 5.",
+        "regions": [
+          {
+            "t_min_s": 1e-9,
+            "t_max_s": 10,
+            "formula": "power",
+            "a": 0.56,
+            "b": 0.25,
+            "note": "H = 0.56 \u00d7 t^0.25 J/cm\u00b2"
+          }
+        ]
+      },
+      "photochemical": {
+        "description": "UV photochemical limit. Wavelength-dependent sub-regions.",
+        "regions": [
+          {
+            "wl_min_nm": 180,
+            "wl_max_nm": 302,
+            "t_min_s": 1e-9,
+            "t_max_s": 30000,
+            "formula": "constant",
+            "a": 3e-3,
+            "note": "30 J/m\u00b2 = 3\u00d710\u207b\u00b3 J/cm\u00b2"
+          },
+          {
+            "wl_min_nm": 302,
+            "wl_max_nm": 315,
+            "t_min_s": 1e-9,
+            "t_max_s": 30000,
+            "formula": "discrete",
+            "lookup": "uv_discrete_steps",
+            "note": "Discrete 1-nm step values from Table 5"
+          },
+          {
+            "wl_min_nm": 315,
+            "wl_max_nm": 400,
+            "t_min_s": 10,
+            "t_max_s": 30000,
+            "formula": "constant",
+            "a": 1.0,
+            "below_t_min": "not_applicable",
+            "note": "10 kJ/m\u00b2 = 1.0 J/cm\u00b2 for t \u2265 10 s. Below 10 s: photochemical undefined, only thermal applies."
+          }
+        ]
+      }
+    },
+    {
+      "name": "Visible/Near-IR",
+      "wl_min_nm": 400,
+      "wl_max_nm": 1400,
+      "mode": "single",
+      "uses_ca": true,
+      "note": "Table 7, p. 285. All sub-regions multiply by C_A.",
+      "regions": [
+        {
+          "t_min_s": 1e-9,
+          "t_max_s": 1e-7,
+          "formula": "ca_constant",
+          "a": 0.02,
+          "note": "200 C_A J/m\u00b2 = 0.02 C_A J/cm\u00b2"
+        },
+        {
+          "t_min_s": 1e-7,
+          "t_max_s": 10,
+          "formula": "ca_power",
+          "a": 1.1,
+          "b": 0.25,
+          "note": "11 C_A t^0.25 kJ/m\u00b2 = 1.1 C_A t^0.25 J/cm\u00b2"
+        },
+        {
+          "t_min_s": 10,
+          "t_max_s": 30000,
+          "formula": "ca_linear",
+          "a": 0.2,
+          "note": "2.0 C_A kW/m\u00b2 = 0.2 C_A W/cm\u00b2 \u2192 H = 0.2 C_A t J/cm\u00b2"
+        }
+      ]
+    },
+    {
+      "name": "FIR 1400\u20131500",
+      "wl_min_nm": 1400,
+      "wl_max_nm": 1500,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 1e-3, "formula": "constant", "a": 0.1,  "note": "1 kJ/m\u00b2 = 0.1 J/cm\u00b2"},
+        {"t_min_s": 1e-3, "t_max_s": 10,   "formula": "power",    "a": 0.56, "b": 0.25, "note": "5.6 t^0.25 kJ/m\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000, "formula": "linear",  "a": 0.1,  "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    },
+    {
+      "name": "FIR 1500\u20131800",
+      "wl_min_nm": 1500,
+      "wl_max_nm": 1800,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 10,    "formula": "constant", "a": 1.0, "note": "10 kJ/m\u00b2 = 1.0 J/cm\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000,  "formula": "linear",  "a": 0.1, "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    },
+    {
+      "name": "FIR 1800\u20132600",
+      "wl_min_nm": 1800,
+      "wl_max_nm": 2600,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 1e-3, "formula": "constant", "a": 0.1,  "note": "1.0 kJ/m\u00b2 = 0.1 J/cm\u00b2"},
+        {"t_min_s": 1e-3, "t_max_s": 10,   "formula": "power",    "a": 0.56, "b": 0.25, "note": "5.6 t^0.25 kJ/m\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000, "formula": "linear",  "a": 0.1,  "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    },
+    {
+      "name": "FIR 2600\u20131 mm",
+      "wl_min_nm": 2600,
+      "wl_max_nm": 1000000,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 1e-7, "formula": "constant", "a": 0.01, "note": "100 J/m\u00b2 = 0.01 J/cm\u00b2"},
+        {"t_min_s": 1e-7, "t_max_s": 10,   "formula": "power",    "a": 0.56, "b": 0.25, "note": "5.6 t^0.25 kJ/m\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000, "formula": "linear",  "a": 0.1,  "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    }
+  ],
+
+  "supplementary": {
+    "t_max": {
+      "description": "Recommended maximum anticipated exposure durations for skin (Table 4, Diffuse column).",
+      "regions": [
+        {"wl_min_nm": 180,  "wl_max_nm": 400,     "t_max_s": 30000, "note": "UV"},
+        {"wl_min_nm": 400,  "wl_max_nm": 700,     "t_max_s": 600,   "note": "Visible"},
+        {"wl_min_nm": 700,  "wl_max_nm": 1400,    "t_max_s": 600,   "note": "Near-IR"},
+        {"wl_min_nm": 1400, "wl_max_nm": 1000000, "t_max_s": 10,    "note": "Far-IR"}
+      ]
+    },
+    "limiting_apertures": {
+      "description": "Limiting aperture diameters for skin MPE averaging (Table 8, Skin column).",
+      "small_beam_threshold_mm": 1.0,
+      "small_beam_note": "For beam diameters below this threshold, the actual radiant exposure (not averaged over the limiting aperture) must be used for comparison with the exposure limit.",
+      "small_beam_reference": "Table 7 note b, p. 288",
+      "beam_diameter_definition": "For Gaussian beams, beam diameter is the 1/e diameter: the distance between diametrically opposed points where irradiance is 1/e (37%) of peak.",
+      "beam_diameter_reference": "p. 288",
+      "aperture_reference": "Table 8",
+      "regions": [
+        {"wl_min_nm": 180,    "wl_max_nm": 100000,  "diameter_mm": 3.5,  "note": "180 nm to 100 \u00b5m"},
+        {"wl_min_nm": 100000, "wl_max_nm": 1000000, "diameter_mm": 11.0, "note": "100 \u00b5m to 1 mm"}
+      ]
+    },
+    "large_area_correction": {
+      "description": "MPE correction for large beam cross-sections (\u03bb > 1.4 \u00b5m, t > 10 s). Table 7 note c.",
+      "threshold_cm2": 100,
+      "cap_cm2": 1000,
+      "formula_mW_cm2": "10000 / A_s",
+      "cap_mW_cm2": 10
+    },
+    "uv_successive_day_derate": {
+      "description": "De-rating factor for UV (280\u2013400 nm) on successive days.",
+      "wl_min_nm": 280,
+      "wl_max_nm": 400,
+      "factor": 2.5
+    }
+  }
+};
+</script>
+
+<script type="text/babel">
+
+var useState=React.useState,useMemo=React.useMemo,useEffect=React.useEffect,useRef=React.useRef;
+var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,ResponsiveContainer=Recharts.ResponsiveContainer,ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend;
+
+
+/* ═══════ STANDARD DATA (loaded from JSON; edit this to change standard) ═══════ */
+var _std = (typeof __STD_DATA__ !== "undefined") ? __STD_DATA__ : {"standard":{"name":"ICNIRP 2013","short_name":"ICNIRP 2013","reference":"Health Phys. 105(3):271\u2013295","year":2013,"organization":"International Commission on Non-Ionizing Radiation Protection","tables_used":"Tables 3, 5, 7","notes":"Skin exposure limits only. Ocular limits are not included.","unit":"J/cm\u00b2","wl_range_nm":[180,1000000],"dur_range_s":[1e-09,30000]},"correction_factors":{"CA":{"description":"Wavelength correction factor for 400\u20131400 nm skin MPE (Table 3, p. 282)","applies_to_bands":["Visible/Near-IR"],"default_outside_range":1.0,"regions":[{"wl_min_nm":400,"wl_max_nm":700,"type":"constant","value":1.0,"note":"400 \u2264 \u03bb < 700 nm"},{"wl_min_nm":700,"wl_max_nm":1050,"type":"power10","coefficient":0.002,"offset_nm":700,"note":"C_A = 10^(0.002 \u00d7 (\u03bb_nm \u2212 700))"},{"wl_min_nm":1050,"wl_max_nm":1400,"type":"constant","value":5.0,"note":"1050 \u2264 \u03bb \u2264 1400 nm"}]}},"uv_discrete_steps":{"description":"UV photochemical MPE for 302\u2013315 nm (Table 5). Discrete 1-nm steps. Values in J/cm\u00b2. Each entry gives the upper wavelength boundary and the MPE below that boundary.","note":"Left-inclusive, right-exclusive. For \u03bb in [302, 303): H = 4e-3, for [303, 304): H = 6e-3, etc.","steps":[{"wl_upper_nm":303,"H_J_cm2":0.004,"H_J_m2":40},{"wl_upper_nm":304,"H_J_cm2":0.006,"H_J_m2":60},{"wl_upper_nm":305,"H_J_cm2":0.01,"H_J_m2":100},{"wl_upper_nm":306,"H_J_cm2":0.016,"H_J_m2":160},{"wl_upper_nm":307,"H_J_cm2":0.025,"H_J_m2":250},{"wl_upper_nm":308,"H_J_cm2":0.04,"H_J_m2":400},{"wl_upper_nm":309,"H_J_cm2":0.063,"H_J_m2":630},{"wl_upper_nm":310,"H_J_cm2":0.1,"H_J_m2":1000},{"wl_upper_nm":311,"H_J_cm2":0.16,"H_J_m2":1600},{"wl_upper_nm":312,"H_J_cm2":0.25,"H_J_m2":2500},{"wl_upper_nm":313,"H_J_cm2":0.4,"H_J_m2":4000}],"fallback_H_J_cm2":0.63,"fallback_note":"313\u2013315 nm: 6.3 kJ/m\u00b2 = 0.63 J/cm\u00b2"},"display_bands":[{"name":"UV","wl_start_nm":180,"wl_end_nm":400},{"name":"Visible","wl_start_nm":400,"wl_end_nm":700},{"name":"Near-IR","wl_start_nm":700,"wl_end_nm":1400},{"name":"Far-IR","wl_start_nm":1400,"wl_end_nm":1000000}],"bands":[{"name":"UV","wl_min_nm":180,"wl_max_nm":400,"mode":"dual_limit","combination":"min","note":"MPE = min(thermal, photochemical). Table 5, pp. 283\u2013284.","thermal":{"description":"UV thermal limit: 5.6 t^0.25 kJ/m\u00b2 = 0.56 t^0.25 J/cm\u00b2. Listed as 'Also not to exceed' in Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"H = 0.56 \u00d7 t^0.25 J/cm\u00b2"}]},"photochemical":{"description":"UV photochemical limit. Wavelength-dependent sub-regions.","regions":[{"wl_min_nm":180,"wl_max_nm":302,"t_min_s":1e-09,"t_max_s":30000,"formula":"constant","a":0.003,"note":"30 J/m\u00b2 = 3\u00d710\u207b\u00b3 J/cm\u00b2"},{"wl_min_nm":302,"wl_max_nm":315,"t_min_s":1e-09,"t_max_s":30000,"formula":"discrete","lookup":"uv_discrete_steps","note":"Discrete 1-nm step values from Table 5"},{"wl_min_nm":315,"wl_max_nm":400,"t_min_s":10,"t_max_s":30000,"formula":"constant","a":1.0,"below_t_min":"not_applicable","note":"10 kJ/m\u00b2 = 1.0 J/cm\u00b2 for t \u2265 10 s. Below 10 s: photochemical undefined, only thermal applies."}]}},{"name":"Visible/Near-IR","wl_min_nm":400,"wl_max_nm":1400,"mode":"single","uses_ca":true,"note":"Table 7, p. 285. All sub-regions multiply by C_A.","regions":[{"t_min_s":1e-09,"t_max_s":1e-07,"formula":"ca_constant","a":0.02,"note":"200 C_A J/m\u00b2 = 0.02 C_A J/cm\u00b2"},{"t_min_s":1e-07,"t_max_s":10,"formula":"ca_power","a":1.1,"b":0.25,"note":"11 C_A t^0.25 kJ/m\u00b2 = 1.1 C_A t^0.25 J/cm\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"ca_linear","a":0.2,"note":"2.0 C_A kW/m\u00b2 = 0.2 C_A W/cm\u00b2 \u2192 H = 0.2 C_A t J/cm\u00b2"}]},{"name":"FIR 1400\u20131500","wl_min_nm":1400,"wl_max_nm":1500,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":0.001,"formula":"constant","a":0.1,"note":"1 kJ/m\u00b2 = 0.1 J/cm\u00b2"},{"t_min_s":0.001,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 1500\u20131800","wl_min_nm":1500,"wl_max_nm":1800,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":10,"formula":"constant","a":1.0,"note":"10 kJ/m\u00b2 = 1.0 J/cm\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 1800\u20132600","wl_min_nm":1800,"wl_max_nm":2600,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":0.001,"formula":"constant","a":0.1,"note":"1.0 kJ/m\u00b2 = 0.1 J/cm\u00b2"},{"t_min_s":0.001,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 2600\u20131 mm","wl_min_nm":2600,"wl_max_nm":1000000,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":1e-07,"formula":"constant","a":0.01,"note":"100 J/m\u00b2 = 0.01 J/cm\u00b2"},{"t_min_s":1e-07,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]}],"supplementary":{"t_max":{"description":"Recommended maximum anticipated exposure durations for skin (Table 4, Diffuse column).","regions":[{"wl_min_nm":180,"wl_max_nm":400,"t_max_s":30000,"note":"UV"},{"wl_min_nm":400,"wl_max_nm":700,"t_max_s":600,"note":"Visible"},{"wl_min_nm":700,"wl_max_nm":1400,"t_max_s":600,"note":"Near-IR"},{"wl_min_nm":1400,"wl_max_nm":1000000,"t_max_s":10,"note":"Far-IR"}]},"limiting_apertures":{"description":"Limiting aperture diameters for skin MPE averaging (Table 8, Skin column).","regions":[{"wl_min_nm":180,"wl_max_nm":100000,"diameter_mm":3.5,"note":"180 nm to 100 \u00b5m"},{"wl_min_nm":100000,"wl_max_nm":1000000,"diameter_mm":11.0,"note":"100 \u00b5m to 1 mm"}]},"large_area_correction":{"description":"MPE correction for large beam cross-sections (\u03bb > 1.4 \u00b5m, t > 10 s). Table 7 note c.","threshold_cm2":100,"cap_cm2":1000,"formula_mW_cm2":"10000 / A_s","cap_mW_cm2":10},"uv_successive_day_derate":{"description":"De-rating factor for UV (280\u2013400 nm) on successive days.","wl_min_nm":280,"wl_max_nm":400,"factor":2.5}}};
+
+/* ═══════ DATA-DRIVEN ENGINE ═══════ */
+/*
+ * NOTE: These functions duplicate web/engine.js. Both implementations read
+ * from the same JSON schema and must produce identical results.
+ *
+ * WHY THE DUPLICATION EXISTS:
+ * calculator.jsx is Babel-transpiled into a self-contained <script> block
+ * inside index.html. There is no module bundler, so it cannot import from
+ * engine.js. The standalone engine.js exists for Node.js server-side use
+ * and for cross-language verification against the Python engine.
+ *
+ * If you modify the calculation logic, update BOTH files and re-run the
+ * cross-language test suite to verify they remain in agreement.
+ */
+function CA(wl){var regs=_std.correction_factors.CA.regions;for(var i=0;i<regs.length;i++){var r=regs[i];if(wl>=r.wl_min_nm&&(wl<r.wl_max_nm||(i===regs.length-1&&wl===r.wl_max_nm))){if(r.type==="constant")return r.value;if(r.type==="power10")return Math.pow(10,r.coefficient*(wl-r.offset_nm));}}return _std.correction_factors.CA.default_outside_range||1;}
+function uvDisc(wl){var ds=_std.uv_discrete_steps;for(var i=0;i<ds.steps.length;i++){if(wl<ds.steps[i].wl_upper_nm)return ds.steps[i].H_J_cm2;}return ds.fallback_H_J_cm2;}
+function evalF(r,wl,t){var f=r.formula;if(f==="constant")return r.a;if(f==="power")return r.a*Math.pow(t,r.b);if(f==="linear")return r.a*t;if(f==="ca_constant")return r.a*CA(wl);if(f==="ca_power")return r.a*CA(wl)*Math.pow(t,r.b);if(f==="ca_linear")return r.a*CA(wl)*t;if(f==="discrete")return uvDisc(wl);return NaN;}
+function evalRegs(regs,wl,t){for(var i=0;i<regs.length;i++){var r=regs[i];if(r.wl_min_nm!==undefined&&r.wl_max_nm!==undefined){if(wl<r.wl_min_nm||wl>=r.wl_max_nm)continue;}if(t>=r.t_min_s&&t<r.t_max_s)return evalF(r,wl,t);if(t<r.t_min_s&&r.below_t_min==="not_applicable"){if(r.wl_min_nm!==undefined&&(wl<r.wl_min_nm||wl>=r.wl_max_nm))continue;return Infinity;}}return NaN;}
+function evalDual(band,wl,t){var th=evalRegs(band.thermal.regions,wl,t),pc=evalRegs(band.photochemical.regions,wl,t),a=isFinite(th),b=isFinite(pc);if(a&&b)return Math.min(th,pc);return a?th:b?pc:NaN;}
+function skinMPE(wl,t){for(var i=0;i<_std.bands.length;i++){var band=_std.bands[i];var inB=wl>=band.wl_min_nm&&wl<band.wl_max_nm;if(!inB&&i===_std.bands.length-1&&wl===band.wl_max_nm)inB=true;if(!inB)continue;return band.mode==="dual_limit"?evalDual(band,wl,t):evalRegs(band.regions,wl,t);}return NaN;}
+function rpCalc(wl,tau,prf,T){var r1=skinMPE(wl,tau),ht=skinMPE(wl,T),N=prf*T;if(N<=1)return{r1:r1,r2:r1,H:r1,N:N,bd:"Rule 1"};var r2=ht/N;return{r1:r1,r2:r2,H:Math.min(r1,r2),N:N,bd:r1<=r2?"Rule 1":"Rule 2"};}
+function bnd(wl){var db=_std.display_bands;for(var i=0;i<db.length;i++){if(wl>=db[i].wl_start_nm&&wl<db[i].wl_end_nm)return db[i].name;}return db[db.length-1].name;}
+function si(v,u){if(!isFinite(v))return"\u2014";var a=Math.abs(v);if(a===0)return"0 "+u;if(a>=1e6)return numFmt(v,4)+" "+u;if(a>=1e3)return(v/1e3).toPrecision(4)+" k"+u;if(a>=.1)return v.toPrecision(4)+" "+u;if(a>=1e-3)return(v*1e3).toPrecision(4)+" m"+u;if(a>=1e-6)return(v*1e6).toPrecision(4)+" \u00b5"+u;if(a>=1e-9)return(v*1e9).toPrecision(4)+" n"+u;return numFmt(v,4)+" "+u;}
+
+/* ═══════ SCIENTIFIC NOTATION ═══════ */
+var SUPS={"-":"\u207b","0":"\u2070","1":"\u00b9","2":"\u00b2","3":"\u00b3","4":"\u2074","5":"\u2075","6":"\u2076","7":"\u2077","8":"\u2078","9":"\u2079"};
+function supStr(n){var s=String(n),r="";for(var i=0;i<s.length;i++){r+=SUPS[s[i]]||s[i];}return r;}
+function numFmt(v,p){if(!isFinite(v))return"\u2014";if(v===0)return"0";var a=Math.abs(v),pr=p||4;if(a>=0.01&&a<1e4)return v.toPrecision(pr);var exp=Math.floor(Math.log10(a));var man=v/Math.pow(10,exp);return man.toFixed(pr-1)+"\u00d710"+supStr(exp);}
+function logTick(v){if(v==null||!isFinite(v)||v<=0)return"";var lg=Math.log10(v);if(Math.abs(lg-Math.round(lg))<0.01){var exp=Math.round(lg);return"10"+supStr(exp);}var exp2=Math.floor(lg);var man=v/Math.pow(10,exp2);return man.toPrecision(2)+"\u00d710"+supStr(exp2);}
+function ft(t){if(t===undefined||t===null||isNaN(t))return"\u2014";if(t<1e-9)return(t*1e12).toPrecision(3)+" ps";if(t<1e-6)return(t*1e9).toPrecision(3)+" ns";if(t<1e-3)return(t*1e6).toPrecision(3)+" \u00b5s";if(t<1)return(t*1e3).toPrecision(3)+" ms";return t.toPrecision(3)+" s";}
+var STD_NAME=_std.standard.name;
+var STD_REF=_std.standard.reference;
+var STD_TABLES=_std.standard.tables_used;
+
+/* ═══════ UNIT CONVERSION ═══════ */
+var FLUENCE_UNITS=[
+  {id:"mJ/cm\u00b2", label:"mJ/cm\u00b2", mult:1e3},
+  {id:"J/cm\u00b2",  label:"J/cm\u00b2",  mult:1},
+  {id:"J/m\u00b2",   label:"J/m\u00b2",   mult:1e4},
+  {id:"mJ/m\u00b2",  label:"mJ/m\u00b2",  mult:1e7}
+];
+var IRRAD_UNITS=[
+  {id:"W/cm\u00b2",  label:"W/cm\u00b2",  mult:1},
+  {id:"mW/cm\u00b2", label:"mW/cm\u00b2", mult:1e3},
+  {id:"W/m\u00b2",   label:"W/m\u00b2",   mult:1e4}
+];
+var BEAM_DIA_UNITS=[
+  {id:"mm",  label:"mm",  toMM:1},
+  {id:"\u00b5m", label:"\u00b5m", toMM:0.001},
+  {id:"cm",  label:"cm",  toMM:10},
+  {id:"m",   label:"m",   toMM:1000}
+];
+var AREA_UNITS=[
+  {id:"cm\u00b2",  label:"cm\u00b2",  fromCM2:1},
+  {id:"mm\u00b2",  label:"mm\u00b2",  fromCM2:100},
+  {id:"m\u00b2",   label:"m\u00b2",   fromCM2:1e-4}
+];
+var ENERGY_UNITS=[
+  {id:"J",   label:"J",   fromJ:1},
+  {id:"mJ",  label:"mJ",  fromJ:1e3},
+  {id:"\u00b5J", label:"\u00b5J", fromJ:1e6},
+  {id:"nJ",  label:"nJ",  fromJ:1e9}
+];
+var WL_UNITS=[
+  {id:"nm",  label:"nm",  toNM:1},
+  {id:"\u00b5m", label:"\u00b5m", toNM:1e3}
+];
+var DUR_UNITS=[
+  {id:"s",   label:"s",   toS:1},
+  {id:"ms",  label:"ms",  toS:1e-3},
+  {id:"\u00b5s", label:"\u00b5s", toS:1e-6},
+  {id:"ns",  label:"ns",  toS:1e-9},
+  {id:"ps",  label:"ps",  toS:1e-12}
+];
+var FREQ_UNITS=[
+  {id:"Hz",  label:"Hz",  toHz:1},
+  {id:"kHz", label:"kHz", toHz:1e3},
+  {id:"MHz", label:"MHz", toHz:1e6}
+];
+function convF(v,uid){if(!isFinite(v))return"\u2014";for(var i=0;i<FLUENCE_UNITS.length;i++){if(FLUENCE_UNITS[i].id===uid)return numFmt(v*FLUENCE_UNITS[i].mult,4)+" "+uid;}return si(v,"J/cm\u00b2");}
+function convE(v,uid){if(!isFinite(v))return"\u2014";for(var i=0;i<IRRAD_UNITS.length;i++){if(IRRAD_UNITS[i].id===uid)return numFmt(v*IRRAD_UNITS[i].mult,4)+" "+uid;}return si(v,"W/cm\u00b2");}
+/* Bare-number versions for table cells (unit goes in header only) */
+function convFN(v,uid){if(!isFinite(v))return"\u2014";for(var i=0;i<FLUENCE_UNITS.length;i++){if(FLUENCE_UNITS[i].id===uid)return numFmt(v*FLUENCE_UNITS[i].mult,4);}return numFmt(v,4);}
+function convEN(v,uid){if(!isFinite(v))return"\u2014";for(var i=0;i<IRRAD_UNITS.length;i++){if(IRRAD_UNITS[i].id===uid)return numFmt(v*IRRAD_UNITS[i].mult,4);}return numFmt(v,4);}
+function durInUnit(t,uid){if(!isFinite(t))return"\u2014";for(var i=0;i<DUR_UNITS.length;i++){if(DUR_UNITS[i].id===uid)return numFmt(t/DUR_UNITS[i].toS,4);}return numFmt(t,4);}
+function fluMult(uid){for(var i=0;i<FLUENCE_UNITS.length;i++){if(FLUENCE_UNITS[i].id===uid)return FLUENCE_UNITS[i].mult;}return 1e3;}
+
+/* PA engine */
+function paEffFluence(wl,tau,f,T){var r1=skinMPE(wl,tau),hT=skinMPE(wl,T);if(!isFinite(r1)||!isFinite(hT))return NaN;var N=f*T;if(N<1)N=1;return Math.min(r1,hT/N);}
+function paRelSNR(wl,tau,f,T){var ps=skinMPE(wl,tau);if(!isFinite(ps)||ps<=0)return NaN;var pe=paEffFluence(wl,tau,f,T);if(!isFinite(pe)||pe<=0)return NaN;var N=f*T;if(N<1)N=1;return(pe*Math.sqrt(N))/ps;}
+function paOptPRF(wl,tau,T){var hs=skinMPE(wl,tau),hT=skinMPE(wl,T);if(!isFinite(hs)||!isFinite(hT)||hs<=0||T<=0)return NaN;return hT/(hs*T);}
+
+/* ═══════ BEAM GEOMETRY & LIMITING APERTURE (ICNIRP 2013 Table 8, Table 7 note b, p. 288) ═══════ */
+/*
+ * Limiting aperture: the diameter over which radiant exposure is averaged
+ * for comparison with the MPE. For skin:
+ *   λ < 100 µm:  3.5 mm  (Table 8)
+ *   λ ≥ 100 µm:  11 mm   (Table 8)
+ *
+ * Evaluation rules (Table 7 note b, p. 288):
+ *   d < 1 mm:     Use ACTUAL radiant exposure (not averaged over aperture)
+ *   1 mm ≤ d < d_ap: Average over the limiting aperture → H_eval = E / A_aperture
+ *   d ≥ d_ap:     Beam fills aperture → H_eval = E / A_beam
+ *
+ * "Beam diameter" for Gaussian beams is the 1/e diameter (p. 288):
+ *   "the distance between diametrically opposed points in the beam where
+ *    the local irradiance is 1/e, 0.37 times peak irradiance"
+ */
+function getAperture(wl_nm){
+  var regs=_std.supplementary.limiting_apertures.regions;
+  for(var i=0;i<regs.length;i++){
+    if(wl_nm>=regs[i].wl_min_nm&&wl_nm<regs[i].wl_max_nm)return regs[i].diameter_mm;
+  }
+  return regs[regs.length-1].diameter_mm;
+}
+
+function beamEval(wl_nm, beam_dia_mm){
+  var d_ap=getAperture(wl_nm);
+  if(!isFinite(beam_dia_mm)||beam_dia_mm<=0)return{d_eval_mm:0,area_cm2:0,regime:"invalid",aperture_mm:d_ap,threshold_mm:1,note:"Enter a beam diameter greater than zero."};
+  var ap=_std.supplementary&&_std.supplementary.limiting_apertures;
+  var threshold=(ap&&ap.small_beam_threshold_mm)||1.0;
+  var d=beam_dia_mm;
+  var d_eval, regime, note;
+  var apRef=(ap&&ap.aperture_reference)||"";
+  var sbRef=(ap&&ap.small_beam_reference)||"";
+
+  if(d<threshold){
+    d_eval=d;
+    regime="actual";
+    note="Beam < "+threshold+" mm: actual radiant exposure used ("+sbRef+"). No aperture averaging.";
+  } else if(d<d_ap){
+    d_eval=d_ap;
+    regime="aperture";
+    note="Beam \u2265 "+threshold+" mm but < "+d_ap.toFixed(1)+" mm aperture: averaged over "+d_ap.toFixed(1)+" mm limiting aperture ("+apRef+").";
+  } else {
+    d_eval=d;
+    regime="beam";
+    note="Beam \u2265 "+d_ap.toFixed(1)+" mm aperture: actual beam area used. For non-uniform beams, evaluate the highest H within any "+d_ap.toFixed(1)+" mm circle.";
+  }
+
+  var r_cm=d_eval/20;
+  var area_cm2=Math.PI*r_cm*r_cm;
+  return{d_eval_mm:d_eval, area_cm2:area_cm2, regime:regime, aperture_mm:d_ap, threshold_mm:threshold, note:note};
+}
+
+var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#F0E442","#000000"];
+var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
+var WLTICKS=[200,400,700,1000,1400,2000,3000];
+function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
+
+var TH={
+  light:{bg:"#f0f2f5",card:"#f8f9fb",bgI:"#eaecf0",bd:"#d4d8de",bl:"#a0a4aa",tx:"#1a1d22",tm:"#525960",td:"#737880",ac:"#0072B2",a2:"#E69F00",ok:"#0072B2",no:"#D55E00",gr:"#e4e7eb",tp:"#f8f9fb"},
+  dark:{bg:"#28282e",card:"#333338",bgI:"#2c2c32",bd:"#48484f",bl:"#58585f",tx:"#d8d8e0",tm:"#a0a0a8",td:"#808088",ac:"#56B4E9",a2:"#E69F00",ok:"#56B4E9",no:"#E69F00",gr:"#38383e",tp:"#333338"}
+};
+
+var uid=1;
+function mkL(wl){return{id:uid++,wl:wl,wlStr:String(wl),wlU:"nm",ds:"10",dur:1e-8,dU:"ns",rp:false,prf:10,prfStr:"10",prfU:"Hz",tT:1,tTStr:"1",tTU:"s",show:true,fU:"mJ/cm\u00b2",eU:"W/cm\u00b2"};}
+function pDur(s){var v=parseFloat(s);return(isFinite(v)&&v>0)?v:null;}
+function uMult(arr,uid2){for(var i=0;i<arr.length;i++){if(arr[i].id===uid2)return arr[i];}return arr[0];}
+function computeR(L){var h=skinMPE(L.wl,L.dur);var rp=L.rp?rpCalc(L.wl,L.dur,L.prf,L.tT):null;var effH=rp?rp.H:h;var irr=isFinite(effH)&&L.dur>0?effH/L.dur:NaN;return{wl:L.wl,dur:L.dur,h:h,rp:rp,effH:effH,irr:irr,ca:CA(L.wl),band:bnd(L.wl),rule:rp?rp.bd:"Rule 1"};}
+
+function dlSVG(ref,fn,sm){try{var svg=ref.current.querySelector("svg");if(!svg)return;var c=svg.cloneNode(true);c.setAttribute("xmlns","http://www.w3.org/2000/svg");c.setAttribute("xmlns:xlink","http://www.w3.org/1999/xlink");var u="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(c));var a=document.createElement("a");a.href=u;a.download=fn;a.style.display="none";ref.current.appendChild(a);a.click();ref.current.removeChild(a);sm("Downloaded!");setTimeout(function(){sm("")},2e3);}catch(e){sm("Failed");}}
+function dlCSV(d,cols,fn,sm){try{var lines=[cols.join(",")];for(var i=0;i<d.length;i++){var row=[];for(var j=0;j<cols.length;j++){var v=d[i][cols[j]];row.push(v===undefined||v===null?"":String(v));}lines.push(row.join(","));}var u="data:text/csv;charset=utf-8,"+encodeURIComponent(lines.join("\n"));var a=document.createElement("a");a.href=u;a.download=fn;a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);sm("CSV downloaded!");setTimeout(function(){sm("")},2e3);}catch(e){sm("Failed");}}
+
+/* ═══════ SHARED STYLES ═══════ */
+function mkBt(on,c,T){return{padding:"6px 14px",fontSize:11,fontWeight:600,border:"1px solid "+(on?c:T.bd),cursor:"pointer",background:on?c:"transparent",color:on?"#fff":T.tm,borderRadius:4};}
+
+/* ═══════ MPE TAB ═══════ */
+function MPETab(p){
+  var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
+  var _ls=useState([mkL(532)]),lasers=_ls[0],setLasers=_ls[1];
+  var _fl=useState(""),fl=_fl[0],setFl=_fl[1];
+  var _ch=useState("wl"),cht=_ch[0],setCht=_ch[1];
+  var _nw=useState(""),nw=_nw[0],setNw=_nw[1];
+  var _cv=useState(0),cv=_cv[0],setCv=_cv[1];
+  var _dr=useState(false),dirty=_dr[0],setDirty=_dr[1];
+  var _bd=useState("5"),bdStr=_bd[0],setBdStr=_bd[1];
+  var _bn=useState(5),beamDia=_bn[0],setBeamDia=_bn[1];
+  var _bdu=useState("mm"),bdUnit=_bdu[0],setBdUnit=_bdu[1];
+  var _pe=useState(""),peStr=_pe[0],setPeStr=_pe[1];
+  var _peu=useState("\u00b5J"),peUnit=_peu[0],setPeUnit=_peu[1];
+  var _flu=useState("mJ/cm\u00b2"),flUnit=_flu[0],setFlUnit=_flu[1];
+  var _eau=useState("\u00b5J"),eDispUnit=_eau[0],setEDispUnit=_eau[1];
+  var _aau=useState("mm\u00b2"),aDispUnit=_aau[0],setADispUnit=_aau[1];
+  var _mfu=useState("mJ/cm\u00b2"),mpeDispUnit=_mfu[0],setMpeDispUnit=_mfu[1];
+  var _bopen=useState(false),beamOpen=_bopen[0],setBeamOpen=_bopen[1];
+  var _bdr=useState(false),beamDirty=_bdr[0],setBeamDirty=_bdr[1];
+  var _bsel=useState(null),beamSel=_bsel[0],setBeamSel=_bsel[1]; /* null = all selected */
+  var _sdU=useState("ns"),sumDurU=_sdU[0],setSumDurU=_sdU[1];
+  var _sfU=useState("mJ/cm\u00b2"),sumFluU=_sfU[0],setSumFluU=_sfU[1];
+  var _seU=useState("W/cm\u00b2"),sumIrrU=_seU[0],setSumIrrU=_seU[1];
+  function isBeamSel(id){return beamSel===null||beamSel.indexOf(id)>=0;}
+  function togBeamSel(id){
+    if(beamSel===null){/* all selected → deselect one */
+      setBeamSel(lasers.map(function(L){return L.id}).filter(function(lid){return lid!==id}));
+    } else {
+      var idx=beamSel.indexOf(id);
+      if(idx>=0){var n=beamSel.slice();n.splice(idx,1);setBeamSel(n);}
+      else{var added=beamSel.concat([id]);setBeamSel(added.length===lasers.length?null:added);}
+    }
+  }  var wRef=useRef(null),dRef=useRef(null);
+  var lb={display:"block",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:4};
+  var ipFull={width:"100%",padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var thS={padding:"7px 10px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:700,letterSpacing:"0.03em"};
+  var tdSt={padding:"7px 10px",fontSize:12,fontFamily:"monospace"};
+  var hSel={fontSize:9,padding:"2px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",fontWeight:700,outline:"none"};
+
+  function calc(){setCv(function(c){return c+1;});setDirty(false);setBeamDirty(false);}
+  function beamCalc(){setBeamDirty(false);}
+  useEffect(function(){calc();},[]);
+  function upL(id,k,v){setLasers(lasers.map(function(L){if(L.id!==id)return L;var n={id:L.id,wl:L.wl,wlStr:L.wlStr,wlU:L.wlU,ds:L.ds,dur:L.dur,dU:L.dU,rp:L.rp,prf:L.prf,prfStr:L.prfStr,prfU:L.prfU,tT:L.tT,tTStr:L.tTStr,tTU:L.tTU,show:L.show,fU:L.fU,eU:L.eU};n[k]=v;if(k==="wlStr"){var wv=Number(v)*uMult(WL_UNITS,n.wlU).toNM;if(isFinite(wv)&&wv>=180&&wv<=1e6)n.wl=wv;}if(k==="wlU"){var cWl=parseFloat(n.wlStr);if(isFinite(cWl)){var nmVal=cWl*uMult(WL_UNITS,L.wlU).toNM;n.wlStr=(nmVal/uMult(WL_UNITS,v).toNM).toPrecision(6).replace(/\.?0+$/,"");}n.wlU=v;}if(k==="ds"){var d=pDur(v);if(d)n.dur=d*uMult(DUR_UNITS,n.dU).toS;}if(k==="dU"){var cD=parseFloat(n.ds);if(isFinite(cD)&&cD>0){var sVal=cD*uMult(DUR_UNITS,L.dU).toS;n.ds=(sVal/uMult(DUR_UNITS,v).toS).toPrecision(4).replace(/\.?0+$/,"");}n.dU=v;var d2=parseFloat(n.ds);if(d2>0)n.dur=d2*uMult(DUR_UNITS,v).toS;}if(k==="prfStr"){n.prfStr=v;var pp=Number(v)*uMult(FREQ_UNITS,n.prfU).toHz;if(isFinite(pp)&&pp>0)n.prf=pp;}if(k==="prfU"){var cP=parseFloat(n.prfStr);if(isFinite(cP)&&cP>0){var hzVal=cP*uMult(FREQ_UNITS,L.prfU).toHz;n.prfStr=(hzVal/uMult(FREQ_UNITS,v).toHz).toPrecision(4).replace(/\.?0+$/,"");}n.prfU=v;var p2=parseFloat(n.prfStr);if(p2>0)n.prf=p2*uMult(FREQ_UNITS,v).toHz;}if(k==="tTStr"){n.tTStr=v;var tt=Number(v)*uMult(DUR_UNITS,n.tTU).toS;if(isFinite(tt)&&tt>0)n.tT=tt;}if(k==="tTU"){var cT=parseFloat(n.tTStr);if(isFinite(cT)&&cT>0){var sVal2=cT*uMult(DUR_UNITS,L.tTU).toS;n.tTStr=(sVal2/uMult(DUR_UNITS,v).toS).toPrecision(4).replace(/\.?0+$/,"");}n.tTU=v;var t2=parseFloat(n.tTStr);if(t2>0)n.tT=t2*uMult(DUR_UNITS,v).toS;}return n;}));setDirty(true);}
+  function addL(){var v=parseInt(nw,10);if(!isNaN(v)&&v>=180&&v<=1e6){setLasers(lasers.concat([mkL(v)]));setNw("");setDirty(true);}}
+  function rmL(id){if(lasers.length<=1)return;setLasers(lasers.filter(function(L){return L.id!==id}));setDirty(true);}
+  function toggleShow(id){setLasers(lasers.map(function(L){if(L.id!==id)return L;var n={id:L.id,wl:L.wl,wlStr:L.wlStr,ds:L.ds,dur:L.dur,rp:L.rp,prf:L.prf,prfStr:L.prfStr,tT:L.tT,tTStr:L.tTStr,show:!L.show,fU:L.fU,eU:L.eU};return n;}));}
+  var _pfu=useState("mJ/cm\u00b2"),plotFU=_pfu[0],setPlotFU=_pfu[1];
+  var results=useMemo(function(){return lasers.map(computeR);},[cv,lasers]);
+  var plotLasers=lasers.filter(function(L){return L.show});
+  var pfm=fluMult(plotFU);
+  var wld=useMemo(function(){var durs=[];plotLasers.forEach(function(L){if(durs.indexOf(L.dur)===-1)durs.push(L.dur);});var sp=[[180,400,3],[400,700,4],[700,1400,8],[1400,3000,15]];var pp=[];for(var si2=0;si2<sp.length;si2++)for(var w=sp[si2][0];w<=sp[si2][1];w+=sp[si2][2]){var row={wl:w},any=false;for(var di=0;di<durs.length;di++){var h=skinMPE(w,durs[di]);if(isFinite(h)&&h>0){row["d"+di]=h*pfm;any=true;}}if(any)pp.push(row);}return{d:pp,durs:durs};},[cv,plotLasers,pfm]);
+  var drd=useMemo(function(){var ws=[];plotLasers.forEach(function(L){if(ws.indexOf(L.wl)===-1)ws.push(L.wl);});var a=[];for(var e=-9;e<=4.5;e+=.05){var t=Math.pow(10,e),r={t:t},any=false;for(var j=0;j<ws.length;j++){var h=skinMPE(ws[j],t);if(isFinite(h)&&h>0){r["w"+ws[j]]=h*pfm;any=true;}}if(any)a.push(r);}return{d:a,ws:ws};},[cv,plotLasers,pfm]);
+
+  function doExport(){try{var ths2="background:#f1f5f9;padding:8px 12px;text-align:left;border-bottom:2px solid #d4d4d4;font-size:11px";var tds2="padding:6px 12px;border-bottom:1px solid #e5e5e5;font-size:13px";var rows="";for(var i=0;i<results.length;i++){var r=results[i],L=lasers[i];rows+='<tr><td style="'+tds2+'">'+r.wl+'</td><td style="'+tds2+'">'+durInUnit(r.dur,sumDurU)+'</td><td style="'+tds2+'">'+r.band+'</td><td style="'+tds2+'">'+(r.wl>=400&&r.wl<1400?r.ca.toFixed(3):"\u2014")+'</td><td style="'+tds2+';font-weight:700">'+convFN(r.effH,sumFluU)+'</td><td style="'+tds2+'">'+convEN(r.irr,sumIrrU)+'</td><td style="'+tds2+'">'+(L.rp?L.prf:"\u2014")+'</td><td style="'+tds2+'">'+(r.rp?Math.round(r.rp.N):"1")+'</td><td style="'+tds2+'">'+r.rule+'</td></tr>';}var html='<!DOCTYPE html><html><head><title>MPE Report</title><style>body{font-family:Helvetica,sans-serif;max-width:960px;margin:40px auto;color:#171717;line-height:1.5;padding:0 20px}table{border-collapse:collapse;width:100%;margin:16px 0}th{'+ths2+'}h1{font-size:22px}h2{font-size:14px;color:#525252;margin:24px 0 8px}</style></head><body><h1>Laser Skin MPE Report</h1><p style="color:#737373;font-size:12px">'+STD_NAME+' \u2014 '+new Date().toLocaleString()+'</p><h2>Results</h2><table><thead><tr><th style="'+ths2+'">Wavelength (nm)</th><th style="'+ths2+'">Duration ('+sumDurU+')</th><th style="'+ths2+'">Band</th><th style="'+ths2+'">C<sub>A</sub></th><th style="'+ths2+'">Fluence, H ('+sumFluU+')</th><th style="'+ths2+'">Irradiance, E ('+sumIrrU+')</th><th style="'+ths2+'">Repetition Rate (Hz)</th><th style="'+ths2+'">Pulses</th><th style="'+ths2+'">Rule</th></tr></thead><tbody>'+rows+'</tbody></table><p style="margin-top:32px;font-size:11px;color:#a3a3a3;border-top:1px solid #e5e5e5;padding-top:12px">'+STD_NAME+' \u2014 For research and educational purposes only. Not a certified safety instrument. Skin MPE only \u2014 ocular limits not evaluated. Verify all values against the applicable standard with a qualified Laser Safety Officer.</p></body></html>';var u="data:text/html;charset=utf-8,"+encodeURIComponent(html);var a=document.createElement("a");a.href=u;a.download="mpe-report.html";a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);setMsg("Report downloaded!");setTimeout(function(){setMsg("")},2e3);}catch(e){setMsg("Export failed");}}
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {lasers.map(function(L,idx){var r=results[idx];var col=WC[idx%WC.length];return (
+        <div key={L.id} style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",borderBottom:"1px solid "+T.bd,background:T.bg}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:5,background:col,flexShrink:0}}/><span style={{fontSize:14,fontWeight:700}}>{L.wl} nm</span><span style={{fontSize:11,color:T.td}}>{r.band}</span>{r.wl>=400&&r.wl<1400?<span style={{fontSize:10,color:T.td,fontFamily:"monospace"}}>C{"\u2090"} = {r.ca.toFixed(3)}</span>:null}</div>
+            {lasers.length>1?<button onClick={function(){rmL(L.id)}} style={{background:"none",border:"none",color:T.td,cursor:"pointer",fontSize:15}}>{"\u00d7"}</button>:null}
+          </div>
+          <div style={{padding:"12px 14px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div><label style={lb}>Wavelength</label><div style={{display:"flex",gap:4}}><input type="text" value={L.wlStr} onChange={function(e){upL(L.id,"wlStr",e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.wlU} onChange={function(e){upL(L.id,"wlU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{L.wl<400?"UV 180\u2013400 nm":L.wl<700?"Visible 400\u2013700 nm":L.wl<1400?"Near-IR 700\u20131400 nm":"Far-IR 1400+ nm"}</div></div>
+              <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={L.ds} onChange={function(e){upL(L.id,"ds",e.target.value)}} placeholder="e.g. 10" style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.dU} onChange={function(e){upL(L.id,"dU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>= {ft(L.dur)}</div></div>
+            </div>
+            <div style={{marginTop:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:T.tm}} onClick={function(){upL(L.id,"rp",!L.rp)}}><div style={{width:34,height:18,borderRadius:9,background:L.rp?T.a2:"#a3a3a3",position:"relative",flexShrink:0,transition:"background 0.15s"}}><div style={{width:14,height:14,borderRadius:7,background:"#fff",position:"absolute",top:2,left:L.rp?18:2,transition:"left 0.15s",boxShadow:"0 1px 2px rgba(0,0,0,0.15)"}}/></div>Repetitive Pulse</label>
+              {L.rp?<div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap"}}><div><label style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Repetition Rate</label><div style={{display:"flex",gap:3}}><input type="text" value={L.prfStr} onChange={function(e){upL(L.id,"prfStr",e.target.value)}} style={{width:70,padding:"4px 8px",fontSize:12,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={L.prfU} onChange={function(e){upL(L.id,"prfU",e.target.value)}} style={{fontSize:10,padding:"2px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div><div><label style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Exposure Time</label><div style={{display:"flex",gap:3}}><input type="text" value={L.tTStr} onChange={function(e){upL(L.id,"tTStr",e.target.value)}} style={{width:70,padding:"4px 8px",fontSize:12,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={L.tTU} onChange={function(e){upL(L.id,"tTU",e.target.value)}} style={{fontSize:10,padding:"2px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div></div>:null}
+            </div>
+            {r?<div style={{marginTop:12,paddingTop:10,borderTop:"1px solid "+T.bd}}>
+              <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ac,marginBottom:8}}>Per-Pulse MPE</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                    <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Fluence (H)</div>
+                    <select value={L.fU} onChange={function(e){upL(L.id,"fU",e.target.value)}} style={{fontSize:9,padding:"1px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>
+                      {FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}
+                    </select>
+                  </div>
+                  <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:T.ac}}>{convF(r.effH,L.fU)}</div>
+                  <div style={{fontSize:9,color:T.a2,marginTop:1}}>{STD_NAME+" table value"}</div>
+                </div>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                    <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Irradiance (E)</div>
+                    <select value={L.eU} onChange={function(e){upL(L.id,"eU",e.target.value)}} style={{fontSize:9,padding:"1px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>
+                      {IRRAD_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}
+                    </select>
+                  </div>
+                  <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:T.tm}}>{convE(r.irr,L.eU)}</div>
+                  <div style={{fontSize:9,color:T.td,marginTop:1}}>E = H / t</div>
+                </div>
+                <div><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule</div><div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:T.tm}}>{r.rule}</div><div style={{fontSize:9,color:T.td,marginTop:1}}>{L.rp?Math.round(r.rp.N)+" pulses":"Single pulse"}</div></div>
+              </div>
+              {L.dur<1e-9?<div style={{marginTop:8,fontSize:11,color:T.no,fontWeight:600}}>Duration below 1 ns {"\u2014"} {STD_NAME+" does not define"} skin MPE for this regime (p. 287)</div>:null}
+              {r.rp?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}><div style={{padding:"8px 12px",borderRadius:4,opacity:r.rp.bd==="Rule 1"?1:0.35,background:r.rp.bd==="Rule 1"?T.ac+"12":"transparent",border:"1px solid "+(r.rp.bd==="Rule 1"?T.ac:T.bd)}}><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Rule 1 {"\u2014"} Single Pulse Limit</div><div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:r.rp.bd==="Rule 1"?T.ac:T.td,marginTop:2}}>{convF(r.rp.r1,L.fU)}</div></div><div style={{padding:"8px 12px",borderRadius:4,opacity:r.rp.bd==="Rule 2"?1:0.35,background:r.rp.bd==="Rule 2"?T.ac+"12":"transparent",border:"1px solid "+(r.rp.bd==="Rule 2"?T.ac:T.bd)}}><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Rule 2 {"\u2014"} Average (H_T / N)</div><div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:r.rp.bd==="Rule 2"?T.ac:T.td,marginTop:2}}>{convF(r.rp.r2,L.fU)}</div></div></div>:null}
+            </div>:null}
+          </div>
+        </div>
+      );})}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="number" placeholder="Wavelength (nm)" value={nw} onChange={function(e){setNw(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addL();}}} style={{width:160,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><button onClick={addL} style={mkBt(true,T.a2,T)}>+ Add Wavelength</button></div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>{dirty?<span style={{fontSize:11,color:T.ac,fontWeight:500}}>Click to update</span>:null}</div>
+      </div>
+      {/* ═══════ BEAM SAFETY EVALUATION (collapsible) ═══════ */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
+        <button onClick={function(){setBeamOpen(!beamOpen)}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"transparent",border:"none",cursor:"pointer",color:T.tm,textAlign:"left"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontSize:13,fontWeight:600,color:beamOpen?T.ac:T.tm}}>{beamOpen?"\u25BC":"\u25B6"}</span>
+            <span style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:beamOpen?T.ac:T.tm}}>Beam Safety Evaluation</span>
+            {!beamOpen?<span style={{fontSize:10,color:T.td,fontWeight:400}}>{"\u2014"} Evaluate max permissible pulse energy for a specific beam diameter</span>:null}
+          </div>
+        </button>
+        {beamOpen?(
+          <div style={{padding:"0 14px 14px"}}>
+            {/* Convention warning — reads from standard JSON */}
+            {(function(){
+              var ap=_std.supplementary&&_std.supplementary.limiting_apertures;
+              var defn=(ap&&ap.beam_diameter_definition)||"For Gaussian beams, beam diameter is the 1/e diameter (37% of peak irradiance).";
+              var dRef=(ap&&ap.beam_diameter_reference)||"";
+              return (
+                <div style={{padding:"8px 12px",marginBottom:12,borderRadius:4,background:T.bgI,border:"1px solid "+T.bd,fontSize:10,color:T.tm,lineHeight:1.7}}>
+                  <strong style={{color:T.tx}}>Beam diameter convention ({STD_NAME}{dRef?", "+dRef:""}):</strong>{" "}
+                  {defn}{" "}
+                  The 1/e diameter is <strong style={{color:T.no}}>{"\u221a"}2 {"\u2248"} 1.41{"\u00d7"} smaller</strong> than the 1/e{"\u00b2"} diameter commonly reported in laser datasheets.{" "}
+                  If your spec sheet gives the 1/e{"\u00b2"} diameter, divide by 1.414 before entering here.{" "}
+                  For top-hat/uniform beams, enter the physical beam diameter.
+                </div>
+              );
+            })()}
+            {/* Inputs with unit dropdowns */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
+              <div>
+                <label style={lb}>Beam Diameter</label>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="text" value={bdStr} onChange={function(e){setBdStr(e.target.value);var v=parseFloat(e.target.value);if(isFinite(v)&&v>0){var toMM=1;for(var i=0;i<BEAM_DIA_UNITS.length;i++){if(BEAM_DIA_UNITS[i].id===bdUnit)toMM=BEAM_DIA_UNITS[i].toMM;}setBeamDia(v*toMM);}setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <select value={bdUnit} onChange={function(e){var oldMM=1,newMM=1;for(var i=0;i<BEAM_DIA_UNITS.length;i++){if(BEAM_DIA_UNITS[i].id===bdUnit)oldMM=BEAM_DIA_UNITS[i].toMM;if(BEAM_DIA_UNITS[i].id===e.target.value)newMM=BEAM_DIA_UNITS[i].toMM;}var cur=parseFloat(bdStr);if(isFinite(cur)){var mm=cur*oldMM;setBdStr((mm/newMM).toPrecision(4));}setBdUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{BEAM_DIA_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                </div>
+              </div>
+              <div>
+                <label style={lb}>Pulse Energy (optional)</label>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="text" placeholder="e.g. 500" value={peStr} onChange={function(e){setPeStr(e.target.value);setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <select value={peUnit} onChange={function(e){setPeUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{ENERGY_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                </div>
+              </div>
+              <div>
+                <label style={lb}>Or Direct Fluence</label>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="text" placeholder="Your fluence" value={fl} step="any" onChange={function(e){setFl(e.target.value);setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <select value={flUnit} onChange={function(e){setFlUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                </div>
+              </div>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <button onClick={beamCalc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:beamDirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer"}}>{beamDirty?"Calculate":"Calculated \u2713"}</button>
+              {beamDirty?<span style={{fontSize:11,color:T.ac,fontWeight:500}}>Click to update beam evaluation</span>:null}
+            </div>
+            {/* Wavelength selection */}
+            <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+              <span style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Evaluate</span>
+              {lasers.map(function(L,i){var col=WC[i%WC.length];var sel=isBeamSel(L.id);return(
+                <label key={L.id} style={{display:"flex",alignItems:"center",gap:3,cursor:"pointer",fontSize:11,fontFamily:"monospace",color:sel?col:T.td,opacity:sel?1:0.4}}>
+                  <input type="checkbox" checked={sel} onChange={function(){togBeamSel(L.id)}} style={{accentColor:col,width:12,height:12}}/>
+                  {L.wl} nm
+                </label>
+              );})}
+            </div>
+            {/* Multi-wavelength results table */}
+            {(function(){
+              /* Shared computations */
+              var peVal=parseFloat(peStr);
+              var peToJ=1;for(var pi=0;pi<ENERGY_UNITS.length;pi++){if(ENERGY_UNITS[pi].id===peUnit)peToJ=1/ENERGY_UNITS[pi].fromJ;}
+              var E_user_J=(isFinite(peVal)&&peVal>0)?peVal*peToJ:null;
+              var flRaw=fl?parseFloat(fl):null;
+              var flToJcm2=1;for(var fi=0;fi<FLUENCE_UNITS.length;fi++){if(FLUENCE_UNITS[fi].id===flUnit)flToJcm2=1/FLUENCE_UNITS[fi].mult;}
+              var flv2=(flRaw!==null&&isFinite(flRaw))?flRaw*flToJcm2:null;
+              var eMult=1;for(var ei=0;ei<ENERGY_UNITS.length;ei++){if(ENERGY_UNITS[ei].id===eDispUnit)eMult=ENERGY_UNITS[ei].fromJ;}
+              var aMult=1;for(var ai=0;ai<AREA_UNITS.length;ai++){if(AREA_UNITS[ai].id===aDispUnit)aMult=AREA_UNITS[ai].fromCM2;}
+              var fMult=1;for(var fmi=0;fmi<FLUENCE_UNITS.length;fmi++){if(FLUENCE_UNITS[fmi].id===mpeDispUnit)fMult=FLUENCE_UNITS[fmi].mult;}
+              function fmtE(v){if(!isFinite(v))return"\u2014";return numFmt(v*eMult,4);}
+              function fmtA(v){if(!isFinite(v))return"\u2014";return numFmt(v*aMult,4);}
+              function fmtH(v){if(!isFinite(v))return"\u2014";return numFmt(v*fMult,4);}
+              var hasInput=E_user_J!==null||flv2!==null;
+
+              /* Build rows for selected wavelengths */
+              var selRows=[];
+              var firstNote=null;
+              for(var ri=0;ri<lasers.length;ri++){
+                var L=lasers[ri];if(!isBeamSel(L.id))continue;
+                var r=results[ri];if(!r||!isFinite(r.effH))continue;
+                var bev=beamEval(r.wl,beamDia);
+                if(bev.regime==="invalid"){selRows.push({L:L,r:r,bev:bev,invalid:true,idx:ri});continue;}
+                var mpe=r.effH;
+                var E_max=mpe*bev.area_cm2;
+                var H_from_beam=E_user_J!==null?E_user_J/bev.area_cm2:null;
+                var H_eval=(H_from_beam!==null)?H_from_beam:(flv2!==null?flv2:null);
+                var ratio=H_eval!==null?H_eval/mpe:null;
+                var safe=ratio!==null?ratio<=1:null;
+                if(!firstNote)firstNote=bev.note;
+                selRows.push({L:L,r:r,bev:bev,invalid:false,idx:ri,mpe:mpe,E_max:E_max,H_eval:H_eval,ratio:ratio,safe:safe});
+              }
+              if(selRows.length===0)return(<div style={{fontSize:11,color:T.td,padding:"8px 0"}}>Select at least one wavelength to evaluate.</div>);
+              if(selRows[0].invalid)return(<div style={{fontSize:11,color:T.td,padding:"8px 0"}}>Enter a valid beam diameter to see evaluation results.</div>);
+
+              var bthS={padding:"6px 8px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:8,fontWeight:700,letterSpacing:"0.03em",whiteSpace:"nowrap"};
+              var btdS={padding:"6px 8px",fontSize:11,fontFamily:"monospace",borderBottom:"1px solid "+T.bd};
+
+              return(
+                <div style={{opacity:(dirty||beamDirty)?0.6:1,transition:"opacity 0.2s"}}>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse"}}>
+                      <thead><tr>
+                        <th style={bthS}>{"\u03bb"} (nm)</th>
+                        <th style={bthS}>Duration <select value={sumDurU} onChange={function(e){setSumDurU(e.target.value)}} style={hSel}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+                        <th style={bthS}>Band</th>
+                        <th style={bthS}>Aperture (mm)</th>
+                        <th style={bthS}>Regime</th>
+                        <th style={bthS}>Eval Area <select value={aDispUnit} onChange={function(e){setADispUnit(e.target.value)}} style={hSel}>{AREA_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+                        <th style={bthS}>Fluence, H <select value={mpeDispUnit} onChange={function(e){setMpeDispUnit(e.target.value)}} style={hSel}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+                        <th style={bthS}>Max Energy <select value={eDispUnit} onChange={function(e){setEDispUnit(e.target.value)}} style={hSel}>{ENERGY_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+                        {hasInput?<th style={bthS}>Safety</th>:null}
+                      </tr></thead>
+                      <tbody>{selRows.map(function(row){
+                        if(row.invalid)return null;
+                        var col=WC[row.idx%WC.length];
+                        var regC=row.bev.regime==="actual"?T.no:row.bev.regime==="aperture"?T.a2:T.ok;
+                        var thr=row.bev.threshold_mm||1;
+                        var regLbl=row.bev.regime==="actual"?"Actual (d<"+thr+"mm)":row.bev.regime==="aperture"?"Aperture-avg":"Beam fills";
+                        return(<tr key={row.L.id}>
+                          <td style={{padding:"6px 8px",fontWeight:700,fontSize:12,fontFamily:"monospace",color:col,borderBottom:"1px solid "+T.bd}}>{row.r.wl}</td>
+                          <td style={btdS}>{durInUnit(row.r.dur,sumDurU)}</td>
+                          <td style={{padding:"6px 8px",fontSize:11,color:T.tm,borderBottom:"1px solid "+T.bd}}>{row.r.band}</td>
+                          <td style={btdS}>{row.bev.aperture_mm.toFixed(1)}</td>
+                          <td style={{padding:"6px 8px",fontSize:11,fontFamily:"monospace",fontWeight:600,color:regC,borderBottom:"1px solid "+T.bd}}>{regLbl}</td>
+                          <td style={btdS}>{fmtA(row.bev.area_cm2)}</td>
+                          <td style={{padding:"6px 8px",fontSize:11,fontFamily:"monospace",fontWeight:700,borderBottom:"1px solid "+T.bd}}>{fmtH(row.mpe)}</td>
+                          <td style={{padding:"6px 8px",fontSize:11,fontFamily:"monospace",fontWeight:700,color:T.ac,borderBottom:"1px solid "+T.bd}}>{fmtE(row.E_max)}</td>
+                          {hasInput?<td style={{padding:"6px 8px",fontSize:11,fontFamily:"monospace",fontWeight:700,color:row.safe===null?T.td:row.safe?T.ok:T.no,borderBottom:"1px solid "+T.bd}}>{row.ratio!==null?(row.safe?"\u2713 ":"! ")+row.ratio.toPrecision(3)+"\u00d7":"\u2014"}</td>:null}
+                        </tr>);
+                      })}</tbody>
+                    </table>
+                  </div>
+                  {/* Regime explanation from first selected wavelength */}
+                  {firstNote?(
+                    <div style={{fontSize:10,color:T.td,lineHeight:1.6,padding:"8px 10px",marginTop:10,background:T.bgI,borderRadius:4,border:"1px solid "+T.bd}}>
+                      <strong style={{color:T.tm}}>{STD_NAME}:</strong>{" "}{firstNote}
+                    </div>
+                  ):null}
+                </div>
+              );
+            })()}
+          </div>
+        ):null}
+      </div>
+      {/* Summary table */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px",opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td}}>Summary{dirty?" (stale)":""}</div><button onClick={doExport} style={mkBt(false,T.ac,T)}>Export Report</button></div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+          <th style={thS}>{"\u03bb"} (nm)</th>
+          <th style={thS}>Duration <select value={sumDurU} onChange={function(e){setSumDurU(e.target.value)}} style={hSel}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+          <th style={thS}>Band</th>
+          <th style={thS}>C{"\u2090"}</th>
+          <th style={thS}>Fluence, H <select value={sumFluU} onChange={function(e){setSumFluU(e.target.value)}} style={hSel}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+          <th style={thS}>Irradiance, E <select value={sumIrrU} onChange={function(e){setSumIrrU(e.target.value)}} style={hSel}>{IRRAD_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+          <th style={thS}>Repetition Rate (Hz)</th>
+          <th style={thS}>Pulses</th>
+          <th style={thS}>Rule</th>
+        </tr></thead><tbody>{results.map(function(r,i){var L=lasers[i];return (<tr key={L.id} style={{borderBottom:"1px solid "+T.bd}}>
+          <td style={{padding:"7px 10px",color:WC[i%WC.length],fontWeight:700,fontSize:12,fontFamily:"monospace"}}>{r.wl}</td>
+          <td style={tdSt}>{durInUnit(r.dur,sumDurU)}</td>
+          <td style={{padding:"7px 10px",fontSize:12,color:T.tm}}>{r.band}</td>
+          <td style={tdSt}>{r.wl>=400&&r.wl<1400?r.ca.toFixed(3):"\u2014"}</td>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700}}>{convFN(r.effH,sumFluU)}</td>
+          <td style={tdSt}>{convEN(r.irr,sumIrrU)}</td>
+          <td style={tdSt}>{L.rp?L.prf:"\u2014"}</td>
+          <td style={tdSt}>{r.rp?Math.round(r.rp.N):"1"}</td>
+          <td style={tdSt}>{r.rule}</td>
+        </tr>);})}</tbody></table></div>
+      </div>
+      {/* Charts */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div><div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:6}}>Per-Pulse MPE Plot</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{lasers.map(function(L,i){var col=WC[i%WC.length];return (<label key={L.id} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:11,fontFamily:"monospace",color:L.show?col:T.td,opacity:L.show?1:0.4}}><input type="checkbox" checked={L.show} onChange={function(){toggleShow(L.id)}} style={{accentColor:col,width:13,height:13}}/>{L.wl} nm</label>);})}</div></div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <select value={plotFU} onChange={function(e){setPlotFU(e.target.value)}} style={{fontSize:10,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            <div style={{display:"flex"}}><button onClick={function(){setCht("wl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="wl"?T.ac:T.bd),cursor:"pointer",background:cht==="wl"?T.ac:"transparent",color:cht==="wl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>MPE vs. Wavelength</button><button onClick={function(){setCht("t")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="t"?T.ac:T.bd),cursor:"pointer",background:cht==="t"?T.ac:"transparent",color:cht==="t"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>MPE vs. Duration</button></div><button onClick={function(){dlSVG(cht==="wl"?wRef:dRef,cht==="wl"?"mpe_vs_wavelength.svg":"mpe_vs_duration.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} Download SVG</button><button onClick={function(){if(cht==="wl"){var hdr=["wavelength_nm"];for(var di=0;di<wld.durs.length;di++)hdr.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_t"+ft(wld.durs[di]).replace(/ /g,""));var nd=wld.d.map(function(row){var o={wavelength_nm:row.wl};for(var di2=0;di2<wld.durs.length;di2++){o[hdr[di2+1]]=row["d"+di2];}return o;});dlCSV(nd,hdr,"mpe_vs_wavelength.csv",setMsg);}else{var hdr2=["duration_s"];drd.ws.forEach(function(w){hdr2.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm");});var nd2=drd.d.map(function(row){var o2={duration_s:row.t};drd.ws.forEach(function(w){o2["mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm"]=row["w"+w];});return o2;});dlCSV(nd2,hdr2,"mpe_vs_duration.csv",setMsg);}}} style={mkBt(false,T.a2,T)}>{"\u2913"} Download CSV</button></div>
+        </div>
+        {cht==="wl"?(<div ref={wRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Wavelength (nm){wld.durs.length===1?" \u2014 t = "+ft(wld.durs[0]):""}</div><ResponsiveContainer width="100%" height={320}><LineChart data={wld.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="wl" type="number" domain={[180,3000]} ticks={WLTICKS} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Wavelength (nm)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><RTooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?v+" nm":""}} formatter={function(v,n){if(v==null)return["",""];var idx2=parseInt(String(n).replace("d",""),10);var label=wld.durs[idx2]!==undefined?"t="+ft(wld.durs[idx2]):"MPE";return [numFmt(Number(v),4)+" "+plotFU,label]}}/>{wld.durs.map(function(d,di){var ci=0;for(var j=0;j<plotLasers.length;j++){if(plotLasers[j].dur===d){ci=lasers.indexOf(plotLasers[j]);break;}}return <Line key={"wlc"+di} dataKey={"d"+di} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={"t="+ft(d)} connectNulls={true} isAnimationActive={false}/>;})}{wld.durs.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"monospace"}}/>:null}<ReferenceLine x={400} stroke={T.bl} strokeDasharray="4 4"/><ReferenceLine x={700} stroke={T.bl} strokeDasharray="4 4"/><ReferenceLine x={1400} stroke={T.bl} strokeDasharray="4 4"/>{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"wd"+L.id} x={L.wl} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>):(<div ref={dRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Duration</div><ResponsiveContainer width="100%" height={320}><LineChart data={drd.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="t" type="number" scale="log" domain={[1e-9,3e4]} ticks={DTICKS} tickFormatter={dtf} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><RTooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?ft(Number(v)):""}} formatter={function(v,n){if(v==null)return["",""];return [numFmt(Number(v),4)+" "+plotFU,String(n).replace("w","")+" nm"]}}/>{drd.ws.map(function(w,wi){var ci=0;for(var j=0;j<lasers.length;j++){if(lasers[j].wl===w&&lasers[j].show){ci=j;break;}}return <Line key={"ln"+w} dataKey={"w"+w} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={w+" nm"} connectNulls={true} isAnimationActive={false}/>;})}{drd.ws.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"monospace"}}/>:null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"dd"+L.id} x={L.dur} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>)}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ PA TAB ═══════ */
+/* Seven ICNIRP wavelength bands for multi-band fluence chart (cf. Francis et al. Fig. 2a) */
+var PA_BANDS=[
+  {name:"400\u2013700 nm",     wl:532,  c:WC[0]},
+  {name:"700\u20131050 nm",    wl:800,  c:WC[1]},
+  {name:"1050\u20131400 nm",   wl:1200, c:WC[2]},
+  {name:"1400\u20131500 nm",   wl:1450, c:WC[3]},
+  {name:"1500\u20131800 nm",   wl:1550, c:WC[5]},
+  {name:"1800\u20132600 nm",   wl:2000, c:WC[4]},
+  {name:"2600 nm\u20131 mm",   wl:3000, c:WC[6]}
+];
+
+function PATab(p){
+  var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
+
+  /* --- Inputs --- */
+  var _wl=useState("800"),wlStr=_wl[0],setWlStr=_wl[1];
+  var _wn=useState(800),wl=_wn[0],setWl=_wn[1];
+  var _tau=useState("5e-9"),tauStr=_tau[0],setTauStr=_tau[1];
+  var _tn=useState(5e-9),tau=_tn[0],setTau=_tn[1];
+  var _Ts=useState("1"),TexpStr=_Ts[0],setTexpStr=_Ts[1];
+  var _Tn=useState(1),Texp=_Tn[0],setTexp=_Tn[1];
+  var _pc=useState("fl"),paCht=_pc[0],setPaCht=_pc[1];
+  var _cv=useState(0),cv=_cv[0],setCv=_cv[1];
+  var _dr=useState(false),dirty=_dr[0],setDirty=_dr[1];
+  var _pdU=useState("s"),paDurU=_pdU[0],setPaDurU=_pdU[1];
+  var flRef=useRef(null),snrRef=useRef(null);
+
+  var lb={display:"block",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:4};
+  var ipFull={width:"100%",padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var thS={padding:"7px 10px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:700,letterSpacing:"0.03em"};
+  var tdSt={padding:"7px 10px",fontSize:12,fontFamily:"monospace"};
+  var hSel={fontSize:9,padding:"2px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",fontWeight:700,outline:"none"};
+
+  function onWl(s){setWlStr(s);var v=Number(s);if(isFinite(v)&&v>=180&&v<=1e6)setWl(v);setDirty(true);}
+  function onTau(s){setTauStr(s);var v=parseFloat(s);if(isFinite(v)&&v>0)setTau(v);setDirty(true);}
+  function onTexp(s){setTexpStr(s);var v=parseFloat(s);if(isFinite(v)&&v>0)setTexp(v);setDirty(true);}
+  function calc(){setCv(function(c){return c+1;});setDirty(false);}
+  useEffect(function(){calc();},[]);
+
+  /* Exposure times for SNR curves and summary table */
+  var exTimes=[0.01,0.1,1,10,30,120];
+
+  /* PRF sample points (log-spaced, 1 Hz to ~300 kHz) */
+  var prfPts=useMemo(function(){
+    var pts=[];for(var le=0;le<=5.5;le+=0.04){pts.push(Math.pow(10,le));}return pts;
+  },[]);
+
+  /* ── Figure 2(a): Per-pulse fluence vs PRF for ALL wavelength bands ── */
+  var fluenceData=useMemo(function(){
+    return prfPts.map(function(f){
+      var row={f:f};
+      for(var bi=0;bi<PA_BANDS.length;bi++){
+        var eff=paEffFluence(PA_BANDS[bi].wl,tau,f,Texp);
+        if(isFinite(eff)&&eff>0)row["b"+bi]=eff*1e3; /* mJ/cm² */
+      }
+      return row;
+    });
+  },[cv,tau,Texp,prfPts]);
+
+  /* Crossover markers for fluence chart */
+  var flCross=useMemo(function(){
+    return PA_BANDS.map(function(b,i){
+      var fc=paOptPRF(b.wl,tau,Texp);
+      var Hs=skinMPE(b.wl,tau);
+      return{idx:i,f:fc,H:isFinite(Hs)?Hs*1e3:NaN};
+    });
+  },[cv,tau,Texp]);
+
+  /* ── Figure 2(b): Relative SNR vs PRF for selected wavelength ── */
+  var snrData=useMemo(function(){
+    return prfPts.map(function(f){
+      var row={f:f};
+      for(var ti=0;ti<exTimes.length;ti++){
+        var snr=paRelSNR(wl,tau,f,exTimes[ti]);
+        if(isFinite(snr)&&snr>0)row["T"+ti]=snr;
+      }
+      return row;
+    });
+  },[cv,wl,tau,prfPts]);
+
+  /* Optimal PRF for each T (for summary table and SNR markers) */
+  var optData=useMemo(function(){
+    return exTimes.map(function(Tv,i){
+      var fopt=paOptPRF(wl,tau,Tv);
+      var snrOpt=isFinite(fopt)?paRelSNR(wl,tau,fopt,Tv):NaN;
+      var Nopt=isFinite(fopt)?fopt*Tv:NaN;
+      var HatOpt=isFinite(fopt)?paEffFluence(wl,tau,fopt,Tv):NaN;
+      return{T:Tv,fopt:fopt,snrOpt:snrOpt,Nopt:Nopt,HatOpt:HatOpt,idx:i};
+    });
+  },[cv,wl,tau]);
+
+  var PRFTICKS=[1,10,100,1e3,1e4,1e5];
+  function prfFmt(v){if(v>=1e3)return(v/1e3)+"k";return String(v);}
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {/* ── Inputs ── */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px"}}>
+        <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ac,marginBottom:10}}>Photoacoustic System Parameters</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+          <div><label style={lb}>Wavelength (nm)</label><input type="text" value={wlStr} onChange={function(e){onWl(e.target.value)}} style={ipFull}/><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{bnd(wl)} {"\u00b7"} C{"\u2090"} = {CA(wl).toFixed(3)}</div></div>
+          <div><label style={lb}>Pulse Duration (s)</label><input type="text" value={tauStr} onChange={function(e){onTau(e.target.value)}} style={ipFull}/><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>= {ft(tau)}</div></div>
+          <div><label style={lb}>Exposure Time (s)</label><input type="text" value={TexpStr} onChange={function(e){onTexp(e.target.value)}} style={ipFull}/><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>= {ft(Texp)} (for fluence chart)</div></div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginTop:12}}>
+          <button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>
+          {dirty?<span style={{fontSize:11,color:T.ac,fontWeight:500}}>Click to update</span>:null}
+        </div>
+      </div>
+
+      {/* ── Optimal PRF summary table ── */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px",opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
+        <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:10}}>Optimal Repetition Rate by Exposure Time {"\u2014"} {wl} nm, {ft(tau)} pulse</div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
+          <th style={thS}>Exposure Time <select value={paDurU} onChange={function(e){setPaDurU(e.target.value)}} style={hSel}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></th>
+          <th style={thS}>Optimal Rate (Hz)</th>
+          <th style={thS}>N at Optimal</th>
+          <th style={thS}>Peak Relative SNR</th>
+          <th style={thS}>Single-Pulse MPE (mJ/cm{"\u00b2"})</th>
+          <th style={thS}>Per-Pulse at Optimal (mJ/cm{"\u00b2"})</th>
+        </tr></thead>
+        <tbody>{optData.map(function(o){var col=WC[o.idx%WC.length];return (<tr key={o.T} style={{borderBottom:"1px solid "+T.bd}}>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:600,color:col}}>{durInUnit(o.T,paDurU)}</td>
+          <td style={tdSt}>{isFinite(o.fopt)?o.fopt.toFixed(1):"\u2014"}</td>
+          <td style={tdSt}>{isFinite(o.Nopt)?o.Nopt.toFixed(1):"\u2014"}</td>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700}}>{isFinite(o.snrOpt)?o.snrOpt.toFixed(2)+"\u00d7":"\u2014"}</td>
+          <td style={tdSt}>{numFmt(skinMPE(wl,tau)*1e3,4)}</td>
+          <td style={tdSt}>{isFinite(o.HatOpt)?numFmt(o.HatOpt*1e3,4):"\u2014"}</td>
+        </tr>);})}</tbody></table></div>
+      </div>
+
+      {/* ── Charts ── */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={{fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td}}>Safety-Constrained Analysis</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <div style={{display:"flex"}}>
+              <button onClick={function(){setPaCht("fl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="fl"?T.ac:T.bd),cursor:"pointer",background:paCht==="fl"?T.ac:"transparent",color:paCht==="fl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>Fluence vs. PRF (all bands)</button>
+              <button onClick={function(){setPaCht("snr")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(paCht==="snr"?T.ac:T.bd),cursor:"pointer",background:paCht==="snr"?T.ac:"transparent",color:paCht==="snr"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>SNR vs. PRF ({wl} nm)</button>
+            </div>
+            <button onClick={function(){dlSVG(paCht==="fl"?flRef:snrRef,paCht==="fl"?"fluence_vs_prf.svg":"snr_vs_prf.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} SVG</button>
+            <button onClick={function(){
+              if(paCht==="fl"){
+                var hdr=["repetition_rate_Hz"];PA_BANDS.forEach(function(b,i){hdr.push(b.name.replace(/[\u2013\u2014 ]/g,"_")+"_mJ_cm2");});
+                dlCSV(fluenceData.map(function(r){var o={repetition_rate_Hz:r.f};PA_BANDS.forEach(function(b,i){o[b.name.replace(/[\u2013\u2014 ]/g,"_")+"_mJ_cm2"]=r["b"+i];});return o;}),hdr,"fluence_vs_prf.csv",setMsg);
+              } else {
+                var hdr2=["repetition_rate_Hz"];exTimes.forEach(function(Tv){hdr2.push("snr_T_"+ft(Tv).replace(/ /g,""));});
+                dlCSV(snrData.map(function(r){var o={repetition_rate_Hz:r.f};exTimes.forEach(function(Tv,i){o["snr_T_"+ft(Tv).replace(/ /g,"")]=r["T"+i];});return o;}),hdr2,"snr_vs_prf.csv",setMsg);
+              }
+            }} style={mkBt(false,T.a2,T)}>{"\u2913"} CSV</button>
+          </div>
+        </div>
+
+        {/* ── Fluence chart: all wavelength bands (Figure 2a equivalent) ── */}
+        {paCht==="fl"?(
+          <div ref={flRef}>
+            <div style={{fontSize:11,color:T.tm,marginBottom:4}}>
+              Per-Pulse Fluence Limit (mJ/cm{"\u00b2"}) vs. Repetition Rate {"\u2014"} {"\u03c4"} = {ft(tau)}, T = {ft(Texp)}
+              <span style={{fontSize:9,color:T.td,marginLeft:8}}>Dots mark Rule 1/Rule 2 crossover (optimal PRF per band)</span>
+            </div>
+            <ResponsiveContainer width="100%" height={380}>
+              <LineChart data={fluenceData} margin={{top:8,right:16,bottom:4,left:8}}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.gr}/>
+                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Pulse Repetition Frequency (Hz)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/>
+                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Per-pulse MPE (mJ/cm\u00b2)",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/>
+                <RTooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?Number(v).toFixed(1)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var bi=parseInt(String(n).replace("b",""),10);var bn=PA_BANDS[bi]?PA_BANDS[bi].name:"";return[numFmt(Number(v),4)+" mJ/cm\u00b2",bn]}}/>
+                {PA_BANDS.map(function(b,i){
+                  return <Line key={"b"+i} dataKey={"b"+i} stroke={b.c} strokeWidth={2} dot={false} name={b.name} connectNulls={true} isAnimationActive={false}/>;
+                })}
+                <Legend wrapperStyle={{fontSize:10,fontFamily:"monospace"}}/>
+                {/* Crossover dots */}
+                {flCross.map(function(cr){
+                  if(!isFinite(cr.f)||!isFinite(cr.H)||cr.f<1||cr.f>3e5)return null;
+                  return <ReferenceDot key={"fc"+cr.idx} x={cr.f} y={cr.H} r={5} fill={PA_BANDS[cr.idx].c} stroke={T.card} strokeWidth={1.5}/>;
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        ):(
+        /* ── SNR chart: selected wavelength, multiple T (Figure 2b equivalent) ── */
+          <div ref={snrRef}>
+            <div style={{fontSize:11,color:T.tm,marginBottom:4}}>
+              Relative SNR vs. Repetition Rate {"\u2014"} {"\u03bb"} = {wl} nm, {"\u03c4"} = {ft(tau)}
+              <span style={{fontSize:9,color:T.td,marginLeft:8}}>Stars mark optimal PRF (f*) for each exposure time</span>
+            </div>
+            <ResponsiveContainer width="100%" height={380}>
+              <LineChart data={snrData} margin={{top:8,right:16,bottom:4,left:8}}>
+                <CartesianGrid strokeDasharray="3 3" stroke={T.gr}/>
+                <XAxis dataKey="f" type="number" scale="log" domain={[1,3e5]} ticks={PRFTICKS} tickFormatter={prfFmt} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Pulse Repetition Frequency (Hz)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/>
+                <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={55} label={{value:"Relative SNR",angle:-90,position:"insideLeft",offset:5,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/>
+                <RTooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?Number(v).toFixed(1)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var idx=parseInt(String(n).replace("T",""),10);var tVal=exTimes[idx];return [Number(v).toFixed(3)+"\u00d7",tVal!=null?"T = "+ft(tVal):""]}}/>
+                {exTimes.map(function(Tv,i){return <Line key={"snr"+i} dataKey={"T"+i} stroke={WC[i%WC.length]} strokeWidth={2} dot={false} name={"T = "+ft(Tv)} connectNulls={true} isAnimationActive={false}/>;})
+                }
+                <Legend wrapperStyle={{fontSize:10,fontFamily:"monospace"}}/>
+                <ReferenceLine y={1} stroke={T.bl} strokeDasharray="4 4" label={{value:"N = 1",position:"right",style:{fontSize:9,fill:T.td}}}/>
+                {optData.map(function(o){if(!isFinite(o.fopt)||!isFinite(o.snrOpt)||o.snrOpt<=0)return null;return <ReferenceDot key={"opt"+o.idx} x={o.fopt} y={o.snrOpt} r={6} fill={WC[o.idx%WC.length]} stroke={T.card} strokeWidth={2}/>;})
+                }
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      {/* ── Reference citation ── */}
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"12px 14px",fontSize:11,color:T.td,lineHeight:1.6}}>
+        <strong>Reference:</strong> Francis et al., {"\u201c"}Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,{"\u201d"} <em>JPhys Photonics</em> (2026). SNR analysis based on Equations 5{"\u2013"}12. All MPE values computed using {STD_NAME} skin exposure limits.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ APP (TAB ROUTER) ═══════ */
+function App(){
+  var _t=useState("light"),theme=_t[0],setTheme=_t[1];
+  var _tab=useState("mpe"),tab=_tab[0],setTab=_tab[1];
+  var _mg=useState(""),msg=_mg[0],setMsg=_mg[1];
+  var T=TH[theme];
+  var tabBt=function(id,label){return{padding:"8px 20px",fontSize:12,fontWeight:tab===id?700:500,border:"none",borderBottom:tab===id?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer",background:"transparent",color:tab===id?T.ac:T.tm,letterSpacing:"0.02em"};};
+
+  return (
+    <div style={{minHeight:"100vh",background:T.bg,color:T.tx,fontFamily:"system-ui,-apple-system,sans-serif"}}>
+      {/* Header */}
+      <div style={{borderBottom:"1px solid "+T.bd,padding:"10px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",background:T.card}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:16,fontWeight:700}}>Laser Skin MPE Calculator</span><span style={{fontSize:9,fontFamily:"monospace",color:T.td,border:"1px solid "+T.bd,borderRadius:3,padding:"2px 6px",fontWeight:600}}>{STD_NAME}</span></div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>{msg?<span style={{fontSize:11,color:T.a2,fontWeight:600}}>{msg}</span>:null}<button onClick={function(){setTheme(theme==="light"?"dark":"light")}} style={{padding:"3px 8px",fontSize:13,border:"1px solid "+T.bd,cursor:"pointer",background:"transparent",color:T.tm,borderRadius:4}} title="Toggle theme">{theme==="light"?"\u263E":"\u2600"}</button></div>
+      </div>
+      {/* Tab bar */}
+      <div style={{borderBottom:"1px solid "+T.bd,padding:"0 24px",background:T.card,display:"flex",gap:4}}>
+        <button onClick={function(){setTab("mpe")}} style={tabBt("mpe")}>MPE Calculator</button>
+        <button onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
+      </div>
+      <div style={{padding:"16px 24px 40px",maxWidth:960,margin:"0 auto"}}>
+        {tab==="mpe"?<MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
+        {tab==="pa"?<PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
+        <div style={{textAlign:"center",fontSize:10,color:T.td,padding:"12px 0 4px",lineHeight:1.7,borderTop:"1px solid "+T.bd,marginTop:16}}>{STD_NAME} {"\u00b7"} {STD_REF} {"\u00b7"} {STD_TABLES}<br/>For research and educational purposes only. Not a certified safety instrument. Skin MPE only {"\u2014"} ocular limits are not evaluated.<br/>Verify all values independently against the applicable standard before any safety-critical use.</div>
+      </div>
+    </div>
+  );
+}
+
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>

@@ -1,0 +1,168 @@
+PHOTOACOUSTIC IMAGING — SKIN MPE SAFETY EVALUATIONS
+Based on loaded standard
+
+======================================================================
+  Scenario 1: OR-PAM at 532 nm
+======================================================================
+
+  Laser parameters:
+    Wavelength:       532 nm
+    Pulse energy:     0.1 uJ
+    Beam diameter:    0.005 mm
+    Pulse duration:   5.0 ns
+    PRF:              100000 Hz
+    Exposure time:    1.0 s
+
+  Aperture and area:
+    Beam area:        0.000000 cm^2
+    Limiting aperture:3.5 mm (0.096211 cm^2)
+    Averaging area:   0.096211 cm^2
+    NOTE: Beam is smaller than limiting aperture.
+          Energy is averaged over the aperture area.
+
+  MPE evaluation:
+    T_max (recommended): 600.0 s
+    Number of pulses:    100000
+    Single-pulse MPE:    20.0000 mJ/cm^2
+    Rep-pulse MPE:       0.0110 mJ/cm^2 per pulse
+    Actual H per pulse:  0.0010 mJ/cm^2
+    Safety ratio:        0.0945 (9.4% of MPE)
+
+    RESULT: WITHIN MPE (safe)
+
+======================================================================
+  Scenario 2: AR-PAM at 532 nm
+======================================================================
+
+  Laser parameters:
+    Wavelength:       532 nm
+    Pulse energy:     100 uJ
+    Beam diameter:    2.0 mm
+    Pulse duration:   10.0 ns
+    PRF:              1000 Hz
+    Exposure time:    1.0 s
+
+  Aperture and area:
+    Beam area:        0.031416 cm^2
+    Limiting aperture:3.5 mm (0.096211 cm^2)
+    Averaging area:   0.096211 cm^2
+    NOTE: Beam is smaller than limiting aperture.
+          Energy is averaged over the aperture area.
+
+  MPE evaluation:
+    T_max (recommended): 600.0 s
+    Number of pulses:    1000
+    Single-pulse MPE:    20.0000 mJ/cm^2
+    Rep-pulse MPE:       1.1000 mJ/cm^2 per pulse
+    Actual H per pulse:  1.0394 mJ/cm^2
+    Safety ratio:        0.9449 (94.5% of MPE)
+
+    RESULT: WITHIN MPE (safe)
+
+======================================================================
+  Scenario 3: PACT with Nd:YAG at 1064 nm
+======================================================================
+
+  Laser parameters:
+    Wavelength:       1064 nm
+    Pulse energy:     5000 uJ
+    Beam diameter:    10.0 mm
+    Pulse duration:   10.0 ns
+    PRF:              10 Hz
+    Exposure time:    10.0 s
+
+  Aperture and area:
+    Beam area:        0.785398 cm^2
+    Limiting aperture:3.5 mm (0.096211 cm^2)
+    Averaging area:   0.785398 cm^2
+
+  MPE evaluation:
+    T_max (recommended): 600.0 s
+    Number of pulses:    100
+    Single-pulse MPE:    100.0000 mJ/cm^2
+    Rep-pulse MPE:       100.0000 mJ/cm^2 per pulse
+    Actual H per pulse:  6.3662 mJ/cm^2
+    Safety ratio:        0.0637 (6.4% of MPE)
+
+    RESULT: WITHIN MPE (safe)
+
+======================================================================
+  Scenario 4: Tunable OPO system (680-950 nm)
+======================================================================
+
+  Fixed parameters: 10 ns, 10 Hz, 10 s, 1000 uJ, 5.0 mm beam
+
+  Wavelength (nm)    MPE/pulse (mJ/cm2)     Actual (mJ/cm2)    Ratio      Status
+  ------------------------------------------------------------------------------
+  680                20.0000                5.0930             0.2546     OK
+  700                20.0000                5.0930             0.2546     OK
+  720                21.9296                5.0930             0.2322     OK
+  740                24.0453                5.0930             0.2118     OK
+  760                26.3651                5.0930             0.1932     OK
+  780                28.9088                5.0930             0.1762     OK
+  800                31.6979                5.0930             0.1607     OK
+  820                34.7560                5.0930             0.1465     OK
+  840                38.1092                5.0930             0.1336     OK
+  860                41.7859                5.0930             0.1219     OK
+  880                45.8174                5.0930             0.1112     OK
+  900                50.2377                5.0930             0.1014     OK
+  920                55.0846                5.0930             0.0925     OK
+  940                60.3990                5.0930             0.0843     OK
+
+======================================================================
+  Scenario 5: UV-PAM at 266 nm
+======================================================================
+
+  Laser parameters:
+    Wavelength:       266 nm
+    Pulse energy:     0.01 uJ
+    Beam diameter:    0.01 mm
+    Pulse duration:   5.0 ns
+    PRF:              10000 Hz
+    Exposure time:    1.0 s
+
+  Aperture and area:
+    Beam area:        0.000001 cm^2
+    Limiting aperture:3.5 mm (0.096211 cm^2)
+    Averaging area:   0.096211 cm^2
+    NOTE: Beam is smaller than limiting aperture.
+          Energy is averaged over the aperture area.
+
+  MPE evaluation:
+    T_max (recommended): 30000.0 s
+    Number of pulses:    10000
+    Single-pulse MPE:    3.0000 mJ/cm^2
+    Rep-pulse MPE:       0.0003 mJ/cm^2 per pulse
+    Actual H per pulse:  0.0001 mJ/cm^2
+    Safety ratio:        0.3465 (34.6% of MPE)
+
+    RESULT: WITHIN MPE (safe)
+
+======================================================================
+  Scenario 6: SWIR PA at 1700 nm (lipid imaging)
+======================================================================
+
+  Laser parameters:
+    Wavelength:       1700 nm
+    Pulse energy:     500 uJ
+    Beam diameter:    3.0 mm
+    Pulse duration:   10.0 ns
+    PRF:              10 Hz
+    Exposure time:    10.0 s
+
+  Aperture and area:
+    Beam area:        0.070686 cm^2
+    Limiting aperture:3.5 mm (0.096211 cm^2)
+    Averaging area:   0.096211 cm^2
+    NOTE: Beam is smaller than limiting aperture.
+          Energy is averaged over the aperture area.
+
+  MPE evaluation:
+    T_max (recommended): 10.0 s
+    Number of pulses:    100
+    Single-pulse MPE:    1000.0000 mJ/cm^2
+    Rep-pulse MPE:       10.0000 mJ/cm^2 per pulse
+    Actual H per pulse:  5.1969 mJ/cm^2
+    Safety ratio:        0.5197 (52.0% of MPE)
+
+    RESULT: WITHIN MPE (safe)

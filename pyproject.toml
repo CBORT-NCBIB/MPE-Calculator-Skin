@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "laser-mpe-skin"
+version = "3.0.0"
+description = "Laser Maximum Permissible Exposure (MPE) calculator for skin safety (ICNIRP, ANSI, IEC)"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.21"]
+keywords = [
+    "laser safety",
+    "maximum permissible exposure",
+    "MPE",
+    "ICNIRP",
+    "biophotonics",
+    "skin exposure",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "matplotlib>=3.5"]
+
+[project.urls]
+Homepage = "https://octresearch.org/"
+Repository = "https://github.com/itgall/MPE-Calculator-Skin"
+Issues = "https://github.com/itgall/MPE-Calculator-Skin/issues"
+Changelog = "https://github.com/itgall/MPE-Calculator-Skin/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
