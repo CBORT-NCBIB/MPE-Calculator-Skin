@@ -1019,7 +1019,24 @@ function ScanTab(p){
           minVel=vHi;
         }else{minVel=Infinity;}
 
-        setRes({g:cr.g,st:cr.st,sf:sf,segs:segs,beam:beam,maxP:maxP,minV:minVel});
+        setRes({g:cr.g,st:cr.st,sf:sf,segs:segs,beam:beam,maxP:maxP,minV:minVel,
+          pulses:(function(){
+            if(isCW||!prf||prf<=0)return[];
+            var pp=[],te2=0;
+            for(var si2=0;si2<segs.length;si2++){
+              var s2=segs[si2],sd2=dia/s2.v,ts2=te2;
+              var ca2=Math.cos(s2.a),sa2=Math.sin(s2.a);
+              var kf2=Math.ceil(ts2*prf),klf2=(te2+sd2)*prf;
+              var kl2=(klf2===Math.floor(klf2))?Math.floor(klf2)-1:Math.floor(klf2);
+              for(var k2=kf2;k2<=kl2;k2++){
+                var tk2=k2/prf,fr2=(tk2-ts2)/sd2;
+                pp.push({t:tk2,x:s2.x+fr2*dia*ca2,y:s2.y+fr2*dia*sa2,si:si2});
+              }
+              te2+=sd2;
+            }
+            return pp;
+          })()
+        });
       }
       setCmp(false);
     },50);
@@ -1144,45 +1161,119 @@ function ScanTab(p){
     setHover({x:xMM,y:yMM,f:g.flu[idx],pc:g.pc[idx],pp:g.ppH[idx],rv:g.mrv[idx]});
   }
 
-  return (<div>
-    <div style={{display:"grid",gridTemplateColumns:"300px 1fr",gap:16}}>
-      {/* Left panel: inputs */}
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-          <div style={secH}>Beam Parameters</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><label style={lb}>Wavelength (nm)</label><input type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
-            <div><label style={lb}>Beam 1/e Diameter (mm)</label><input type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
-            <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
-            <div><label style={lb}>Repetition Rate</label><div style={{display:"flex",gap:4}}><input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
-            <div style={{gridColumn:"1 / -1"}}><label style={lb}>Average Power (W)</label><input type="text" value={pwS} onChange={function(e){upN(setPwS,setPw,e.target.value)}} style={ip}/></div>
-          </div>
+  var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
+  var timRef=useRef(null),spcRef=useRef(null);
+
+  // Draw timing diagram
+  useEffect(function(){
+    if(vizTab!=="timing"||!res||!res.pulses||!res.pulses.length||!timRef.current)return;
+    var c=timRef.current,ctx=c.getContext("2d"),W=c.width,H=c.height;
+    var ML=60,MR=16,MT=16,MB=36,PW2=W-ML-MR,PH2=H-MT-MB;
+    var pp=res.pulses,tMax=pp[pp.length-1].t*1.05||1;
+    ctx.clearRect(0,0,W,H);ctx.fillStyle=T.bgI;ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle=T.bd;ctx.lineWidth=1;ctx.strokeRect(ML,MT,PW2,PH2);
+    ctx.fillStyle=T.card;ctx.fillRect(ML+1,MT+1,PW2-2,PH2-2);
+    for(var i=0;i<pp.length;i++){
+      var px=ML+pp[i].t/tMax*PW2;
+      ctx.strokeStyle=WC[(pp[i].si||0)%WC.length];ctx.lineWidth=1;ctx.globalAlpha=0.5;
+      ctx.beginPath();ctx.moveTo(px,MT+4);ctx.lineTo(px,MT+PH2-4);ctx.stroke();
+    }
+    ctx.globalAlpha=1;
+    ctx.fillStyle=T.td;ctx.font="9px monospace";ctx.textAlign="center";
+    for(var ti=0;ti<=5;ti++){
+      var tv=ti/5*tMax,tx=ML+ti/5*PW2;
+      ctx.fillText(tv<0.001?(tv*1e6).toFixed(0)+"\u00b5s":tv<1?(tv*1e3).toFixed(1)+"ms":tv.toFixed(3)+"s",tx,MT+PH2+14);
+      ctx.strokeStyle=T.bd;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(tx,MT+PH2);ctx.lineTo(tx,MT+PH2+4);ctx.stroke();
+    }
+    ctx.fillText("Time",ML+PW2/2,MT+PH2+30);
+    ctx.textAlign="right";ctx.fillText(pp.length+" pulses",ML-6,MT+PH2/2+4);
+  },[res,vizTab,T]);
+
+  // Draw spatial pulse map
+  useEffect(function(){
+    if(vizTab!=="spatial"||!res||!res.pulses||!res.pulses.length||!spcRef.current)return;
+    var c=spcRef.current,ctx=c.getContext("2d"),W=c.width,H=c.height;
+    var ML=60,MR=16,MT=16,MB=36,PW2=W-ML-MR,PH2=H-MT-MB;
+    var pp=res.pulses;
+    var xMn=Infinity,xMx=-Infinity,yMn=Infinity,yMx=-Infinity;
+    for(var i=0;i<pp.length;i++){
+      if(pp[i].x<xMn)xMn=pp[i].x;if(pp[i].x>xMx)xMx=pp[i].x;
+      if(pp[i].y<yMn)yMn=pp[i].y;if(pp[i].y>yMx)yMx=pp[i].y;
+    }
+    var xP=(xMx-xMn)*0.08||1,yP=(yMx-yMn)*0.08||0.5;
+    xMn-=xP;xMx+=xP;yMn-=yP;yMx+=yP;
+    var xR=xMx-xMn||1,yR=yMx-yMn||1;
+    ctx.clearRect(0,0,W,H);ctx.fillStyle=T.bgI;ctx.fillRect(0,0,W,H);
+    ctx.strokeStyle=T.bd;ctx.lineWidth=1;ctx.strokeRect(ML,MT,PW2,PH2);
+    ctx.fillStyle=T.card;ctx.fillRect(ML+1,MT+1,PW2-2,PH2-2);
+    // Scan path
+    ctx.strokeStyle=T.bd;ctx.lineWidth=0.8;ctx.setLineDash([3,3]);ctx.beginPath();
+    for(var i2=0;i2<pp.length;i2++){
+      var px2=ML+(pp[i2].x-xMn)/xR*PW2,py2=MT+(pp[i2].y-yMn)/yR*PH2;
+      if(i2===0)ctx.moveTo(px2,py2);else ctx.lineTo(px2,py2);
+    }ctx.stroke();ctx.setLineDash([]);
+    // Pulse dots
+    var dotR=Math.max(1.5,Math.min(4,200/Math.sqrt(pp.length)));
+    for(var i3=0;i3<pp.length;i3++){
+      var px3=ML+(pp[i3].x-xMn)/xR*PW2,py3=MT+(pp[i3].y-yMn)/yR*PH2;
+      ctx.fillStyle=WC[(pp[i3].si||0)%WC.length];ctx.globalAlpha=0.7;
+      ctx.beginPath();ctx.arc(px3,py3,dotR,0,6.283);ctx.fill();
+    }
+    ctx.globalAlpha=1;
+    ctx.fillStyle=T.td;ctx.font="9px monospace";ctx.textAlign="center";
+    for(var ti2=0;ti2<=5;ti2++){
+      var xv=xMn+ti2/5*xR,tx2=ML+ti2/5*PW2;
+      ctx.fillText(xv.toFixed(1),tx2,MT+PH2+14);
+    }ctx.fillText("x position (mm)",ML+PW2/2,MT+PH2+30);
+    ctx.textAlign="right";
+    for(var ti3=0;ti3<=4;ti3++){
+      var yv=yMn+ti3/4*yR;ctx.fillText(yv.toFixed(2),ML-6,MT+ti3/4*PH2+3);
+    }
+    ctx.save();ctx.translate(12,MT+PH2/2);ctx.rotate(-Math.PI/2);ctx.textAlign="center";
+    ctx.fillText("y position (mm)",0,0);ctx.restore();
+  },[res,vizTab,T]);
+
+  return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
+    {/* ── Inputs: full width, 3-column ── */}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+        <div style={secH}>Beam Parameters</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div><label style={lb}>Wavelength (nm)</label><input type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
+          <div><label style={lb}>Beam 1/e Diameter (mm)</label><input type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
+          <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
+          <div><label style={lb}>Repetition Rate</label><div style={{display:"flex",gap:4}}><input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
+          <div><label style={lb}>Average Power (W)</label><input type="text" value={pwS} onChange={function(e){upN(setPwS,setPw,e.target.value)}} style={ip}/></div>
         </div>
-        <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-          <div style={secH}>Scan Pattern</div>
-          <div style={{display:"flex",gap:6,marginBottom:10}}>
-            {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
-              return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true)}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{pt[1]}</button>;
-            })}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+      </div>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+        <div style={secH}>Scan Pattern</div>
+        <div style={{display:"flex",gap:6,marginBottom:10}}>
+          {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
+            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true)}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{pt[1]}</button>;
+          })}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
             <div><label style={lb}>Scan Velocity (mm/s)</label><input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value)}} style={ip}/></div>
             <div><label style={lb}>Line Length (mm)</label><input type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value)}} style={ip}/></div>
-            {pat!=="linear"?<div><label style={lb}>Number of Lines</label><input type="text" value={nLS} onChange={function(e){upN(setNLS,setNLines,e.target.value)}} style={ip}/></div>:null}
-            {pat!=="linear"?<div><label style={lb}>Hatch Spacing (mm)</label><input type="text" value={htS} onChange={function(e){upN(setHtS,setHatch,e.target.value)}} style={ip}/></div>:null}
           </div>
+          {pat!=="linear"?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            <div><label style={lb}>Number of Lines</label><input type="text" value={nLS} onChange={function(e){upN(setNLS,setNLines,e.target.value)}} style={ip}/></div>
+            <div><label style={lb}>Hatch Spacing (mm)</label><input type="text" value={htS} onChange={function(e){upN(setHtS,setHatch,e.target.value)}} style={ip}/></div>
+          </div>:null}
         </div>
-        <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <div style={secH}>Settings</div>
-          </div>
-          <div style={{marginBottom:8}}>
-            <label style={lb}>Grid Resolution (points/diameter)</label>
+      </div>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+        <div>
+          <div style={secH}>Settings</div>
+          <div style={{marginBottom:10}}>
+            <label style={lb}>Grid Resolution (pts/diameter)</label>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <input type="range" min={4} max={32} value={ppd} onChange={function(e){setPpd(Number(e.target.value));setDirty(true)}} style={{flex:1}}/>
               <span style={{fontSize:12,fontFamily:"monospace",fontWeight:700,color:T.ac,minWidth:20}}>{ppd}</span>
             </div>
-            <div style={{fontSize:9,color:T.td,marginTop:2,fontFamily:"monospace"}}>Grid spacing: {(dia/ppd).toFixed(4)} mm {ppd<4?"\u26a0 unreliable":ppd>=8?"\u2713 converged":""}</div>
+            <div style={{fontSize:9,color:T.td,marginTop:2,fontFamily:"monospace"}}>Spacing: {(dia/ppd).toFixed(4)} mm {ppd>=8?"\u2713 converged":""}</div>
           </div>
           <div>
             <label style={lb}>Dwell Time Definition</label>
@@ -1193,134 +1284,160 @@ function ScanTab(p){
             </div>
           </div>
         </div>
-        <button onClick={calculate} style={{padding:"10px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer",width:"100%"}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
-      </div>
-
-      {/* Right panel: results */}
-      <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={secH}>Cumulative Fluence Map</div>
-            {res?<div style={{fontSize:9,color:T.td,fontFamily:"monospace"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.st.tp||0}</div>:null}
-          </div>
-          {res?<div>
-            <canvas ref={canRef} width={CW} height={CH} onMouseMove={onCanvasMove} onMouseLeave={function(){setHover(null)}} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto",cursor:"crosshair"}}/>
-            {hover?<div style={{fontSize:9,fontFamily:"monospace",color:T.tm,marginTop:4,display:"flex",gap:12,justifyContent:"center"}}>
-              <span>x: {hover.x.toFixed(2)} mm</span>
-              <span>y: {hover.y.toFixed(2)} mm</span>
-              <span style={{fontWeight:700,color:T.ac}}>Fluence: {numFmt(hover.f,4)} J/cm{"\u00b2"}</span>
-              <span>Pulses: {hover.pc}</span>
-              <span>Peak pulse: {numFmt(hover.pp,4)} J/cm{"\u00b2"}</span>
-              {hover.rv<1e29?<span>Revisit: {numFmt(hover.rv,3)} s</span>:null}
-            </div>:<div style={{fontSize:9,color:T.td,marginTop:4,textAlign:"center"}}>Hover over the map to query fluence at any point</div>}
-          </div>
-            :<div style={{height:250,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
-        </div>
-
-        {res?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-          <div style={{background:res.sf.safe?"#e8f5e9":"#fbe9e7",borderRadius:6,padding:14,textAlign:"center"}}>
-            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:res.sf.safe?"#2e7d32":"#bf360c",marginBottom:4}}>Safety Verdict</div>
-            <div style={{fontSize:22,fontWeight:700,color:res.sf.safe?"#2e7d32":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div>
-            <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.safe?"#388e3c":"#d84315",marginTop:4}}>Margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
-            <div style={{fontSize:9,color:res.sf.safe?"#4caf50":"#e64a19",marginTop:2}}>Binding: {res.sf.br}</div>
-          </div>
-          <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:4}}>Rule 1 {"\u2014"} Single Pulse</div>
-            <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:res.sf.r1m>1?T.no:T.ok}}>{numFmt(res.sf.ppM,4)} J/cm{"\u00b2"}</div>
-            <div style={{fontSize:9,color:T.td,marginTop:2}}>MPE({"\u03c4"}) = {numFmt(res.sf.mt,4)} J/cm{"\u00b2"}</div>
-            <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.r1m>1?T.no:T.ok,marginTop:2}}>Ratio: {res.sf.r1m.toFixed(4)}</div>
-          </div>
-          <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:4}}>Rule 2 {"\u2014"} Cumulative</div>
-            <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:res.sf.r2m>1?T.no:T.ok}}>{numFmt(res.sf.pF,4)} J/cm{"\u00b2"}</div>
-            <div style={{fontSize:9,color:T.td,marginTop:2}}>MPE(T={numFmt(res.st.tt,3)} s) = {numFmt(res.sf.mT,4)} J/cm{"\u00b2"}</div>
-            <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.r2m>1?T.no:T.ok,marginTop:2}}>Ratio: {res.sf.r2m.toFixed(4)}</div>
-          </div>
-        </div>:null}
-
-        {res?<div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-          <div style={secH}>Scan Summary</div>
-          <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
-            {[
-              ["Wavelength",wl+" nm"],["Beam 1/e diameter",dia+" mm"],
-              ["Gaussian \u03c3",(dia/(2*Math.sqrt(2))).toFixed(4)+" mm"],
-              ["Pulse duration",ft(tau)],["Repetition rate",prf+" Hz"],
-              ["Average power",pw+" W"],["Pulse energy",numFmt(pw/prf,4)+" J"],
-              ["Scan velocity",vel+" mm/s"],
-              ["Pattern",pat==="bidi"?"Bidirectional raster":pat==="raster"?"Unidirectional raster":"Linear"],
-              ["Total segments",String(res.segs.length)],
-              ["Total scan time",numFmt(res.st.tt,4)+" s"],
-              ["Dwell time ("+dwm+")",numFmt(dwm==="gaussian"?scanDwellGaussian(dia,vel):scanDwellGeometric(dia,vel),4)+" s"],
-              ["Pulses per point (est.)",String(Math.round(prf*(dwm==="gaussian"?scanDwellGaussian(dia,vel):scanDwellGeometric(dia,vel))))],
-              ["Grid",res.g.nx+"\u00d7"+res.g.ny+" ("+ppd+" pts/dia, "+res.g.dx.toFixed(4)+" mm)"],
-              ["Peak cumulative fluence",numFmt(res.sf.pF,4)+" J/cm\u00b2"],
-              ["Max pulses at any point",String(res.sf.mP)],
-              ["Thermal relaxation time \u03c4\u1d63",numFmt(res.sf.tauR,4)+" s"],
-              ["Min revisit interval",isFinite(res.sf.minRv)?numFmt(res.sf.minRv,4)+" s":"No revisits"],
-              ["Points revisited",String(res.sf.rvPts)],
-            ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bd}}>
-              <td style={{padding:"4px 8px",fontSize:10,color:T.tm}}>{row[0]}</td>
-              <td style={{padding:"4px 8px",fontSize:11,fontFamily:"monospace",fontWeight:600}}>{row[1]}</td>
-            </tr>;})}</tbody></table>
-        </div>:null}
-
-        {res&&isFinite(res.sf.minRv)?<div style={{background:res.sf.rvOk?"#e8f5e9":"#fff3e0",borderRadius:6,border:"1px solid "+(res.sf.rvOk?"#c8e6c9":"#ffe0b2"),padding:14}}>
-          <div style={secH}>Thermal Relaxation Assessment</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Thermal Relaxation {"\u03c4"}{"\u1d63"}</div>
-              <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:T.tx}}>{numFmt(res.sf.tauR,3)} s</div>
-              <div style={{fontSize:8,color:T.td,marginTop:2}}>d{"\u00b2"}/(4{"\u03ba"}), {"\u03ba"} = 0.13 mm{"\u00b2"}/s</div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Min Revisit Interval</div>
-              <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#2e7d32":"#e65100"}}>{numFmt(res.sf.minRv,3)} s</div>
-              <div style={{fontSize:8,color:T.td,marginTop:2}}>{res.sf.rvPts} points revisited</div>
-            </div>
-            <div style={{textAlign:"center"}}>
-              <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Ratio (revisit / {"\u03c4"}{"\u1d63"})</div>
-              <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#2e7d32":"#e65100"}}>{(res.sf.minRv/res.sf.tauR).toFixed(2)}{"\u00d7"}</div>
-              <div style={{fontSize:8,color:res.sf.rvOk?"#388e3c":"#e65100",fontWeight:600,marginTop:2}}>{res.sf.rvOk?"\u2713 Tissue cools between passes":"\u26a0 Thermal accumulation likely"}</div>
-            </div>
-          </div>
-          <div style={{fontSize:9,color:T.td,marginTop:10,lineHeight:1.5}}>
-            {res.sf.rvOk
-              ?"The minimum time between beam revisits exceeds the thermal relaxation time. Tissue at the most frequently revisited point has sufficient time to cool between passes. The fully cumulative exposure model used by the standards is conservative for this scan pattern."
-              :"The beam revisits some points faster than the tissue can thermally relax. While the standards treat all exposure as fully cumulative (which this calculator follows), the biophysical reality is that closely spaced revisits may produce more efficient thermal damage accumulation than widely spaced ones at the same total fluence. Consider increasing scan velocity or hatch spacing to allow more cooling time."}
-          </div>
-        </div>:null}
-
-        {res?<div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-          <div style={secH}>Safety Limits {"\u2014"} Permissible Parameter Ranges</div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {(function(){
-              var maxEp=scanMaxPulseEnergy(wl,dia,tau);
-              var minPRF=scanMinRepRate(wl,dia,tau,pw);
-              var items=[
-                ["Max pulse energy","Rule 1: H\u2080 \u2264 MPE(\u03c4)",numFmt(maxEp,4)+" J",
-                  "Current: "+numFmt(pw/prf,4)+" J",pw/prf<=maxEp*1.001],
-                ["Min repetition rate","Rule 1 at "+pw+" W",
-                  numFmt(minPRF,4)+" Hz"+(minPRF>=1e3?" ("+numFmt(minPRF/1e3,3)+" kHz)":""),
-                  "Current: "+prf+" Hz",prf>=minPRF*0.999],
-                ["Max average power","Rules 1+2 combined",numFmt(res.maxP||0,4)+" W",
-                  "Current: "+pw+" W",pw<=(res.maxP||Infinity)*1.001],
-                ["Min scan velocity","Rules 1+2 combined",
-                  isFinite(res.minV)?numFmt(res.minV,4)+" mm/s":"\u2014",
-                  "Current: "+vel+" mm/s",isFinite(res.minV)?vel>=res.minV*0.999:true]
-              ];
-              return items.map(function(it,i){
-                return <div key={i} style={{background:T.bgI,borderRadius:5,padding:10}}>
-                  <div style={{fontSize:10,fontWeight:700,color:T.tx,marginBottom:2}}>{it[0]}</div>
-                  <div style={{fontSize:8,color:T.td,marginBottom:4}}>{it[1]}</div>
-                  <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:it[4]?T.ok:T.no}}>{it[2]}</div>
-                  <div style={{fontSize:9,fontFamily:"monospace",color:T.tm,marginTop:2}}>{it[3]}</div>
-                </div>;
-              });
-            })()}
-          </div>
-        </div>:null}
+        <button onClick={calculate} style={{padding:"10px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer",width:"100%",marginTop:12}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
       </div>
     </div>
+
+    {/* ── Tabbed Visualization ── */}
+    <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:4}}>
+          {[["fluence","Cumulative Fluence Map"],["timing","Pulse Timing Diagram"],["spatial","Spatial Pulse Map"]].map(function(vt){
+            return <button key={vt[0]} onClick={function(){setVizTab(vt[0])}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(vizTab===vt[0]?T.ac:T.bd),cursor:"pointer",background:vizTab===vt[0]?T.ac:"transparent",color:vizTab===vt[0]?"#fff":T.tm,borderRadius:4}}>{vt[1]}</button>;
+          })}
+        </div>
+        {res?<div style={{fontSize:9,color:T.td,fontFamily:"monospace"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+      </div>
+
+      {vizTab==="fluence"?<div>
+        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Total radiant exposure (J/cm{"\u00b2"}) accumulated at each skin surface point from all pulses across the entire scan.</div>
+        {res?<div>
+          <canvas ref={canRef} width={CW} height={CH} onMouseMove={onCanvasMove} onMouseLeave={function(){setHover(null)}} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto",cursor:"crosshair"}}/>
+          {hover?<div style={{fontSize:9,fontFamily:"monospace",color:T.tm,marginTop:4,display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
+            <span>x: {hover.x.toFixed(2)} mm</span>
+            <span>y: {hover.y.toFixed(2)} mm</span>
+            <span style={{fontWeight:700,color:T.ac}}>Fluence: {numFmt(hover.f,4)} J/cm{"\u00b2"}</span>
+            <span>Pulses: {hover.pc}</span>
+            <span>Peak pulse: {numFmt(hover.pp,4)} J/cm{"\u00b2"}</span>
+            {hover.rv<1e29?<span>Revisit: {numFmt(hover.rv,3)} s</span>:null}
+          </div>:<div style={{fontSize:9,color:T.td,marginTop:4,textAlign:"center"}}>Hover over the map to query fluence at any point</div>}
+        </div>:<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
+      </div>:null}
+
+      {vizTab==="timing"?<div>
+        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each vertical line represents one laser pulse firing event. Color indicates which scan segment the pulse belongs to. Clusters reveal dwell patterns.</div>
+        {res&&res.pulses&&res.pulses.length>0?
+          <canvas ref={timRef} width={900} height={280} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto"}}/>
+          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
+      </div>:null}
+
+      {vizTab==="spatial"?<div>
+        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each dot shows the (x, y) position where a laser pulse lands on the skin. Dashed line shows the scan path trajectory. Color indicates scan segment.</div>
+        {res&&res.pulses&&res.pulses.length>0?
+          <canvas ref={spcRef} width={900} height={400} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto"}}/>
+          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate spatial map"}</div>}
+      </div>:null}
+    </div>
+
+    {/* ── Safety Results ── */}
+    {res?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+      <div style={{background:res.sf.safe?"#e8f5e9":"#fbe9e7",borderRadius:6,padding:14,textAlign:"center"}}>
+        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:res.sf.safe?"#2e7d32":"#bf360c",marginBottom:4}}>Safety Verdict</div>
+        <div style={{fontSize:22,fontWeight:700,color:res.sf.safe?"#2e7d32":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div>
+        <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.safe?"#388e3c":"#d84315",marginTop:4}}>Margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
+        <div style={{fontSize:9,color:res.sf.safe?"#4caf50":"#e64a19",marginTop:2}}>Binding: {res.sf.br}</div>
+      </div>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:4}}>Rule 1 {"\u2014"} Single Pulse</div>
+        <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:res.sf.r1m>1?T.no:T.ok}}>{numFmt(res.sf.ppM,4)} J/cm{"\u00b2"}</div>
+        <div style={{fontSize:9,color:T.td,marginTop:2}}>MPE({"\u03c4"}) = {numFmt(res.sf.mt,4)} J/cm{"\u00b2"}</div>
+        <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.r1m>1?T.no:T.ok,marginTop:2}}>Ratio: {res.sf.r1m.toFixed(4)}</div>
+      </div>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:4}}>Rule 2 {"\u2014"} Cumulative</div>
+        <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:res.sf.r2m>1?T.no:T.ok}}>{numFmt(res.sf.pF,4)} J/cm{"\u00b2"}</div>
+        <div style={{fontSize:9,color:T.td,marginTop:2}}>MPE(T={numFmt(res.st.tt,3)} s) = {numFmt(res.sf.mT,4)} J/cm{"\u00b2"}</div>
+        <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.r2m>1?T.no:T.ok,marginTop:2}}>Ratio: {res.sf.r2m.toFixed(4)}</div>
+      </div>
+    </div>:null}
+
+    {/* ── Scan Summary (2 columns) ── */}
+    {res?<div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+      <div style={secH}>Scan Summary</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:0}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
+          ["Wavelength",wl+" nm"],["Beam 1/e diameter",dia+" mm"],
+          ["Gaussian \u03c3",(dia/(2*Math.sqrt(2))).toFixed(4)+" mm"],
+          ["Pulse duration",ft(tau)],["Repetition rate",prf+" Hz"],
+          ["Average power",pw+" W"],["Pulse energy",numFmt(pw/prf,4)+" J"],
+          ["Scan velocity",vel+" mm/s"],
+        ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bd}}>
+          <td style={{padding:"4px 8px",fontSize:10,color:T.tm}}>{row[0]}</td>
+          <td style={{padding:"4px 8px",fontSize:11,fontFamily:"monospace",fontWeight:600}}>{row[1]}</td>
+        </tr>;})}</tbody></table>
+        <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
+          ["Pattern",pat==="bidi"?"Bidirectional raster":pat==="raster"?"Unidirectional raster":"Linear"],
+          ["Total segments",String(res.segs.length)],
+          ["Total scan time",numFmt(res.st.tt,4)+" s"],
+          ["Dwell time ("+dwm+")",numFmt(dwm==="gaussian"?scanDwellGaussian(dia,vel):scanDwellGeometric(dia,vel),4)+" s"],
+          ["Grid",res.g.nx+"\u00d7"+res.g.ny+" ("+ppd+" pts/dia)"],
+          ["Peak fluence",numFmt(res.sf.pF,4)+" J/cm\u00b2"],
+          ["Max pulses at point",String(res.sf.mP)],
+          ["\u03c4\u1d63 (thermal)",numFmt(res.sf.tauR,4)+" s"],
+        ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bd}}>
+          <td style={{padding:"4px 8px",fontSize:10,color:T.tm}}>{row[0]}</td>
+          <td style={{padding:"4px 8px",fontSize:11,fontFamily:"monospace",fontWeight:600}}>{row[1]}</td>
+        </tr>;})}</tbody></table>
+      </div>
+    </div>:null}
+
+    {/* ── Thermal Relaxation ── */}
+    {res&&isFinite(res.sf.minRv)?<div style={{background:res.sf.rvOk?"#e8f5e9":"#fff3e0",borderRadius:6,border:"1px solid "+(res.sf.rvOk?"#c8e6c9":"#ffe0b2"),padding:14}}>
+      <div style={secH}>Thermal Relaxation Assessment</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Thermal Relaxation {"\u03c4"}{"\u1d63"}</div>
+          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:T.tx}}>{numFmt(res.sf.tauR,3)} s</div>
+          <div style={{fontSize:8,color:T.td,marginTop:2}}>d{"\u00b2"}/(4{"\u03ba"}), {"\u03ba"} = 0.13 mm{"\u00b2"}/s</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Min Revisit Interval</div>
+          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#2e7d32":"#e65100"}}>{numFmt(res.sf.minRv,3)} s</div>
+          <div style={{fontSize:8,color:T.td,marginTop:2}}>{res.sf.rvPts} points revisited</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Ratio (revisit / {"\u03c4"}{"\u1d63"})</div>
+          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#2e7d32":"#e65100"}}>{(res.sf.minRv/res.sf.tauR).toFixed(2)}{"\u00d7"}</div>
+          <div style={{fontSize:8,color:res.sf.rvOk?"#388e3c":"#e65100",fontWeight:600,marginTop:2}}>{res.sf.rvOk?"\u2713 Tissue cools between passes":"\u26a0 Thermal accumulation likely"}</div>
+        </div>
+      </div>
+      <div style={{fontSize:9,color:T.td,marginTop:10,lineHeight:1.5}}>
+        {res.sf.rvOk
+          ?"The minimum time between beam revisits exceeds the thermal relaxation time. The fully cumulative model used by the standards is conservative for this scan."
+          :"The beam revisits some points faster than the tissue can thermally relax. Consider increasing scan velocity or hatch spacing to allow more cooling time."}
+      </div>
+    </div>:null}
+
+    {/* ── Safety Limits ── */}
+    {res?<div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+      <div style={secH}>Safety Limits {"\u2014"} Permissible Parameter Ranges</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {(function(){
+          var maxEp=scanMaxPulseEnergy(wl,dia,tau);
+          var minPRF=scanMinRepRate(wl,dia,tau,pw);
+          var items=[
+            ["Max pulse energy","Rule 1: H\u2080 \u2264 MPE(\u03c4)",numFmt(maxEp,4)+" J",
+              "Current: "+numFmt(pw/prf,4)+" J",pw/prf<=maxEp*1.001],
+            ["Min repetition rate","Rule 1 at "+pw+" W",
+              numFmt(minPRF,4)+" Hz"+(minPRF>=1e3?" ("+numFmt(minPRF/1e3,3)+" kHz)":""),
+              "Current: "+prf+" Hz",prf>=minPRF*0.999],
+            ["Max average power","Rules 1+2 combined",numFmt(res.maxP||0,4)+" W",
+              "Current: "+pw+" W",pw<=(res.maxP||Infinity)*1.001],
+            ["Min scan velocity","Rules 1+2 combined",
+              isFinite(res.minV)?numFmt(res.minV,4)+" mm/s":"\u2014",
+              "Current: "+vel+" mm/s",isFinite(res.minV)?vel>=res.minV*0.999:true]
+          ];
+          return items.map(function(it,i){
+            return <div key={i} style={{background:T.bgI,borderRadius:5,padding:10}}>
+              <div style={{fontSize:10,fontWeight:700,color:T.tx,marginBottom:2}}>{it[0]}</div>
+              <div style={{fontSize:8,color:T.td,marginBottom:4}}>{it[1]}</div>
+              <div style={{fontSize:14,fontWeight:700,fontFamily:"monospace",color:it[4]?T.ok:T.no}}>{it[2]}</div>
+              <div style={{fontSize:9,fontFamily:"monospace",color:T.tm,marginTop:2}}>{it[3]}</div>
+            </div>;
+          });
+        })()}
+      </div>
+    </div>:null}
   </div>);
 }
 
@@ -1342,13 +1459,13 @@ export default function App(){
       {/* Tab bar */}
       <div style={{borderBottom:"1px solid "+T.bd,padding:"0 24px",background:T.card,display:"flex",gap:4}}>
         <button onClick={function(){setTab("mpe")}} style={tabBt("mpe")}>MPE Calculator</button>
-        <button onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
         <button onClick={function(){setTab("scan")}} style={tabBt("scan")}>Scanning Protocols</button>
+        <button onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
       </div>
       <div style={{padding:"16px 24px 40px",maxWidth:1100,margin:"0 auto"}}>
         {tab==="mpe"?<MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
-        {tab==="pa"?<PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
         {tab==="scan"?<ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
+        {tab==="pa"?<PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
         <div style={{textAlign:"center",fontSize:10,color:T.td,padding:"12px 0 4px",lineHeight:1.7,borderTop:"1px solid "+T.bd,marginTop:16}}>{STD_NAME} {"\u00b7"} {STD_REF} {"\u00b7"} {STD_TABLES}<br/>For research and educational purposes only. Not a certified safety instrument. Skin MPE only {"\u2014"} ocular limits are not evaluated.<br/>Verify all values independently against the applicable standard before any safety-critical use.</div>
       </div>
     </div>
