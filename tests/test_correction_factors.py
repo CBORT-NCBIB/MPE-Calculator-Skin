@@ -1,7 +1,7 @@
 """
-Test suite for correction factors — the loaded standard.
+Test script for correction factors for the loaded standard.
 
-Tests for: C_A (the only correction factor used by skin MPE).
+Tests for: C_A (the only correction factor used for skin MPE).
 All values verified against the loaded standard (page 76).
 """
 
