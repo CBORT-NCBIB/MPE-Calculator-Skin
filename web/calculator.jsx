@@ -1164,66 +1164,162 @@ function ScanTab(p){
   var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
   var timRef=useRef(null),spcRef=useRef(null);
 
-  // Draw timing diagram
+  // Draw timing diagram with Gaussian pulse profiles
   useEffect(function(){
     if(vizTab!=="timing"||!res||!res.pulses||!res.pulses.length||!timRef.current)return;
     var c=timRef.current,ctx=c.getContext("2d"),W=c.width,H=c.height;
-    var ML=60,MR=16,MT=16,MB=36,PW2=W-ML-MR,PH2=H-MT-MB;
-    var pp=res.pulses,tMax=pp[pp.length-1].t*1.05||1;
+    var ML=60,MR=16,MT=40,MB=36,PW2=W-ML-MR,PH2=H-MT-MB;
+    var pp=res.pulses,allN=pp.length;
+
+    // Auto-zoom: pick a time window showing ~60-150 visible pulses
+    var maxVis=Math.min(150,allN);
+    var tStart=0,tEnd=pp[maxVis-1].t*1.08;
+    if(allN>maxVis){
+      // Show the first scan line(s) worth of pulses
+      var seg0End=0;for(var fi=1;fi<allN;fi++){if(pp[fi].si!==pp[fi-1].si){seg0End=fi;break;}}
+      if(seg0End>5&&seg0End<300){maxVis=Math.min(seg0End+20,allN);tEnd=pp[maxVis-1].t*1.08;}
+    }
+    var visPulses=[];for(var vi=0;vi<allN;vi++){if(pp[vi].t>=tStart&&pp[vi].t<=tEnd)visPulses.push(pp[vi]);}
+    var tRange=tEnd-tStart||1;
+
     ctx.clearRect(0,0,W,H);ctx.fillStyle=T.bgI;ctx.fillRect(0,0,W,H);
+
+    // Overview strip at top (full time range minimap)
+    var stripH=14,stripY=4;
+    ctx.fillStyle=T.card;ctx.fillRect(ML,stripY,PW2,stripH);
+    ctx.strokeStyle=T.bd;ctx.lineWidth=0.5;ctx.strokeRect(ML,stripY,PW2,stripH);
+    var fullT=pp[allN-1].t*1.05||1;
+    for(var mi=0;mi<allN;mi+=Math.max(1,Math.floor(allN/PW2))){
+      var mx=ML+pp[mi].t/fullT*PW2;
+      ctx.fillStyle=T.ac;ctx.globalAlpha=0.3;ctx.fillRect(mx,stripY+1,1,stripH-2);
+    }
+    // Highlight zoom window
+    var zx1=ML+tStart/fullT*PW2,zx2=ML+tEnd/fullT*PW2;
+    ctx.globalAlpha=0.2;ctx.fillStyle=T.ac;ctx.fillRect(zx1,stripY,zx2-zx1,stripH);
+    ctx.globalAlpha=1;ctx.strokeStyle=T.ac;ctx.lineWidth=1.5;ctx.strokeRect(zx1,stripY,zx2-zx1,stripH);
+    if(allN>visPulses.length){
+      ctx.fillStyle=T.td;ctx.font="8px monospace";ctx.textAlign="left";
+      ctx.fillText("Showing "+visPulses.length+" of "+allN+" pulses (zoom: "+ft(tStart)+"\u2013"+ft(tEnd)+")",ML+4,stripY+stripH+10);
+    }
+
+    // Main plot area
+    ctx.fillStyle=T.card;ctx.fillRect(ML,MT,PW2,PH2);
     ctx.strokeStyle=T.bd;ctx.lineWidth=1;ctx.strokeRect(ML,MT,PW2,PH2);
-    ctx.fillStyle=T.card;ctx.fillRect(ML+1,MT+1,PW2-2,PH2-2);
-    for(var i=0;i<pp.length;i++){
-      var px=ML+pp[i].t/tMax*PW2;
-      ctx.strokeStyle=WC[(pp[i].si||0)%WC.length];ctx.lineWidth=1;ctx.globalAlpha=0.5;
-      ctx.beginPath();ctx.moveTo(px,MT+4);ctx.lineTo(px,MT+PH2-4);ctx.stroke();
+
+    // Draw Gaussian pulse profiles
+    var pulsePixW=Math.max(3,Math.min(20,PW2/(visPulses.length*2.5)));
+    var sigma=pulsePixW/3;
+    var baseline=MT+PH2-1;
+    var peakH=PH2*0.85;
+
+    for(var pi=0;pi<visPulses.length;pi++){
+      var cx2=ML+(visPulses[pi].t-tStart)/tRange*PW2;
+      // Draw Gaussian curve for this pulse
+      ctx.beginPath();ctx.moveTo(cx2-pulsePixW*2,baseline);
+      for(var gx=-pulsePixW*2;gx<=pulsePixW*2;gx+=0.8){
+        var gy=peakH*Math.exp(-0.5*(gx/sigma)*(gx/sigma));
+        ctx.lineTo(cx2+gx,baseline-gy);
+      }
+      ctx.lineTo(cx2+pulsePixW*2,baseline);ctx.closePath();
+      ctx.fillStyle=T.ac;ctx.globalAlpha=0.35;ctx.fill();
+      ctx.strokeStyle=T.ac;ctx.globalAlpha=0.7;ctx.lineWidth=0.8;ctx.stroke();
     }
     ctx.globalAlpha=1;
+
+    // Time axis
     ctx.fillStyle=T.td;ctx.font="9px monospace";ctx.textAlign="center";
     for(var ti=0;ti<=5;ti++){
-      var tv=ti/5*tMax,tx=ML+ti/5*PW2;
-      ctx.fillText(tv<0.001?(tv*1e6).toFixed(0)+"\u00b5s":tv<1?(tv*1e3).toFixed(1)+"ms":tv.toFixed(3)+"s",tx,MT+PH2+14);
+      var tv=tStart+ti/5*tRange,tx=ML+ti/5*PW2;
+      ctx.fillText(tv<1e-4?(tv*1e6).toFixed(1)+"\u00b5s":tv<0.1?(tv*1e3).toFixed(2)+"ms":tv.toFixed(4)+"s",tx,MT+PH2+14);
       ctx.strokeStyle=T.bd;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(tx,MT+PH2);ctx.lineTo(tx,MT+PH2+4);ctx.stroke();
     }
     ctx.fillText("Time",ML+PW2/2,MT+PH2+30);
-    ctx.textAlign="right";ctx.fillText(pp.length+" pulses",ML-6,MT+PH2/2+4);
+    // Y-axis label
+    ctx.textAlign="right";ctx.fillText("Pulse",ML-6,MT+PH2/2-4);ctx.fillText("Amplitude",ML-6,MT+PH2/2+8);
   },[res,vizTab,T]);
 
-  // Draw spatial pulse map
+  // Draw spatial pulse map with Gaussian footprints
   useEffect(function(){
     if(vizTab!=="spatial"||!res||!res.pulses||!res.pulses.length||!spcRef.current)return;
     var c=spcRef.current,ctx=c.getContext("2d"),W=c.width,H=c.height;
     var ML=60,MR=16,MT=16,MB=36,PW2=W-ML-MR,PH2=H-MT-MB;
-    var pp=res.pulses;
+    var pp=res.pulses,allN=pp.length;
+    var beamR=dia/2; // 1/e radius in mm
+
+    // Auto-zoom: if many pulses, show a region where footprints are visible
     var xMn=Infinity,xMx=-Infinity,yMn=Infinity,yMx=-Infinity;
-    for(var i=0;i<pp.length;i++){
+    for(var i=0;i<allN;i++){
       if(pp[i].x<xMn)xMn=pp[i].x;if(pp[i].x>xMx)xMx=pp[i].x;
       if(pp[i].y<yMn)yMn=pp[i].y;if(pp[i].y>yMx)yMx=pp[i].y;
     }
-    var xP=(xMx-xMn)*0.08||1,yP=(yMx-yMn)*0.08||0.5;
-    xMn-=xP;xMx+=xP;yMn-=yP;yMx+=yP;
+    // Add beam-radius padding
+    xMn-=beamR*2;xMx+=beamR*2;yMn-=beamR*2;yMx+=beamR*2;
+
+    // If too many pulses, zoom to first scan line region
+    var visPulses=pp;
+    if(allN>500){
+      var seg0End2=0;for(var fi2=1;fi2<allN;fi2++){if(pp[fi2].si!==pp[fi2-1].si){seg0End2=fi2;break;}}
+      if(seg0End2>2){
+        visPulses=pp.slice(0,Math.min(seg0End2+5,allN));
+        xMn=Infinity;xMx=-Infinity;yMn=Infinity;yMx=-Infinity;
+        for(var i2=0;i2<visPulses.length;i2++){
+          if(visPulses[i2].x<xMn)xMn=visPulses[i2].x;if(visPulses[i2].x>xMx)xMx=visPulses[i2].x;
+          if(visPulses[i2].y<yMn)yMn=visPulses[i2].y;if(visPulses[i2].y>yMx)yMx=visPulses[i2].y;
+        }
+        xMn-=beamR*3;xMx+=beamR*3;yMn-=beamR*3;yMx+=beamR*3;
+      }
+    }
     var xR=xMx-xMn||1,yR=yMx-yMn||1;
+    // Ensure aspect ratio is reasonable
+    var mmPerPxX=xR/PW2,mmPerPxY=yR/PH2;
+    var beamPxR=beamR/Math.max(mmPerPxX,mmPerPxY);
+    var diskR=Math.max(4,Math.min(40,beamPxR));
+
     ctx.clearRect(0,0,W,H);ctx.fillStyle=T.bgI;ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=T.card;ctx.fillRect(ML,MT,PW2,PH2);
     ctx.strokeStyle=T.bd;ctx.lineWidth=1;ctx.strokeRect(ML,MT,PW2,PH2);
-    ctx.fillStyle=T.card;ctx.fillRect(ML+1,MT+1,PW2-2,PH2-2);
-    // Scan path
-    ctx.strokeStyle=T.bd;ctx.lineWidth=0.8;ctx.setLineDash([3,3]);ctx.beginPath();
-    for(var i2=0;i2<pp.length;i2++){
-      var px2=ML+(pp[i2].x-xMn)/xR*PW2,py2=MT+(pp[i2].y-yMn)/yR*PH2;
-      if(i2===0)ctx.moveTo(px2,py2);else ctx.lineTo(px2,py2);
-    }ctx.stroke();ctx.setLineDash([]);
-    // Pulse dots
-    var dotR=Math.max(1.5,Math.min(4,200/Math.sqrt(pp.length)));
-    for(var i3=0;i3<pp.length;i3++){
-      var px3=ML+(pp[i3].x-xMn)/xR*PW2,py3=MT+(pp[i3].y-yMn)/yR*PH2;
-      ctx.fillStyle=WC[(pp[i3].si||0)%WC.length];ctx.globalAlpha=0.7;
-      ctx.beginPath();ctx.arc(px3,py3,dotR,0,6.283);ctx.fill();
+
+    // Info bar if zoomed
+    if(visPulses.length<allN){
+      ctx.fillStyle=T.td;ctx.font="8px monospace";ctx.textAlign="left";
+      ctx.fillText("Showing "+visPulses.length+" of "+allN+" pulses (first scan line)",ML+4,MT+12);
+    }
+
+    // Draw Gaussian footprints using radial gradients
+    ctx.save();ctx.beginPath();ctx.rect(ML,MT,PW2,PH2);ctx.clip();
+    for(var i3=0;i3<visPulses.length;i3++){
+      var px3=ML+(visPulses[i3].x-xMn)/xR*PW2;
+      var py3=MT+(visPulses[i3].y-yMn)/yR*PH2;
+      var grad=ctx.createRadialGradient(px3,py3,0,px3,py3,diskR);
+      grad.addColorStop(0,"rgba(0,114,178,0.4)");
+      grad.addColorStop(0.37,"rgba(0,114,178,0.25)"); // 1/e point
+      grad.addColorStop(0.7,"rgba(0,114,178,0.08)");
+      grad.addColorStop(1,"rgba(0,114,178,0)");
+      ctx.fillStyle=grad;
+      ctx.fillRect(px3-diskR,py3-diskR,diskR*2,diskR*2);
+    }
+    ctx.restore();
+
+    // Pulse center dots
+    for(var i4=0;i4<visPulses.length;i4++){
+      var px4=ML+(visPulses[i4].x-xMn)/xR*PW2;
+      var py4=MT+(visPulses[i4].y-yMn)/yR*PH2;
+      ctx.fillStyle=T.ac;ctx.globalAlpha=0.8;
+      ctx.beginPath();ctx.arc(px4,py4,1.5,0,6.283);ctx.fill();
     }
     ctx.globalAlpha=1;
+
+    // Beam diameter scale bar
+    var scaleLen=diskR*2,scaleMM=dia;
+    ctx.strokeStyle=T.ac;ctx.lineWidth=2;
+    ctx.beginPath();ctx.moveTo(ML+PW2-scaleLen-10,MT+PH2-12);ctx.lineTo(ML+PW2-10,MT+PH2-12);ctx.stroke();
+    ctx.fillStyle=T.ac;ctx.font="8px monospace";ctx.textAlign="center";
+    ctx.fillText(scaleMM+" mm (1/e \u00d8)",ML+PW2-scaleLen/2-10,MT+PH2-4);
+
+    // Axes
     ctx.fillStyle=T.td;ctx.font="9px monospace";ctx.textAlign="center";
     for(var ti2=0;ti2<=5;ti2++){
-      var xv=xMn+ti2/5*xR,tx2=ML+ti2/5*PW2;
-      ctx.fillText(xv.toFixed(1),tx2,MT+PH2+14);
+      var xv=xMn+ti2/5*xR;ctx.fillText(xv.toFixed(1),ML+ti2/5*PW2,MT+PH2+14);
     }ctx.fillText("x position (mm)",ML+PW2/2,MT+PH2+30);
     ctx.textAlign="right";
     for(var ti3=0;ti3<=4;ti3++){
@@ -1231,7 +1327,7 @@ function ScanTab(p){
     }
     ctx.save();ctx.translate(12,MT+PH2/2);ctx.rotate(-Math.PI/2);ctx.textAlign="center";
     ctx.fillText("y position (mm)",0,0);ctx.restore();
-  },[res,vizTab,T]);
+  },[res,vizTab,T,dia]);
 
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* ── Inputs: full width, 3-column ── */}
@@ -1315,14 +1411,14 @@ function ScanTab(p){
       </div>:null}
 
       {vizTab==="timing"?<div>
-        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each vertical line represents one laser pulse firing event. Color indicates which scan segment the pulse belongs to. Clusters reveal dwell patterns.</div>
+        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each Gaussian peak represents one laser pulse firing event. The diagram auto-zooms to show individual pulses clearly. The overview strip at the top shows the full time range.</div>
         {res&&res.pulses&&res.pulses.length>0?
           <canvas ref={timRef} width={900} height={280} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto"}}/>
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
       </div>:null}
 
       {vizTab==="spatial"?<div>
-        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each dot shows the (x, y) position where a laser pulse lands on the skin. Dashed line shows the scan path trajectory. Color indicates scan segment.</div>
+        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each pulse shown as its Gaussian beam footprint on the skin surface. Center dots mark exact pulse positions. The scale bar shows the 1/e beam diameter. Auto-zooms to show individual footprints clearly.</div>
         {res&&res.pulses&&res.pulses.length>0?
           <canvas ref={spcRef} width={900} height={400} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto"}}/>
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate spatial map"}</div>}
