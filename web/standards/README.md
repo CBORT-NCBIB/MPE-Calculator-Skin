@@ -2,7 +2,7 @@
 
 This directory contains JSON data files defining laser skin MPE values for
 different safety standards. The calculation engine (`engine.js` and
-`src/laser_mpe/engine.py`) reads these files at runtime — **no code changes
+`src/laser_mpe/engine.py`) reads these files at runtime and **no code changes
 are needed to switch standards**.
 
 ## Currently included
@@ -67,7 +67,7 @@ Each region in a band's `regions` array:
 | `wl_min_nm` | Optional | Wavelength sub-filter (for UV photochemical sub-bands) |
 | `wl_max_nm` | Optional | Wavelength sub-filter upper bound |
 | `below_t_min` | Optional | Set to `"not_applicable"` if this limit does not apply below t_min |
-| `note` | Optional | Human-readable description |
+| `note` | Optional | Description |
 
 ### Correction factor C_A
 
@@ -102,17 +102,17 @@ The `supplementary` section contains companion parameters that are used by
 `skin_parameters.py`. These values are standard-specific and travel with
 the standard data.
 
-**`t_max`** — Recommended maximum exposure durations by wavelength band.
+**`t_max`** : Recommended maximum exposure durations by wavelength band.
 Each entry has `wl_min_nm`, `wl_max_nm`, and `t_max_s`.
 
-**`limiting_apertures`** — Aperture diameters for skin MPE averaging.
+**`limiting_apertures`** : Aperture diameters for skin MPE averaging.
 Each entry has `wl_min_nm`, `wl_max_nm`, and `diameter_mm`.
 
-**`large_area_correction`** — Parameters for large beam area correction:
+**`large_area_correction`** : Parameters for large beam area correction:
 `threshold_cm2` (area below which standard MPE applies), `cap_cm2` (area
 above which a constant cap applies), and `cap_mW_cm2` (the constant cap).
 
-**`uv_successive_day_derate`** — UV de-rating: `wl_min_nm`, `wl_max_nm`,
+**`uv_successive_day_derate`** : UV de-rating: `wl_min_nm`, `wl_max_nm`,
 and `factor` (the divisor applied to MPE on successive days).
 
 ### Unit convention
