@@ -1,4 +1,4 @@
-# Laser Skin MPE Calculator — Web Interface
+# Laser Skin MPE Calculator Web Interface
 
 Interactive browser-based calculator for skin Maximum Permissible Exposure.
 
