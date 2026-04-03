@@ -1,11 +1,11 @@
 """
-Test suite for laser_mpe package.
+Test script for laser_mpe package.
 
 All test values are verified against the standard tables 5 and 7.
 The boundary convention is: t_1 <= t < t_2 (left-inclusive, right-exclusive).
 
 Test organization:
-    - TestCorrectionFactors: C_A from Table 3
+    - TestCorrectionFactors: C_A from ICNIRP Table 3
     - TestUVBand: UV 180-400 nm from the standard tables 5 and 7 (dual limits)
     - Test_*: Each wavelength band from the standard tables 5 and 7
     - TestBoundaryConvention: Exact boundary values verify left-inclusive/right-exclusive
@@ -77,7 +77,7 @@ class TestCorrectionFactors:
 # =====================================================================
 
 class TestUVBand:
-    """Verified against the standard (Ultraviolet)."""
+    """Test against the standard (Ultraviolet)."""
 
     def test_thermal(self):
         """0.180-0.400 um, 1e-9 <= t < 10: H = 0.56 * t^0.25"""
