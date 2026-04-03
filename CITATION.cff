@@ -25,10 +25,7 @@ keywords:
   - photoacoustic imaging
   - data-driven
 authors:
-  # ── Fill in before publication ──
-  # Replace the placeholder values below with your actual information.
-  # The ORCID line can be uncommented if you have one.
-  - family-names: "LASTNAME"
-    given-names: "FIRSTNAME"
+  - family-names: "Gallegos"
+    given-names: "Isaac"
     # orcid: "https://orcid.org/0000-0000-0000-0000"
-    affiliation: "AFFILIATION"
+    affiliation: "Harvard Medical School, Wellman Center for Photomedicine"
