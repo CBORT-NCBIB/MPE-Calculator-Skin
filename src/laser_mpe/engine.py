@@ -1,9 +1,9 @@
 """
-Generic data-driven laser skin MPE calculation engine.
+Laser skin MPE calculation engine.
 
 This module reads all standard-specific values (wavelength bands,
 duration boundaries, coefficients, correction factors) from a JSON
-data file. No standard-specific numbers are hardcoded here.
+data file.
 
 The JSON schema is documented in web/standards/README.md.
 
@@ -220,7 +220,7 @@ def _uv_discrete_lookup(wl_nm):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Generic formula evaluator
+# Formula evaluator
 # ═══════════════════════════════════════════════════════════════
 
 def _eval_formula(region, wl_nm, t):
@@ -363,14 +363,14 @@ def band_name(wl_nm):
 
 
 # ═══════════════════════════════════════════════════════════════
-# Repetitive pulse (standard-independent logic)
+# Repetitive pulse
 # ═══════════════════════════════════════════════════════════════
 
 def rep_pulse(wl_nm, tau, prf, T):
     """Per-pulse MPE for repetitive-pulse skin exposure.
 
     Applies Rule 1 (single-pulse limit) and Rule 2 (average-power
-    limit) and returns the more restrictive.
+    limit) and returns the more restrictive of the rules.
 
     Parameters
     ----------
