@@ -23,7 +23,7 @@ Primary API (standard-agnostic):
     get_standard()          — Current standard metadata
 """
 
-# ── Primary API (standard-agnostic) ──
+# ── Primary API ──
 from .engine import (
     load_standard,
     get_standard,
@@ -50,7 +50,7 @@ from .skin_parameters import (
 )
 
 # ── Legacy API (backward-compatible, delegates to engine) ──
-# These function names contain "ICNIRP" for historical reasons.
+# These function names contain "ICNIRP" for historical/documentation purposes.
 # They work with whatever standard is currently loaded.
 from .legacy import (
     H_skin_ICNIRP_MPE,
