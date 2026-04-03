@@ -195,7 +195,7 @@ MPE-Calculator-Skin/
 
 ## Web Calculator
 
-An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser — no build step or server required. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
+An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
 
 ## Roadmap
 
