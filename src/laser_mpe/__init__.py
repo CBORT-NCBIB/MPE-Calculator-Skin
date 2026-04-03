@@ -1,5 +1,5 @@
 """
-laser_mpe — Laser Maximum Permissible Exposure Calculator (Skin)
+laser_mpe : Laser Maximum Permissible Exposure Calculator (Skin)
 
 A Python package for computing laser skin MPE values. The engine
 reads all standard-specific values from a JSON data file, making
