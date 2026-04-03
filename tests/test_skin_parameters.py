@@ -1,7 +1,7 @@
 """
-Test suite for skin_parameters module.
+Test script for skin_parameters module.
 
-All values verified against the loaded standard (default: ICNIRP 2013):
+Values are verified against the loaded standard (default: ICNIRP 2013):
     - Table 4 (T_max)
     - Table 8 (Limiting apertures for skin)
     - Large area exposures (Table 7 note c)
@@ -36,11 +36,11 @@ def assert_close(actual, expected, rtol=1e-9, label=""):
 
 
 # =====================================================================
-# Table 4 — T_max
+# Table 4 : T_max
 # =====================================================================
 
 class TestTmax:
-    """Verified against the standard (Table 4 column)."""
+    """Verify against the standard (Table 4 column)."""
 
     def test_uv(self):
         """UV 0.18-0.4 um: T_max = 30,000 s"""
@@ -87,11 +87,11 @@ class TestTmax:
 
 
 # =====================================================================
-# Table 8 — Limiting Apertures for Skin
+# Table 8 : Limiting Apertures for Skin
 # =====================================================================
 
 class TestLimitingAperture:
-    """Verified against the standard (Table 8 (Skin column)."""
+    """Verify against the standard (Table 8 (Skin column)."""
 
     def test_uv_aperture(self):
         """UV: 3.5 mm"""
@@ -137,11 +137,11 @@ class TestLimitingAperture:
 
 
 # =====================================================================
-# Large Area Exposures — Large Area Exposures
+# Large Area Exposures : Large Area Exposures
 # =====================================================================
 
 class TestLargeArea:
-    """Verified against the standard (Table 7 note c."""
+    """Verify against the standard (Table 7 note c."""
 
     def test_small_beam_returns_none(self):
         """Beam < 100 cm^2: standard Table 7 values apply."""
@@ -166,7 +166,7 @@ class TestLargeArea:
 # =====================================================================
 
 class TestUVDerate:
-    """Verified against the standard."""
+    """Verify against the standard."""
 
     def test_derate_280_400(self):
         """280-400 nm: MPE reduced by factor of 2.5."""
@@ -207,7 +207,7 @@ class TestUVDerate:
 # =====================================================================
 
 class TestUnitConversions:
-    """Arithmetic correctness of unit conversions."""
+    """Correctness of unit conversions."""
 
     def test_radiant_exposure_to_mJ(self):
         assert_close(radiant_exposure_convert(0.02, 'mJ/cm2'), 20.0, label="J->mJ")
