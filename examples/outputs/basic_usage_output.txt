@@ -1,0 +1,65 @@
+============================================================
+Example 1: Single-pulse skin MPE
+============================================================
+
+Pulse duration: 10 ns
+
+Wavelength (nm)    H (J/cm²)      H (mJ/cm²)    
+----------------------------------------------
+532                0.0200         20.00         
+700                0.0200         20.00         
+800                0.0317         31.70         
+1064               0.1000         100.00        
+1550               1.0000         1000.00       
+1900               0.1000         100.00        
+
+============================================================
+Example 2: Repetitive-pulse skin MPE
+============================================================
+
+Wavelength: 800 nm
+Pulse duration: 10 ns
+Exposure window: 1.0 s
+
+PRF (Hz)     N pulses     H/pulse (mJ/cm²)    
+--------------------------------------------
+1            1            31.6979             
+10           10           31.6979             
+100          100          17.4338             
+1000         1000         1.7434              
+10000        10000        0.1743              
+
+============================================================
+Example 3: Practical safety check
+============================================================
+
+Laser parameters:
+  Wavelength:     800 nm
+  Pulse energy:   1.0 µJ
+  Beam diameter:  1.0 mm
+  Beam area:      0.0079 cm²
+  Pulse duration: 10 ns
+  PRF:            1000 Hz
+  Exposure time:  1.0 s
+
+Skin limiting aperture: 3.5 mm (0.0962 cm²)
+Averaging area:  0.0962 cm²
+
+Actual H/pulse:  0.0104 mJ/cm²
+MPE H/pulse:     1.7434 mJ/cm²
+Ratio (actual/MPE): 0.0060
+
+Result: WITHIN MPE
+
+============================================================
+Example 4: Recommended T_max values
+============================================================
+
+Band       Wavelength (nm)    T_max (s)   
+----------------------------------------
+UV         355                30000       
+Visible    532                600         
+NIR        800                600         
+NIR        1064               600         
+FIR        1550               10          
+FIR        10600              10          

@@ -1,0 +1,247 @@
+{
+  "standard": {
+    "name": "ICNIRP 2013",
+    "short_name": "ICNIRP 2013",
+    "reference": "Health Phys. 105(3):271\u2013295",
+    "year": 2013,
+    "organization": "International Commission on Non-Ionizing Radiation Protection",
+    "tables_used": "Tables 3, 5, 7",
+    "notes": "Skin exposure limits only. Ocular limits are not included.",
+    "unit": "J/cm\u00b2",
+    "wl_range_nm": [180, 1000000],
+    "dur_range_s": [1e-9, 30000]
+  },
+
+  "correction_factors": {
+    "CA": {
+      "description": "Wavelength correction factor for 400\u20131400 nm skin MPE (Table 3, p. 282)",
+      "applies_to_bands": ["Visible/Near-IR"],
+      "default_outside_range": 1.0,
+      "regions": [
+        {
+          "wl_min_nm": 400,
+          "wl_max_nm": 700,
+          "type": "constant",
+          "value": 1.0,
+          "note": "400 \u2264 \u03bb < 700 nm"
+        },
+        {
+          "wl_min_nm": 700,
+          "wl_max_nm": 1050,
+          "type": "power10",
+          "coefficient": 0.002,
+          "offset_nm": 700,
+          "note": "C_A = 10^(0.002 \u00d7 (\u03bb_nm \u2212 700))"
+        },
+        {
+          "wl_min_nm": 1050,
+          "wl_max_nm": 1400,
+          "type": "constant",
+          "value": 5.0,
+          "note": "1050 \u2264 \u03bb \u2264 1400 nm"
+        }
+      ]
+    }
+  },
+
+  "uv_discrete_steps": {
+    "description": "UV photochemical MPE for 302\u2013315 nm (Table 5). Discrete 1-nm steps. Values in J/cm\u00b2. Each entry gives the upper wavelength boundary and the MPE below that boundary.",
+    "note": "Left-inclusive, right-exclusive. For \u03bb in [302, 303): H = 4e-3, for [303, 304): H = 6e-3, etc.",
+    "steps": [
+      {"wl_upper_nm": 303, "H_J_cm2": 4e-3,   "H_J_m2": 40},
+      {"wl_upper_nm": 304, "H_J_cm2": 6e-3,   "H_J_m2": 60},
+      {"wl_upper_nm": 305, "H_J_cm2": 1e-2,   "H_J_m2": 100},
+      {"wl_upper_nm": 306, "H_J_cm2": 1.6e-2, "H_J_m2": 160},
+      {"wl_upper_nm": 307, "H_J_cm2": 2.5e-2, "H_J_m2": 250},
+      {"wl_upper_nm": 308, "H_J_cm2": 4e-2,   "H_J_m2": 400},
+      {"wl_upper_nm": 309, "H_J_cm2": 6.3e-2, "H_J_m2": 630},
+      {"wl_upper_nm": 310, "H_J_cm2": 1e-1,   "H_J_m2": 1000},
+      {"wl_upper_nm": 311, "H_J_cm2": 1.6e-1, "H_J_m2": 1600},
+      {"wl_upper_nm": 312, "H_J_cm2": 2.5e-1, "H_J_m2": 2500},
+      {"wl_upper_nm": 313, "H_J_cm2": 4e-1,   "H_J_m2": 4000}
+    ],
+    "fallback_H_J_cm2": 6.3e-1,
+    "fallback_note": "313\u2013315 nm: 6.3 kJ/m\u00b2 = 0.63 J/cm\u00b2"
+  },
+
+  "display_bands": [
+    {"name": "UV",       "wl_start_nm": 180,    "wl_end_nm": 400},
+    {"name": "Visible",  "wl_start_nm": 400,    "wl_end_nm": 700},
+    {"name": "Near-IR",  "wl_start_nm": 700,    "wl_end_nm": 1400},
+    {"name": "Far-IR",   "wl_start_nm": 1400,   "wl_end_nm": 1000000}
+  ],
+
+  "bands": [
+    {
+      "name": "UV",
+      "wl_min_nm": 180,
+      "wl_max_nm": 400,
+      "mode": "dual_limit",
+      "combination": "min",
+      "note": "MPE = min(thermal, photochemical). Table 5, pp. 283\u2013284.",
+      "thermal": {
+        "description": "UV thermal limit: 5.6 t^0.25 kJ/m\u00b2 = 0.56 t^0.25 J/cm\u00b2. Listed as 'Also not to exceed' in Table 5.",
+        "regions": [
+          {
+            "t_min_s": 1e-9,
+            "t_max_s": 10,
+            "formula": "power",
+            "a": 0.56,
+            "b": 0.25,
+            "note": "H = 0.56 \u00d7 t^0.25 J/cm\u00b2"
+          }
+        ]
+      },
+      "photochemical": {
+        "description": "UV photochemical limit. Wavelength-dependent sub-regions.",
+        "regions": [
+          {
+            "wl_min_nm": 180,
+            "wl_max_nm": 302,
+            "t_min_s": 1e-9,
+            "t_max_s": 30000,
+            "formula": "constant",
+            "a": 3e-3,
+            "note": "30 J/m\u00b2 = 3\u00d710\u207b\u00b3 J/cm\u00b2"
+          },
+          {
+            "wl_min_nm": 302,
+            "wl_max_nm": 315,
+            "t_min_s": 1e-9,
+            "t_max_s": 30000,
+            "formula": "discrete",
+            "lookup": "uv_discrete_steps",
+            "note": "Discrete 1-nm step values from Table 5"
+          },
+          {
+            "wl_min_nm": 315,
+            "wl_max_nm": 400,
+            "t_min_s": 10,
+            "t_max_s": 30000,
+            "formula": "constant",
+            "a": 1.0,
+            "below_t_min": "not_applicable",
+            "note": "10 kJ/m\u00b2 = 1.0 J/cm\u00b2 for t \u2265 10 s. Below 10 s: photochemical undefined, only thermal applies."
+          }
+        ]
+      }
+    },
+    {
+      "name": "Visible/Near-IR",
+      "wl_min_nm": 400,
+      "wl_max_nm": 1400,
+      "mode": "single",
+      "uses_ca": true,
+      "note": "Table 7, p. 285. All sub-regions multiply by C_A.",
+      "regions": [
+        {
+          "t_min_s": 1e-9,
+          "t_max_s": 1e-7,
+          "formula": "ca_constant",
+          "a": 0.02,
+          "note": "200 C_A J/m\u00b2 = 0.02 C_A J/cm\u00b2"
+        },
+        {
+          "t_min_s": 1e-7,
+          "t_max_s": 10,
+          "formula": "ca_power",
+          "a": 1.1,
+          "b": 0.25,
+          "note": "11 C_A t^0.25 kJ/m\u00b2 = 1.1 C_A t^0.25 J/cm\u00b2"
+        },
+        {
+          "t_min_s": 10,
+          "t_max_s": 30000,
+          "formula": "ca_linear",
+          "a": 0.2,
+          "note": "2.0 C_A kW/m\u00b2 = 0.2 C_A W/cm\u00b2 \u2192 H = 0.2 C_A t J/cm\u00b2"
+        }
+      ]
+    },
+    {
+      "name": "FIR 1400\u20131500",
+      "wl_min_nm": 1400,
+      "wl_max_nm": 1500,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 1e-3, "formula": "constant", "a": 0.1,  "note": "1 kJ/m\u00b2 = 0.1 J/cm\u00b2"},
+        {"t_min_s": 1e-3, "t_max_s": 10,   "formula": "power",    "a": 0.56, "b": 0.25, "note": "5.6 t^0.25 kJ/m\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000, "formula": "linear",  "a": 0.1,  "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    },
+    {
+      "name": "FIR 1500\u20131800",
+      "wl_min_nm": 1500,
+      "wl_max_nm": 1800,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 10,    "formula": "constant", "a": 1.0, "note": "10 kJ/m\u00b2 = 1.0 J/cm\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000,  "formula": "linear",  "a": 0.1, "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    },
+    {
+      "name": "FIR 1800\u20132600",
+      "wl_min_nm": 1800,
+      "wl_max_nm": 2600,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 1e-3, "formula": "constant", "a": 0.1,  "note": "1.0 kJ/m\u00b2 = 0.1 J/cm\u00b2"},
+        {"t_min_s": 1e-3, "t_max_s": 10,   "formula": "power",    "a": 0.56, "b": 0.25, "note": "5.6 t^0.25 kJ/m\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000, "formula": "linear",  "a": 0.1,  "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    },
+    {
+      "name": "FIR 2600\u20131 mm",
+      "wl_min_nm": 2600,
+      "wl_max_nm": 1000000,
+      "mode": "single",
+      "note": "Table 5.",
+      "regions": [
+        {"t_min_s": 1e-9, "t_max_s": 1e-7, "formula": "constant", "a": 0.01, "note": "100 J/m\u00b2 = 0.01 J/cm\u00b2"},
+        {"t_min_s": 1e-7, "t_max_s": 10,   "formula": "power",    "a": 0.56, "b": 0.25, "note": "5.6 t^0.25 kJ/m\u00b2"},
+        {"t_min_s": 10,   "t_max_s": 30000, "formula": "linear",  "a": 0.1,  "note": "1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}
+      ]
+    }
+  ],
+
+  "supplementary": {
+    "t_max": {
+      "description": "Recommended maximum anticipated exposure durations for skin (Table 4, Diffuse column).",
+      "regions": [
+        {"wl_min_nm": 180,  "wl_max_nm": 400,     "t_max_s": 30000, "note": "UV"},
+        {"wl_min_nm": 400,  "wl_max_nm": 700,     "t_max_s": 600,   "note": "Visible"},
+        {"wl_min_nm": 700,  "wl_max_nm": 1400,    "t_max_s": 600,   "note": "Near-IR"},
+        {"wl_min_nm": 1400, "wl_max_nm": 1000000, "t_max_s": 10,    "note": "Far-IR"}
+      ]
+    },
+    "limiting_apertures": {
+      "description": "Limiting aperture diameters for skin MPE averaging (Table 8, Skin column).",
+      "small_beam_threshold_mm": 1.0,
+      "small_beam_note": "For beam diameters below this threshold, the actual radiant exposure (not averaged over the limiting aperture) must be used for comparison with the exposure limit.",
+      "small_beam_reference": "Table 7 note b, p. 288",
+      "beam_diameter_definition": "For Gaussian beams, beam diameter is the 1/e diameter: the distance between diametrically opposed points where irradiance is 1/e (37%) of peak.",
+      "beam_diameter_reference": "p. 288",
+      "aperture_reference": "Table 8",
+      "regions": [
+        {"wl_min_nm": 180,    "wl_max_nm": 100000,  "diameter_mm": 3.5,  "note": "180 nm to 100 \u00b5m"},
+        {"wl_min_nm": 100000, "wl_max_nm": 1000000, "diameter_mm": 11.0, "note": "100 \u00b5m to 1 mm"}
+      ]
+    },
+    "large_area_correction": {
+      "description": "MPE correction for large beam cross-sections (\u03bb > 1.4 \u00b5m, t > 10 s). Table 7 note c.",
+      "threshold_cm2": 100,
+      "cap_cm2": 1000,
+      "formula_mW_cm2": "10000 / A_s",
+      "cap_mW_cm2": 10
+    },
+    "uv_successive_day_derate": {
+      "description": "De-rating factor for UV (280\u2013400 nm) on successive days.",
+      "wl_min_nm": 280,
+      "wl_max_nm": 400,
+      "factor": 2.5
+    }
+  }
+}
