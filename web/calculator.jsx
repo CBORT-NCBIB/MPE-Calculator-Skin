@@ -966,45 +966,68 @@ function ScanTab(p){
   function upTau(s){setTauS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<DUR_UNITS.length;i++){if(DUR_UNITS[i].id===tauU)m=DUR_UNITS[i].toS;}setTau(v*m);}setDirty(true);}
   function upPrf(s){setPrfS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<FREQ_UNITS.length;i++){if(FREQ_UNITS[i].id===prfU)m=FREQ_UNITS[i].toHz;}setPrf(v*m);}setDirty(true);}
 
+  var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
+
   function calculate(){
-    setCmp(true);setDirty(false);
+    setCmp(true);setDirty(false);setPerfNote("");
     setTimeout(function(){
       var segs;
       if(pat==="linear") segs=scanBuildLinear(0,0,0,lineL,vel,dia);
       else if(pat==="bidi") segs=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia);
       else segs=scanBuildRaster(0,0,lineL,nLines,hatch,vel,vel*5,dia);
 
+      // ── Performance estimation ──
+      // Estimate total scan time and pulse count
+      var estTime=0;for(var ei=0;ei<segs.length;ei++)estTime+=dia/segs[ei].v;
+      var estPulses=prf*estTime;
+      var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
+      var trunc=Math.ceil(3*sigma/estDx);
+      var estOps=estPulses*Math.PI*trunc*trunc;
+
+      // Auto-reduce ppd if computation would be too slow (target <800ms ≈ 40M ops)
+      var effPpd=ppd,notes=[];
+      if(estOps>40e6&&ppd>4){
+        // Find the ppd that brings ops under budget
+        for(effPpd=ppd-1;effPpd>=4;effPpd--){
+          var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
+          if(estPulses*Math.PI*tr2*tr2<40e6)break;
+        }
+        effPpd=Math.max(4,effPpd);
+        notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses ("+Math.round(estOps/1e6)+"M ops at ppd="+ppd+")");
+      }
+      // Use even lower ppd for auxiliary computations
+      var auxPpd=Math.min(effPpd,4);
+
       var Ep=prf>0?pw/prf:0;
       var isCW=prf===0&&tau===0;
       var beam={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
-      var cr=scanCompute(beam,segs,ppd);
+      var cr=scanCompute(beam,segs,effPpd);
       if(cr){
         var minV=isCW?(cr.st.mv||vel):0;
         var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV);
 
-        // Compute safety limits
-        // Max permissible power: fluence scales linearly with power
+        // Max permissible power (use low-res grid)
         var unitBeam={wl:wl,d:dia,tau:tau,prf:prf,Ep:prf>0?1/prf:0,P:1,cw:isCW};
-        var unitCr=scanCompute(unitBeam,segs,ppd);
+        var unitCr=scanCompute(unitBeam,segs,auxPpd);
         var maxP=Infinity;
         if(unitCr){
           var upF=0;for(var ui=0;ui<unitCr.g.nx*unitCr.g.ny;ui++)if(unitCr.g.flu[ui]>upF)upF=unitCr.g.flu[ui];
           var mpeT=skinMPE(wl,unitCr.st.tt||cr.st.tt);
           if(upF>0)maxP=mpeT/upF;
-          // Also check Rule 1 for pulsed
-          if(!isCW&&prf>0){var w2=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,tau)*prf*Math.PI*w2*w2/(2*100);
+          if(!isCW&&prf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,tau)*prf*Math.PI*w22*w22/(2*100);
             if(maxPr1<maxP)maxP=maxPr1;}
         }
 
-        // Min safe velocity: bisection search
+        // Min safe velocity (use low-res grid, limit iterations)
         var minVel=0;
+        var maxBisect=estPulses>100000?8:15; // fewer iterations for high PRF
         function testV(tv){
           var ts;
           if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
           else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia);
           else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia);
           var tb={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
-          var tcr=scanCompute(tb,ts,Math.min(ppd,8)); // use ppd≤8 for speed
+          var tcr=scanCompute(tb,ts,auxPpd);
           if(!tcr)return true;
           var tmv=isCW?(tcr.st.mv||tv):0;
           var tsf=scanSafety(tcr.g,tb,tcr.st.tt,dwm,tmv);
@@ -1012,34 +1035,39 @@ function ScanTab(p){
         }
         if(testV(1e6)){
           var vLo=0.01,vHi=1e6;
-          for(var bi=0;bi<30&&(vHi-vLo)/vLo>0.005;bi++){
+          for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){
             var vMid=(vLo+vHi)/2;
             if(testV(vMid))vHi=vMid;else vLo=vMid;
           }
           minVel=vHi;
         }else{minVel=Infinity;}
 
-        setRes({g:cr.g,st:cr.st,sf:sf,segs:segs,beam:beam,maxP:maxP,minV:minVel,
-          pulses:(function(){
-            if(isCW||!prf||prf<=0)return[];
-            var pp=[],te2=0;
-            for(var si2=0;si2<segs.length;si2++){
-              var s2=segs[si2],sd2=dia/s2.v,ts2=te2;
-              var ca2=Math.cos(s2.a),sa2=Math.sin(s2.a);
-              var kf2=Math.ceil(ts2*prf),klf2=(te2+sd2)*prf;
-              var kl2=(klf2===Math.floor(klf2))?Math.floor(klf2)-1:Math.floor(klf2);
-              for(var k2=kf2;k2<=kl2;k2++){
-                var tk2=k2/prf,fr2=(tk2-ts2)/sd2;
-                pp.push({t:tk2,x:s2.x+fr2*dia*ca2,y:s2.y+fr2*dia*sa2,si:si2});
-              }
-              te2+=sd2;
+        // Build pulse position array (cap at 50k for Plotly performance)
+        var pulseArr=[];
+        if(!isCW&&prf>0){
+          var maxStorePulses=50000;
+          var te2=0;
+          for(var si2=0;si2<segs.length&&pulseArr.length<maxStorePulses;si2++){
+            var s2=segs[si2],sd2=dia/s2.v,ts2=te2;
+            var ca2=Math.cos(s2.a),sa2=Math.sin(s2.a);
+            var kf2=Math.ceil(ts2*prf),klf2=(te2+sd2)*prf;
+            var kl2=(klf2===Math.floor(klf2))?Math.floor(klf2)-1:Math.floor(klf2);
+            for(var k2=kf2;k2<=kl2&&pulseArr.length<maxStorePulses;k2++){
+              var tk2=k2/prf,fr2=(tk2-ts2)/sd2;
+              pulseArr.push({t:tk2,x:s2.x+fr2*dia*ca2,y:s2.y+fr2*dia*sa2,si:si2});
             }
-            return pp;
-          })()
-        });
+            te2+=sd2;
+          }
+          if(pulseArr.length>=maxStorePulses&&estPulses>maxStorePulses)
+            notes.push("Showing first "+maxStorePulses+" of ~"+Math.round(estPulses)+" pulses in diagrams");
+        }
+        if(notes.length>0)setPerfNote(notes.join(". ")+".");
+
+        setRes({g:cr.g,st:cr.st,sf:sf,segs:segs,beam:beam,maxP:maxP,minV:minVel,
+          pulses:pulseArr,effPpd:effPpd});
       }
       setCmp(false);
-    },50);
+    },60);
   }
 
   var _hover=useState(null),hover=_hover[0],setHover=_hover[1];
@@ -1374,6 +1402,11 @@ function ScanTab(p){
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate fluence profile"}</div>}
       </div>:null}
     </div>
+
+    {/* ── Performance Note ── */}
+    {perfNote?<div style={{padding:"8px 12px",borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"monospace",lineHeight:1.6}}>
+      {"\u26a1"} {perfNote}
+    </div>:null}
 
     {/* ── Safety Results ── */}
     {res?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
