@@ -20,7 +20,7 @@
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
-<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
+<script src="https://cdn.plot.ly/plotly-basic-latest.min.js" onerror="se('Plotly')()"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" onerror="se('Babel')()"></script>
 
 <script>
@@ -1215,7 +1215,7 @@ function PATab(p){
 
 /* ═══════ SCAN TAB ═══════ */
 function ScanTab(p){
-  var T=p.T,msg=p.msg,setMsg=p.setMsg;
+  var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
   var _wl=useState("532"),wlS=_wl[0],setWlS=_wl[1]; var _wn=useState(532),wl=_wn[0],setWl=_wn[1];
   var _d=useState("1"),dS=_d[0],setDS=_d[1]; var _dn=useState(1),dia=_dn[0],setDia=_dn[1];
   var _tau=useState("10"),tauS=_tau[0],setTauS=_tau[1]; var _tn=useState(1e-8),tau=_tn[0],setTau=_tn[1];
