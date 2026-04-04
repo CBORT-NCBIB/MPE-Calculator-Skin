@@ -7,7 +7,8 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # ── Python tests (pytest) ──────────────────────────────────
+  python-tests:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -27,14 +28,56 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[test]"
 
-      - name: Run skin MPE tests (38 checks)
-        run: python tests/test_skin_mpe.py
+      # FIX (audit dim 5): Run via pytest, not raw `python tests/file.py`.
+      # Raw script execution can silently exit 0 on import errors.
+      - name: Run tests
+        run: pytest tests/ -v
 
-      - name: Run skin parameters tests (32 checks)
-        run: python tests/test_skin_parameters.py
+  # ── Python linting ─────────────────────────────────────────
+  python-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: Run correction factors tests (5 checks)
-        run: python tests/test_correction_factors.py
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Run exhaustive verification (254 checks)
-        run: python tests/verify_exhaustive.py
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Lint with ruff
+        run: ruff check src/ tests/
+
+  # ── JavaScript engine tests (Node.js) ──────────────────────
+  js-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run engine.js tests
+        run: node tests/test_engine_js.mjs
+
+  # ── Build verification ─────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    needs: [python-tests, js-tests]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build index.html
+        run: python web/build.py
+
+      - name: Verify build output exists
+        run: test -f web/index.html && echo "Build OK"

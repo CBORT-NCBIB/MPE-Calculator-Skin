@@ -1,155 +1,68 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot, ResponsiveContainer, ReferenceLine, Legend, Label } from "recharts";
 
-/* ═══════ STANDARD DATA (loaded from JSON; edit this to change standard) ═══════ */
-var _std = (typeof __STD_DATA__ !== "undefined") ? __STD_DATA__ : {"standard":{"name":"ICNIRP 2013","short_name":"ICNIRP 2013","reference":"Health Phys. 105(3):271\u2013295","year":2013,"organization":"International Commission on Non-Ionizing Radiation Protection","tables_used":"Tables 3, 5, 7","notes":"Skin exposure limits only. Ocular limits are not included.","unit":"J/cm\u00b2","wl_range_nm":[180,1000000],"dur_range_s":[1e-09,30000]},"correction_factors":{"CA":{"description":"Wavelength correction factor for 400\u20131400 nm skin MPE (Table 3, p. 282)","applies_to_bands":["Visible/Near-IR"],"default_outside_range":1.0,"regions":[{"wl_min_nm":400,"wl_max_nm":700,"type":"constant","value":1.0,"note":"400 \u2264 \u03bb < 700 nm"},{"wl_min_nm":700,"wl_max_nm":1050,"type":"power10","coefficient":0.002,"offset_nm":700,"note":"C_A = 10^(0.002 \u00d7 (\u03bb_nm \u2212 700))"},{"wl_min_nm":1050,"wl_max_nm":1400,"type":"constant","value":5.0,"note":"1050 \u2264 \u03bb \u2264 1400 nm"}]}},"uv_discrete_steps":{"description":"UV photochemical MPE for 302\u2013315 nm (Table 5). Discrete 1-nm steps. Values in J/cm\u00b2. Each entry gives the upper wavelength boundary and the MPE below that boundary.","note":"Left-inclusive, right-exclusive. For \u03bb in [302, 303): H = 4e-3, for [303, 304): H = 6e-3, etc.","steps":[{"wl_upper_nm":303,"H_J_cm2":0.004,"H_J_m2":40},{"wl_upper_nm":304,"H_J_cm2":0.006,"H_J_m2":60},{"wl_upper_nm":305,"H_J_cm2":0.01,"H_J_m2":100},{"wl_upper_nm":306,"H_J_cm2":0.016,"H_J_m2":160},{"wl_upper_nm":307,"H_J_cm2":0.025,"H_J_m2":250},{"wl_upper_nm":308,"H_J_cm2":0.04,"H_J_m2":400},{"wl_upper_nm":309,"H_J_cm2":0.063,"H_J_m2":630},{"wl_upper_nm":310,"H_J_cm2":0.1,"H_J_m2":1000},{"wl_upper_nm":311,"H_J_cm2":0.16,"H_J_m2":1600},{"wl_upper_nm":312,"H_J_cm2":0.25,"H_J_m2":2500},{"wl_upper_nm":313,"H_J_cm2":0.4,"H_J_m2":4000}],"fallback_H_J_cm2":0.63,"fallback_note":"313\u2013315 nm: 6.3 kJ/m\u00b2 = 0.63 J/cm\u00b2"},"display_bands":[{"name":"UV","wl_start_nm":180,"wl_end_nm":400},{"name":"Visible","wl_start_nm":400,"wl_end_nm":700},{"name":"Near-IR","wl_start_nm":700,"wl_end_nm":1400},{"name":"Far-IR","wl_start_nm":1400,"wl_end_nm":1000000}],"bands":[{"name":"UV","wl_min_nm":180,"wl_max_nm":400,"mode":"dual_limit","combination":"min","note":"MPE = min(thermal, photochemical). Table 5, pp. 283\u2013284.","thermal":{"description":"UV thermal limit: 5.6 t^0.25 kJ/m\u00b2 = 0.56 t^0.25 J/cm\u00b2. Listed as 'Also not to exceed' in Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"H = 0.56 \u00d7 t^0.25 J/cm\u00b2"}]},"photochemical":{"description":"UV photochemical limit. Wavelength-dependent sub-regions.","regions":[{"wl_min_nm":180,"wl_max_nm":302,"t_min_s":1e-09,"t_max_s":30000,"formula":"constant","a":0.003,"note":"30 J/m\u00b2 = 3\u00d710\u207b\u00b3 J/cm\u00b2"},{"wl_min_nm":302,"wl_max_nm":315,"t_min_s":1e-09,"t_max_s":30000,"formula":"discrete","lookup":"uv_discrete_steps","note":"Discrete 1-nm step values from Table 5"},{"wl_min_nm":315,"wl_max_nm":400,"t_min_s":10,"t_max_s":30000,"formula":"constant","a":1.0,"below_t_min":"not_applicable","note":"10 kJ/m\u00b2 = 1.0 J/cm\u00b2 for t \u2265 10 s. Below 10 s: photochemical undefined, only thermal applies."}]}},{"name":"Visible/Near-IR","wl_min_nm":400,"wl_max_nm":1400,"mode":"single","uses_ca":true,"note":"Table 7, p. 285. All sub-regions multiply by C_A.","regions":[{"t_min_s":1e-09,"t_max_s":1e-07,"formula":"ca_constant","a":0.02,"note":"200 C_A J/m\u00b2 = 0.02 C_A J/cm\u00b2"},{"t_min_s":1e-07,"t_max_s":10,"formula":"ca_power","a":1.1,"b":0.25,"note":"11 C_A t^0.25 kJ/m\u00b2 = 1.1 C_A t^0.25 J/cm\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"ca_linear","a":0.2,"note":"2.0 C_A kW/m\u00b2 = 0.2 C_A W/cm\u00b2 \u2192 H = 0.2 C_A t J/cm\u00b2"}]},{"name":"FIR 1400\u20131500","wl_min_nm":1400,"wl_max_nm":1500,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":0.001,"formula":"constant","a":0.1,"note":"1 kJ/m\u00b2 = 0.1 J/cm\u00b2"},{"t_min_s":0.001,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 1500\u20131800","wl_min_nm":1500,"wl_max_nm":1800,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":10,"formula":"constant","a":1.0,"note":"10 kJ/m\u00b2 = 1.0 J/cm\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 1800\u20132600","wl_min_nm":1800,"wl_max_nm":2600,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":0.001,"formula":"constant","a":0.1,"note":"1.0 kJ/m\u00b2 = 0.1 J/cm\u00b2"},{"t_min_s":0.001,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]},{"name":"FIR 2600\u20131 mm","wl_min_nm":2600,"wl_max_nm":1000000,"mode":"single","note":"Table 5.","regions":[{"t_min_s":1e-09,"t_max_s":1e-07,"formula":"constant","a":0.01,"note":"100 J/m\u00b2 = 0.01 J/cm\u00b2"},{"t_min_s":1e-07,"t_max_s":10,"formula":"power","a":0.56,"b":0.25,"note":"5.6 t^0.25 kJ/m\u00b2"},{"t_min_s":10,"t_max_s":30000,"formula":"linear","a":0.1,"note":"1.0 kW/m\u00b2 = 0.1 W/cm\u00b2"}]}],"supplementary":{"t_max":{"description":"Recommended maximum anticipated exposure durations for skin (Table 4, Diffuse column).","regions":[{"wl_min_nm":180,"wl_max_nm":400,"t_max_s":30000,"note":"UV"},{"wl_min_nm":400,"wl_max_nm":700,"t_max_s":600,"note":"Visible"},{"wl_min_nm":700,"wl_max_nm":1400,"t_max_s":600,"note":"Near-IR"},{"wl_min_nm":1400,"wl_max_nm":1000000,"t_max_s":10,"note":"Far-IR"}]},"limiting_apertures":{"description":"Limiting aperture diameters for skin MPE averaging (Table 8, Skin column).","regions":[{"wl_min_nm":180,"wl_max_nm":100000,"diameter_mm":3.5,"note":"180 nm to 100 \u00b5m"},{"wl_min_nm":100000,"wl_max_nm":1000000,"diameter_mm":11.0,"note":"100 \u00b5m to 1 mm"}]},"large_area_correction":{"description":"MPE correction for large beam cross-sections (\u03bb > 1.4 \u00b5m, t > 10 s). Table 7 note c.","threshold_cm2":100,"cap_cm2":1000,"formula_mW_cm2":"10000 / A_s","cap_mW_cm2":10},"uv_successive_day_derate":{"description":"De-rating factor for UV (280\u2013400 nm) on successive days.","wl_min_nm":280,"wl_max_nm":400,"factor":2.5}}};
-
-/* ═══════ DATA-DRIVEN ENGINE ═══════ */
+/* ═══════ ENGINE BRIDGE ═══════ */
 /*
- * NOTE: These functions duplicate web/engine.js. Both implementations read
- * from the same JSON schema and must produce identical results.
- *
- * WHY THE DUPLICATION EXISTS:
- * calculator.jsx is Babel-transpiled into a self-contained <script> block
- * inside index.html. There is no module bundler, so it cannot import from
- * engine.js. The standalone engine.js exists for Node.js server-side use
- * and for cross-language verification against the Python engine.
- *
- * If you modify the calculation logic, update BOTH files and re-run the
- * cross-language test suite to verify they remain in agreement.
+ * All calculation logic lives in engine.js (loaded as a separate <script>).
+ * This bridge provides short-name aliases that the UI code uses.
+ * NO calculation code is duplicated here.
  */
-function CA(wl){var regs=_std.correction_factors.CA.regions;for(var i=0;i<regs.length;i++){var r=regs[i];if(wl>=r.wl_min_nm&&(wl<r.wl_max_nm||(i===regs.length-1&&wl===r.wl_max_nm))){if(r.type==="constant")return r.value;if(r.type==="power10")return Math.pow(10,r.coefficient*(wl-r.offset_nm));}}return _std.correction_factors.CA.default_outside_range||1;}
-function uvDisc(wl){var ds=_std.uv_discrete_steps;for(var i=0;i<ds.steps.length;i++){if(wl<ds.steps[i].wl_upper_nm)return ds.steps[i].H_J_cm2;}return ds.fallback_H_J_cm2;}
-function evalF(r,wl,t){var f=r.formula;if(f==="constant")return r.a;if(f==="power")return r.a*Math.pow(t,r.b);if(f==="linear")return r.a*t;if(f==="ca_constant")return r.a*CA(wl);if(f==="ca_power")return r.a*CA(wl)*Math.pow(t,r.b);if(f==="ca_linear")return r.a*CA(wl)*t;if(f==="discrete")return uvDisc(wl);return NaN;}
-function evalRegs(regs,wl,t){for(var i=0;i<regs.length;i++){var r=regs[i];if(r.wl_min_nm!==undefined&&r.wl_max_nm!==undefined){if(wl<r.wl_min_nm||wl>=r.wl_max_nm)continue;}if(t>=r.t_min_s&&t<r.t_max_s)return evalF(r,wl,t);if(t<r.t_min_s&&r.below_t_min==="not_applicable"){if(r.wl_min_nm!==undefined&&(wl<r.wl_min_nm||wl>=r.wl_max_nm))continue;return Infinity;}}return NaN;}
-function evalDual(band,wl,t){var th=evalRegs(band.thermal.regions,wl,t),pc=evalRegs(band.photochemical.regions,wl,t),a=isFinite(th),b=isFinite(pc);if(a&&b)return Math.min(th,pc);return a?th:b?pc:NaN;}
-function skinMPE(wl,t){for(var i=0;i<_std.bands.length;i++){var band=_std.bands[i];var inB=wl>=band.wl_min_nm&&wl<band.wl_max_nm;if(!inB&&i===_std.bands.length-1&&wl===band.wl_max_nm)inB=true;if(!inB)continue;return band.mode==="dual_limit"?evalDual(band,wl,t):evalRegs(band.regions,wl,t);}return NaN;}
-function rpCalc(wl,tau,prf,T){var r1=skinMPE(wl,tau),ht=skinMPE(wl,T),N=prf*T;if(N<=1)return{r1:r1,r2:r1,H:r1,N:N,bd:"Rule 1"};var r2=ht/N;return{r1:r1,r2:r2,H:Math.min(r1,r2),N:N,bd:r1<=r2?"Rule 1":"Rule 2"};}
-function bnd(wl){var db=_std.display_bands;for(var i=0;i<db.length;i++){if(wl>=db[i].wl_start_nm&&wl<db[i].wl_end_nm)return db[i].name;}return db[db.length-1].name;}
+var _E = (typeof MPEEngine !== "undefined") ? MPEEngine : null;
+if (!_E) { throw new Error("MPEEngine not loaded. Ensure engine.js is included before calculator.jsx."); }
 
-/* ═══════ SCANNING ENGINE ═══════ */
-function scanDwellGaussian(d,v){return d*Math.sqrt(Math.PI)/(2*v);}
-function scanDwellGeometric(d,v){return d/v;}
-function _erf(x){var a1=0.254829592,a2=-0.284496736,a3=1.421413741,a4=-1.453152027,a5=1.061405429,p=0.3275911;var s=x<0?-1:1;x=Math.abs(x);var t=1/(1+p*x);return s*(1-(((((a5*t+a4)*t)+a3)*t+a2)*t+a1)*t*Math.exp(-x*x));}
-var _gT=null,_gN=1024,_gM=9.0;
-function _initG(){if(_gT)return;_gT=new Float64Array(_gN);for(var i=0;i<_gN;i++)_gT[i]=Math.exp(-i*_gM/(_gN-1));}
-function _gL(u){if(u>=_gM)return 0;if(u<=0)return 1;var idx=u*(_gN-1)/_gM,i=idx|0,f=idx-i;return _gT[i]*(1-f)+_gT[i+1]*f;}
+/* Standard metadata (for display only — all calculations go through _E) */
+var _std = (typeof __STD_DATA__ !== "undefined") ? __STD_DATA__ : {};
 
-function scanCreateGrid(d,segs,ppd){
-  ppd=ppd||8;if(ppd<4)ppd=4;if(ppd>32)ppd=32;
-  var dx=d/ppd,margin=3*d;
-  var xn=Infinity,xx=-Infinity,yn=Infinity,yx=-Infinity;
-  for(var i=0;i<segs.length;i++){var s=segs[i];var xe=s.x+d*Math.cos(s.a),ye=s.y+d*Math.sin(s.a);if(s.x<xn)xn=s.x;if(s.x>xx)xx=s.x;if(s.y<yn)yn=s.y;if(s.y>yx)yx=s.y;if(xe<xn)xn=xe;if(xe>xx)xx=xe;if(ye<yn)yn=ye;if(ye>yx)yx=ye;}
-  xn-=margin;xx+=margin;yn-=margin;yx+=margin;
-  var nx=Math.ceil((xx-xn)/dx)+1,ny=Math.ceil((yx-yn)/dx)+1;
-  if(nx*ny>4e6){var sc=Math.sqrt(4e6/(nx*ny));nx=Math.floor(nx*sc);ny=Math.floor(ny*sc);dx=(xx-xn)/(nx-1);}
-  return{nx:nx,ny:ny,dx:dx,xn:xn,yn:yn,flu:new Float32Array(nx*ny),pc:new Float32Array(nx*ny),ppH:new Float32Array(nx*ny),
-    lvt:(function(){var a=new Float32Array(nx*ny);for(var i=0;i<a.length;i++)a[i]=-1e30;return a;})(),
-    mrv:(function(){var a=new Float32Array(nx*ny);for(var i=0;i<a.length;i++)a[i]=1e30;return a;})()};
+/* Core MPE functions */
+var skinMPE = _E.skinMPE;
+var CA = _E.CA;
+function rpCalc(wl,tau,prf,T){
+  var r=_E.repPulse(wl,tau,prf,T);
+  return{r1:r.rule1,r2:r.rule2,H:r.H,N:r.N,bd:r.binding};
 }
+function bnd(wl){ return _E.bandName(wl); }
 
-function scanFluPulsed(g,d,prf,Ep,segs){
-  _initG();var w=d/Math.sqrt(2),sig=d/(2*Math.sqrt(2)),w2=w*w;
-  var H0=2*Ep/(Math.PI*w2)*100,tr=3*sig,tr2=tr*tr,tg=Math.ceil(tr/g.dx);
-  var nx=g.nx,ny=g.ny,dx=g.dx,xn=g.xn,yn=g.yn,flu=g.flu,pc=g.pc,ppH=g.ppH,lvt=g.lvt,mrv=g.mrv;
-  var te=0,tp=0;
-  var rth=0;for(var ri=0;ri<segs.length;ri++){var rd=d/segs[ri].v;if(rd>rth)rth=rd;}rth*=2;
-  for(var si=0;si<segs.length;si++){
-    var s=segs[si],sd=d/s.v,ts=te,ca=Math.cos(s.a),sa=Math.sin(s.a);
-    var kf=Math.ceil(ts*prf),klf=(te+sd)*prf;
-    var kl=(klf===Math.floor(klf))?Math.floor(klf)-1:Math.floor(klf);
-    for(var k=kf;k<=kl;k++){
-      var tk=k/prf,fr=(tk-ts)/sd,px=s.x+fr*d*ca,py=s.y+fr*d*sa;
-      var cx=Math.round((px-xn)/dx),cy=Math.round((py-yn)/dx);
-      var x0=cx-tg,x1=cx+tg,y0=cy-tg,y1=cy+tg;
-      if(x0<0)x0=0;if(x1>=nx)x1=nx-1;if(y0<0)y0=0;if(y1>=ny)y1=ny-1;
-      for(var iy=y0;iy<=y1;iy++){var gy=yn+iy*dx,dy2=(gy-py)*(gy-py);if(dy2>tr2)continue;
-        for(var ix=x0;ix<=x1;ix++){var gx=xn+ix*dx,r2=(gx-px)*(gx-px)+dy2;if(r2>tr2)continue;
-          var Hp=H0*_gL(2*r2/w2),idx=iy*nx+ix;flu[idx]+=Hp;pc[idx]+=1;if(Hp>ppH[idx])ppH[idx]=Hp;
-          var gap=tk-lvt[idx];if(gap>rth&&lvt[idx]>-1e29){if(gap<mrv[idx])mrv[idx]=gap;}lvt[idx]=tk;}}
-      tp++;
-    }
-    te+=sd;
-  }
-  return{tp:tp,tt:te};
-}
-
-function scanFluCW(g,d,P,segs){
-  var sig=d/(2*Math.sqrt(2)),s2=sig*Math.sqrt(2),sig2=sig*sig,tp=3*sig,tp2=tp*tp;
-  var nx=g.nx,ny=g.ny,dx=g.dx,xn=g.xn,yn=g.yn,flu=g.flu,ppH=g.ppH,lvt=g.lvt,mrv=g.mrv;
-  var sws=[],si=0;
-  while(si<segs.length){var s0=segs[si],a=s0.a,v=s0.v,ca=Math.cos(a),sa=Math.sin(a),nm=1;
-    while(si+nm<segs.length&&segs[si+nm].a===a&&segs[si+nm].v===v){
-      var ex=s0.x+nm*d*ca,ey=s0.y+nm*d*sa,nx2=segs[si+nm];
-      var dg=(nx2.x-ex)*(nx2.x-ex)+(nx2.y-ey)*(nx2.y-ey);
-      if(dg>d*d*0.01)break;nm++;}
-    var L=nm*d;
-    sws.push({x1:s0.x,y1:s0.y,x2:s0.x+L*ca,y2:s0.y+L*sa,ux:ca,uy:sa,L:L,v:v});si+=nm;}
-  var coeff0=P/(sig*Math.sqrt(2*Math.PI)),tt=0,mv=Infinity;
-  for(var wi=0;wi<sws.length;wi++){var sw=sws[wi],co=coeff0/sw.v*100,st0=tt;
-    if(sw.v<mv)mv=sw.v;
-    var sxn=Math.min(sw.x1,sw.x2)-tp,sxx=Math.max(sw.x1,sw.x2)+tp;
-    var syn=Math.min(sw.y1,sw.y2)-tp,syx=Math.max(sw.y1,sw.y2)+tp;
-    var ix0=Math.max(0,Math.floor((sxn-xn)/dx)),ix1=Math.min(nx-1,Math.ceil((sxx-xn)/dx));
-    var iy0=Math.max(0,Math.floor((syn-yn)/dx)),iy1=Math.min(ny-1,Math.ceil((syx-yn)/dx));
-    for(var iy=iy0;iy<=iy1;iy++){var gy=yn+iy*dx;
-      for(var ix=ix0;ix<=ix1;ix++){var gx=xn+ix*dx;
-        var qx=gx-sw.x1,qy=gy-sw.y1,tpar=qx*sw.ux+qy*sw.uy;
-        if(tpar<-tp||tpar>sw.L+tp)continue;
-        var dp=qx*sw.uy-qy*sw.ux,dp2=dp*dp;if(dp2>tp2)continue;
-        var env=Math.exp(-dp2/(2*sig2));
-        var F=co*env*0.5*(_erf((sw.L-tpar)/s2)-_erf(-tpar/s2));
-        if(F>0){var idx=iy*nx+ix;flu[idx]+=F;if(F>ppH[idx])ppH[idx]=F;
-          var tc=tpar<0?0:(tpar>sw.L?sw.L:tpar),tv=st0+tc/sw.v;
-          var gp=tv-lvt[idx];if(gp>0&&lvt[idx]>-1e29){if(gp<mrv[idx])mrv[idx]=gp;}lvt[idx]=tv;}}}
-    tt+=sw.L/sw.v;}
-  return{ns:sws.length,tt:tt,mv:mv};
-}
+/* Scanning engine — adapters translate engine.js field names to short UI names */
+var scanDwellGaussian = _E.scanDwellGaussian;
+var scanDwellGeometric = _E.scanDwellGeometric;
 
 function scanCompute(beam,segs,ppd){
-  if(!segs||!segs.length)return null;var g=scanCreateGrid(beam.d,segs,ppd||8);
-  var st=beam.cw?scanFluCW(g,beam.d,beam.P,segs):scanFluPulsed(g,beam.d,beam.prf,beam.Ep,segs);
+  if(!segs||!segs.length)return null;
+  var eb={d_1e_mm:beam.d,wl_nm:beam.wl,tau_s:beam.tau,prf_hz:beam.prf,
+    pulse_energy_J:beam.Ep,avg_power_W:beam.P,is_cw:beam.cw};
+  var r=_E.computeScanFluence(eb,segs,ppd||8);
+  if(!r)return null;
+  var eg=r.grid,s=r.stats;
+  var g={nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm,
+    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s};
+  var st={tt:s.total_time_s,tp:s.total_pulses||0};
+  if(s.min_velocity!==undefined)st.mv=s.min_velocity;
   return{g:g,st:st};
 }
 
 function scanSafety(g,beam,T,dwMode,minV){
-  var mT=skinMPE(beam.wl,T),mt,r1L;
-  if(beam.cw&&isFinite(minV)&&minV>0){
-    var td=dwMode==="geometric"?scanDwellGeometric(beam.d,minV):scanDwellGaussian(beam.d,minV);
-    mt=skinMPE(beam.wl,td);r1L=mt;
-  }else if(!beam.cw){mt=skinMPE(beam.wl,beam.tau);r1L=mt;}
-  else{mt=NaN;r1L=Infinity;}
-  var n=g.nx*g.ny,wR1=0,wR2=0,wI=0,wV=0,pF=0,mP=0;
-  for(var i=0;i<n;i++){if(g.flu[i]>pF)pF=g.flu[i];if(g.pc[i]>mP)mP=g.pc[i];
-    var r1=isFinite(r1L)&&r1L>0?(g.ppH[i]/r1L):0,r2=isFinite(mT)?(g.flu[i]/mT):0;
-    if(r1>wR1)wR1=r1;if(r2>wR2)wR2=r2;var w=r1>r2?r1:r2;if(w>wV){wV=w;wI=i;}}
-  var wx=wI%g.nx,wy=(wI-wx)/g.nx;
-  // Revisit timing
-  var gmr=1e30,rp=0;
-  for(var ri=0;ri<n;ri++){if(g.mrv[ri]<1e29){rp++;if(g.mrv[ri]<gmr)gmr=g.mrv[ri];}}
-  if(gmr>=1e29)gmr=Infinity;
-  var kappa=0.13,tauR=beam.d*beam.d/(4*kappa);
-  return{safe:wR1<=1&&wR2<=1,wr:wV,wx:g.xn+wx*g.dx,wy:g.yn+wy*g.dx,br:wR1>=wR2?"Rule 1":"Rule 2",
-    sm:1-wV,mt:mt,mT:mT,pF:pF,ppM:g.ppH[wI],mP:mP,r1m:wR1,r2m:wR2,
-    minRv:gmr,rvPts:rp,tauR:tauR,rvOk:gmr>=tauR};
+  var eg={nx:g.nx,ny:g.ny,dx_mm:g.dx,x_min_mm:g.xn,y_min_mm:g.yn,
+    fluence:g.flu,pulse_count:g.pc,peak_pulse_H:g.ppH,last_visit_t:g.lvt,min_revisit_s:g.mrv};
+  var eb={wl_nm:beam.wl,d_1e_mm:beam.d,tau_s:beam.tau,is_cw:beam.cw};
+  var r=_E.evaluateScanSafety(eg,eb,T,dwMode,minV);
+  return{safe:r.safe,wr:r.worst_ratio,wx:r.worst_x_mm,wy:r.worst_y_mm,
+    br:r.binding_rule,sm:r.safety_margin,mt:r.mpe_tau,mT:r.mpe_T,
+    pF:r.peak_fluence,ppM:r.peak_pulse_H_max,mP:r.max_pulses,
+    r1m:r.rule1_max_ratio,r2m:r.rule2_max_ratio,
+    minRv:r.min_revisit_s,rvPts:r.revisit_points,tauR:r.thermal_relax_s,rvOk:r.revisit_adequate};
 }
 
-function scanBuildLinear(x0,y0,a,L,v,d){var n=Math.round(L/d);if(n<1)n=1;var ca=Math.cos(a),sa=Math.sin(a),r=[];
-  for(var i=0;i<n;i++)r.push({x:x0+i*d*ca,y:y0+i*d*sa,a:a,v:v});return r;}
-function scanBuildBidi(x0,y0,lL,nL,h,sv,jv,d){var r=[];
-  for(var j=0;j<nL;j++){var ly=y0+j*h;
-    if(j%2===0){var ls=scanBuildLinear(x0,ly,0,lL,sv,d);for(var k=0;k<ls.length;k++)r.push(ls[k]);}
-    else{var ls2=scanBuildLinear(x0+lL,ly,Math.PI,lL,sv,d);for(var k2=0;k2<ls2.length;k2++)r.push(ls2[k2]);}
-    if(j<nL-1){var jx=j%2===0?x0+lL:x0;var js=scanBuildLinear(jx,ly,Math.PI/2,h,jv,d);for(var k3=0;k3<js.length;k3++)r.push(js[k3]);}}
-  return r;}
-function scanBuildRaster(x0,y0,lL,nL,h,sv,jv,d){var r=[];
-  for(var j=0;j<nL;j++){var ly=y0+j*h;
-    var ls=scanBuildLinear(x0,ly,0,lL,sv,d);for(var k=0;k<ls.length;k++)r.push(ls[k]);
-    if(j<nL-1){var ret=scanBuildLinear(x0+lL,ly,Math.PI,lL,jv,d);for(var k2=0;k2<ret.length;k2++)r.push(ret[k2]);
-      var st=scanBuildLinear(x0,ly,Math.PI/2,h,jv,d);for(var k3=0;k3<st.length;k3++)r.push(st[k3]);}}
-  return r;}
-function scanMaxPulseEnergy(wl,d,tau){var w=d/Math.sqrt(2);return skinMPE(wl,tau)*Math.PI*w*w/200;}
-function scanMinRepRate(wl,d,tau,P){var w=d/Math.sqrt(2),mt=skinMPE(wl,tau);return mt<=0?Infinity:200*P/(Math.PI*w*w*mt);}
+/* Scan builders — add short-name aliases so rendering code (s.x, s.y, s.a, s.v) still works */
+function _addShortNames(segs){
+  for(var i=0;i<segs.length;i++){var s=segs[i];s.x=s.x_start_mm;s.y=s.y_start_mm;s.a=s.angle_rad;s.v=s.v_mm_s;}
+  return segs;
+}
+function scanBuildLinear(x0,y0,a,L,v,d){return _addShortNames(_E.buildLinearScan(x0,y0,a,L,v,d));}
+function scanBuildBidi(x0,y0,lL,nL,h,sv,jv,d){return _addShortNames(_E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d));}
+function scanBuildRaster(x0,y0,lL,nL,h,sv,jv,d){return _addShortNames(_E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d));}
+var scanMaxPulseEnergy = _E.maxPulseEnergy;
+var scanMinRepRate = _E.minRepRate;
+
 function si(v,u){if(!isFinite(v))return"\u2014";var a=Math.abs(v);if(a===0)return"0 "+u;if(a>=1e6)return numFmt(v,4)+" "+u;if(a>=1e3)return(v/1e3).toPrecision(4)+" k"+u;if(a>=.1)return v.toPrecision(4)+" "+u;if(a>=1e-3)return(v*1e3).toPrecision(4)+" m"+u;if(a>=1e-6)return(v*1e6).toPrecision(4)+" \u00b5"+u;if(a>=1e-9)return(v*1e9).toPrecision(4)+" n"+u;return numFmt(v,4)+" "+u;}
 
 /* ═══════ SCIENTIFIC NOTATION ═══════ */
@@ -215,67 +128,13 @@ function convEN(v,uid){if(!isFinite(v))return"\u2014";for(var i=0;i<IRRAD_UNITS.
 function durInUnit(t,uid){if(!isFinite(t))return"\u2014";for(var i=0;i<DUR_UNITS.length;i++){if(DUR_UNITS[i].id===uid)return numFmt(t/DUR_UNITS[i].toS,4);}return numFmt(t,4);}
 function fluMult(uid){for(var i=0;i<FLUENCE_UNITS.length;i++){if(FLUENCE_UNITS[i].id===uid)return FLUENCE_UNITS[i].mult;}return 1e3;}
 
-/* PA engine */
-function paEffFluence(wl,tau,f,T){var r1=skinMPE(wl,tau),hT=skinMPE(wl,T);if(!isFinite(r1)||!isFinite(hT))return NaN;var N=f*T;if(N<1)N=1;return Math.min(r1,hT/N);}
-function paRelSNR(wl,tau,f,T){var ps=skinMPE(wl,tau);if(!isFinite(ps)||ps<=0)return NaN;var pe=paEffFluence(wl,tau,f,T);if(!isFinite(pe)||pe<=0)return NaN;var N=f*T;if(N<1)N=1;return(pe*Math.sqrt(N))/ps;}
-function paOptPRF(wl,tau,T){var hs=skinMPE(wl,tau),hT=skinMPE(wl,T);if(!isFinite(hs)||!isFinite(hT)||hs<=0||T<=0)return NaN;return hT/(hs*T);}
+/* PA & beam geometry — delegated to engine.js */
+var paEffFluence = _E.paEffFluence;
+var paRelSNR = _E.paRelSNR;
+function paOptPRF(wl,tau,T){ return _E.paOptimalPRF(wl,tau,T); }
+var getAperture = _E.getAperture;
+var beamEval = _E.beamEval;
 
-/* ═══════ BEAM GEOMETRY & LIMITING APERTURE (ICNIRP 2013 Table 8, Table 7 note b, p. 288) ═══════ */
-/*
- * Limiting aperture: the diameter over which radiant exposure is averaged
- * for comparison with the MPE. For skin:
- *   λ < 100 µm:  3.5 mm  (Table 8)
- *   λ ≥ 100 µm:  11 mm   (Table 8)
- *
- * Evaluation rules (Table 7 note b, p. 288):
- *   d < 1 mm:     Use ACTUAL radiant exposure (not averaged over aperture)
- *   1 mm ≤ d < d_ap: Average over the limiting aperture → H_eval = E / A_aperture
- *   d ≥ d_ap:     Beam fills aperture → H_eval = E / A_beam
- *
- * "Beam diameter" for Gaussian beams is the 1/e diameter (p. 288):
- *   "the distance between diametrically opposed points in the beam where
- *    the local irradiance is 1/e, 0.37 times peak irradiance"
- */
-function getAperture(wl_nm){
-  var regs=_std.supplementary.limiting_apertures.regions;
-  for(var i=0;i<regs.length;i++){
-    if(wl_nm>=regs[i].wl_min_nm&&wl_nm<regs[i].wl_max_nm)return regs[i].diameter_mm;
-  }
-  return regs[regs.length-1].diameter_mm;
-}
-
-function beamEval(wl_nm, beam_dia_mm){
-  var d_ap=getAperture(wl_nm);
-  if(!isFinite(beam_dia_mm)||beam_dia_mm<=0)return{d_eval_mm:0,area_cm2:0,regime:"invalid",aperture_mm:d_ap,threshold_mm:1,note:"Enter a beam diameter greater than zero."};
-  var ap=_std.supplementary&&_std.supplementary.limiting_apertures;
-  var threshold=(ap&&ap.small_beam_threshold_mm)||1.0;
-  var d=beam_dia_mm;
-  var d_eval, regime, note;
-  var apRef=(ap&&ap.aperture_reference)||"";
-  var sbRef=(ap&&ap.small_beam_reference)||"";
-
-  if(d<threshold){
-    d_eval=d;
-    regime="actual";
-    note="Beam < "+threshold+" mm: actual radiant exposure used ("+sbRef+"). No aperture averaging.";
-  } else if(d<d_ap){
-    d_eval=d_ap;
-    regime="aperture";
-    note="Beam \u2265 "+threshold+" mm but < "+d_ap.toFixed(1)+" mm aperture: averaged over "+d_ap.toFixed(1)+" mm limiting aperture ("+apRef+").";
-  } else {
-    d_eval=d;
-    regime="beam";
-    note="Beam \u2265 "+d_ap.toFixed(1)+" mm aperture: actual beam area used. For non-uniform beams, evaluate the highest H within any "+d_ap.toFixed(1)+" mm circle.";
-  }
-
-  var r_cm=d_eval/20;
-  var area_cm2=Math.PI*r_cm*r_cm;
-  return{d_eval_mm:d_eval, area_cm2:area_cm2, regime:regime, aperture_mm:d_ap, threshold_mm:threshold, note:note};
-}
-
-var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#F0E442","#000000"];
-var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
-var WLTICKS=[200,400,700,1000,1400,2000,3000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
 
 var TH={
@@ -1521,6 +1380,26 @@ function ScanTab(p){
 }
 
 /* ═══════ APP (TAB ROUTER) ═══════ */
+/* ═══════ ERROR BOUNDARY ═══════ */
+/* Prevents a crash in one tab from blanking the entire application (Audit finding: dim 3) */
+class ErrorBoundary extends React.Component {
+  constructor(props){super(props);this.state={hasError:false,error:null};}
+  static getDerivedStateFromError(error){return{hasError:true,error:error};}
+  componentDidCatch(error,info){if(typeof console!=="undefined")console.error("Tab error:",error,info);}
+  render(){
+    if(this.state.hasError){
+      var T=this.props.theme||{};
+      return React.createElement("div",{style:{padding:40,textAlign:"center",color:T.no||"#d32f2f"}},
+        React.createElement("div",{style:{fontSize:18,fontWeight:700,marginBottom:10}},"\u26a0 Component Error"),
+        React.createElement("div",{style:{fontSize:12,fontFamily:"monospace",color:T.td||"#666",marginBottom:16}},
+          String(this.state.error)),
+        React.createElement("button",{onClick:function(){this.setState({hasError:false,error:null});}.bind(this),
+          style:{padding:"8px 16px",fontSize:12,cursor:"pointer",border:"1px solid #ccc",borderRadius:4,background:"#f5f5f5"}},"Retry"));
+    }
+    return this.props.children;
+  }
+}
+
 export default function App(){
   var _t=useState("light"),theme=_t[0],setTheme=_t[1];
   var _tab=useState("mpe"),tab=_tab[0],setTab=_tab[1];
@@ -1542,9 +1421,9 @@ export default function App(){
         <button onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
       </div>
       <div style={{padding:"16px 24px 40px",maxWidth:1100,margin:"0 auto"}}>
-        {tab==="mpe"?<MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
-        {tab==="scan"?<ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
-        {tab==="pa"?<PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/>:null}
+        {tab==="mpe"?<ErrorBoundary theme={T}><MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary>:null}
+        {tab==="scan"?<ErrorBoundary theme={T}><ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary>:null}
+        {tab==="pa"?<ErrorBoundary theme={T}><PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary>:null}
         <div style={{textAlign:"center",fontSize:10,color:T.td,padding:"12px 0 4px",lineHeight:1.7,borderTop:"1px solid "+T.bd,marginTop:16}}>{STD_NAME} {"\u00b7"} {STD_REF} {"\u00b7"} {STD_TABLES}<br/>For research and educational purposes only. Not a certified safety instrument. Skin MPE only {"\u2014"} ocular limits are not evaluated.<br/>Verify all values independently against the applicable standard before any safety-critical use.</div>
       </div>
     </div>

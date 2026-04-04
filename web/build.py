@@ -28,6 +28,7 @@ else:
 
 jsx_path = os.path.join(web_dir, "calculator.jsx")
 json_path = os.path.join(web_dir, "standards", "icnirp_2013.json")
+engine_path = os.path.join(web_dir, "engine.js")
 out_path = os.path.join(web_dir, "index.html")
 
 # Read sources
@@ -35,6 +36,8 @@ with open(jsx_path, "r") as f:
     jsx = f.read()
 with open(json_path, "r") as f:
     std_json = f.read().strip()
+with open(engine_path, "r") as f:
+    engine_js = f.read()
 
 # Transform JSX for browser embedding
 lines = jsx.split("\n")
@@ -77,12 +80,19 @@ html = f'''<!DOCTYPE html>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
-<script src="https://cdn.plot.ly/plotly-basic-latest.min.js" onerror="se('Plotly')()"></script>
+<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" onerror="se('Babel')()"></script>
+
+<script>
+// Calculation engine (from engine.js — single source of truth)
+{engine_js}
+</script>
 
 <script>
 // Standard data (injected from ./standards/icnirp_2013.json)
 var __STD_DATA__ = {std_json};
+// Initialize the engine with the standard data
+if (typeof MPEEngine !== "undefined") MPEEngine.loadStandard(__STD_DATA__);
 </script>
 
 <script type="text/babel">
@@ -102,6 +112,6 @@ with open(out_path, "w") as f:
 
 line_count = html.count("\n") + 1
 print(f"Built {out_path}")
-print(f"  Sources: calculator.jsx ({len(lines)} lines), icnirp_2013.json")
+print(f"  Sources: calculator.jsx ({len(lines)} lines), engine.js ({len(engine_js.splitlines())} lines), icnirp_2013.json")
 print(f"  Output:  index.html ({line_count} lines)")
 print(f"  Transforms: stripped imports, Tooltip→RTooltip, stripped export default")
