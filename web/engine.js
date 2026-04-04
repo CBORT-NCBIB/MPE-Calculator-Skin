@@ -522,7 +522,7 @@ function createFluenceGrid(d_1e_mm, segments, ppd) {
  * @param {Array} segments - ScanSegment[]
  * @returns {Object} { total_pulses, total_time_s }
  */
-function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segments) {
+function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segments, max_compute_pulses) {
   _initGaussTable();
 
   var w = d_1e_mm / Math.sqrt(2);          // 1/e² radius in mm
@@ -543,6 +543,22 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
 
   var t_elapsed = 0;
   var total_pulses = 0;
+
+  // ── Pulse subsampling for high-PRF scenarios ──
+  // Estimate total pulse count across all segments
+  var est_total = 0;
+  for (var ei = 0; ei < segments.length; ei++) {
+    var ed = d_1e_mm / segments[ei].v_mm_s;
+    est_total += Math.max(0, Math.floor(ed * prf_hz));
+  }
+  // Compute stride: sample every Nth pulse, multiply contribution by N
+  // Spatial error per stride: stride/prf * v. For stride=50, 200kHz, 100mm/s → 0.025mm (<<1mm beam)
+  var mcp = max_compute_pulses || 500000;
+  var stride = 1;
+  if (est_total > mcp && mcp > 0) {
+    stride = Math.ceil(est_total / mcp);
+  }
+  var H_scale = H0_cm2 * stride; // pre-multiply for subsampled pulses
 
   // Revisit threshold: max dwell time across all segments.
   // This ensures transitions between scan lines and jumps within a single
@@ -572,7 +588,15 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
     var k_last = (k_last_f === Math.floor(k_last_f)) ?
       Math.floor(k_last_f) - 1 : Math.floor(k_last_f);
 
-    for (var k = k_first; k <= k_last; k++) {
+    // Align k_first to stride boundary within this segment
+    if (stride > 1 && k_first % stride !== 0) {
+      k_first += stride - (k_first % stride);
+    }
+
+    var seg_actual_pulses = Math.max(0, k_last - Math.ceil(t_seg_start * prf_hz) + 1);
+    total_pulses += seg_actual_pulses;
+
+    for (var k = k_first; k <= k_last; k += stride) {
       var t_k = k / prf_hz;
       var frac = (t_k - t_seg_start) / seg_dur;
 
@@ -602,12 +626,13 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
           if (r2 > trunc2) continue;
 
           var two_r2_over_w2 = 2 * r2 / w2;
-          var Hp = H0_cm2 * _gaussLookup(two_r2_over_w2);
+          var Hp = H_scale * _gaussLookup(two_r2_over_w2);
 
           var idx = iy * nx + ix;
           flu[idx] += Hp;
-          pc[idx] += 1;
-          if (Hp > ppH[idx]) ppH[idx] = Hp;
+          pc[idx] += stride;
+          if (H0_cm2 * _gaussLookup(two_r2_over_w2) > ppH[idx])
+            ppH[idx] = H0_cm2 * _gaussLookup(two_r2_over_w2);
 
           // Revisit tracking: if gap since last visit > threshold, it's a new visit
           var gap = t_k - lvt[idx];
@@ -617,12 +642,11 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
           lvt[idx] = t_k;
         }
       }
-      total_pulses++;
     }
     t_elapsed = t_seg_end;
   }
 
-  return { total_pulses: total_pulses, total_time_s: t_elapsed };
+  return { total_pulses: total_pulses, total_time_s: t_elapsed, stride: stride };
 }
 
 // ── CW beam: analytical path-segment integration ────────────────

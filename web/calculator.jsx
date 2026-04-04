@@ -933,16 +933,21 @@ function ScanTab(p){
     var trunc=Math.ceil(3*sigma/estDx);
     var estOps=estPulses*Math.PI*trunc*trunc;
     var effPpd=ppd,notes=[];
-    if(estOps>40e6&&ppd>4){
-      for(effPpd=ppd-1;effPpd>=4;effPpd--){
+    if(estOps>40e6&&ppd>2){
+      for(effPpd=ppd-1;effPpd>=2;effPpd--){
         var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
         if(estPulses*Math.PI*tr2*tr2<40e6)break;
       }
-      effPpd=Math.max(4,effPpd);
+      effPpd=Math.max(2,effPpd);
       notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses");
     }
-    var auxPpd=Math.min(effPpd,4);
-    var maxBisect=estPulses>100000?8:15;
+    // Pulse subsampling note (engine handles this internally at >500k pulses)
+    if(estPulses>500000){
+      var estStride=Math.ceil(estPulses/500000);
+      notes.push("Pulse subsampling active (stride="+estStride+"): computing 1 in every "+estStride+" pulses for "+Math.round(estPulses/1000)+"k total");
+    }
+    var auxPpd=Math.min(effPpd,2);
+    var maxBisect=estPulses>100000?6:estPulses>10000?8:15;
 
     // ── Try Web Worker (off main thread) ──
     var worker=getWorker();
