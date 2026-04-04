@@ -135,6 +135,9 @@ function paOptPRF(wl,tau,T){ return _E.paOptimalPRF(wl,tau,T); }
 var getAperture = _E.getAperture;
 var beamEval = _E.beamEval;
 
+var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#F0E442","#000000"];
+var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
+var WLTICKS=[200,400,700,1000,1400,2000,3000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
 
 var TH={
