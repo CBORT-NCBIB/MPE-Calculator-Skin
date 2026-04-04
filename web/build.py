@@ -77,6 +77,7 @@ html = f'''<!DOCTYPE html>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
+<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" onerror="se('Babel')()"></script>
 
 <script>
