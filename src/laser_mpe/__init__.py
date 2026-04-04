@@ -24,42 +24,80 @@ Primary API (standard-agnostic):
 """
 
 # ── Primary API (standard-agnostic) ──
+from .correction_factors import CA_visible_NIR as CA_visible_NIR
 from .engine import (
-    load_standard,
-    get_standard,
-    validate_standard,
-    skin_mpe,
-    skin_mpe_array,
-    ca,
-    band_name,
-    rep_pulse,
+    band_name as band_name,
 )
-
-from .correction_factors import CA_visible_NIR
-from .repetitive_pulse import per_pulse_MPE
-
-from .skin_parameters import (
-    get_Tmax_skin,
-    get_skin_limiting_aperture,
-    large_area_MPE_skin,
-    uv_successive_day_derate,
-    radiant_exposure_convert,
-    irradiance_from_radiant_exposure,
-    pulse_energy_from_radiant_exposure,
-    average_power_from_radiant_exposure,
+from .engine import (
+    ca as ca,
+)
+from .engine import (
+    get_standard as get_standard,
+)
+from .engine import (
+    load_standard as load_standard,
+)
+from .engine import (
+    rep_pulse as rep_pulse,
+)
+from .engine import (
+    skin_mpe as skin_mpe,
+)
+from .engine import (
+    skin_mpe_array as skin_mpe_array,
+)
+from .engine import (
+    validate_standard as validate_standard,
+)
+from .legacy import (
+    H_skin_ICNIRP_180_400 as H_skin_ICNIRP_180_400,
+)
+from .legacy import (
+    H_skin_ICNIRP_400_1400 as H_skin_ICNIRP_400_1400,
 )
 
 # ── Legacy API (backward-compatible, delegates to engine) ──
 # These function names contain "ICNIRP" for historical reasons.
 # They work with whatever standard is currently loaded.
 from .legacy import (
-    H_skin_ICNIRP_MPE,
-    H_skin_ICNIRP_180_400,
-    H_skin_ICNIRP_400_1400,
-    H_skin_ICNIRP_1400_1500,
-    H_skin_ICNIRP_1500_1800,
-    H_skin_ICNIRP_1800_2600,
-    H_skin_ICNIRP_2600_1000um,
+    H_skin_ICNIRP_1400_1500 as H_skin_ICNIRP_1400_1500,
+)
+from .legacy import (
+    H_skin_ICNIRP_1500_1800 as H_skin_ICNIRP_1500_1800,
+)
+from .legacy import (
+    H_skin_ICNIRP_1800_2600 as H_skin_ICNIRP_1800_2600,
+)
+from .legacy import (
+    H_skin_ICNIRP_2600_1000um as H_skin_ICNIRP_2600_1000um,
+)
+from .legacy import (
+    H_skin_ICNIRP_MPE as H_skin_ICNIRP_MPE,
+)
+from .repetitive_pulse import per_pulse_MPE as per_pulse_MPE
+from .skin_parameters import (
+    average_power_from_radiant_exposure as average_power_from_radiant_exposure,
+)
+from .skin_parameters import (
+    get_skin_limiting_aperture as get_skin_limiting_aperture,
+)
+from .skin_parameters import (
+    get_Tmax_skin as get_Tmax_skin,
+)
+from .skin_parameters import (
+    irradiance_from_radiant_exposure as irradiance_from_radiant_exposure,
+)
+from .skin_parameters import (
+    large_area_MPE_skin as large_area_MPE_skin,
+)
+from .skin_parameters import (
+    pulse_energy_from_radiant_exposure as pulse_energy_from_radiant_exposure,
+)
+from .skin_parameters import (
+    radiant_exposure_convert as radiant_exposure_convert,
+)
+from .skin_parameters import (
+    uv_successive_day_derate as uv_successive_day_derate,
 )
 
 __version__ = "3.0.0"

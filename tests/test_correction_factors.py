@@ -5,8 +5,8 @@ Tests for: C_A (the only correction factor used by skin MPE).
 All values verified against the loaded standard (page 76).
 """
 
-import sys, os, math
-import numpy as np
+import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 

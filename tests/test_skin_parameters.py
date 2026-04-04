@@ -9,22 +9,23 @@ All values verified against the loaded standard (default: ICNIRP 2013):
     - Unit conversions (arithmetic correctness)
 """
 
-import sys
 import os
+import sys
+
 import numpy as np
 import numpy.testing as npt
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from laser_mpe import (
-    get_Tmax_skin,
-    get_skin_limiting_aperture,
-    large_area_MPE_skin,
-    uv_successive_day_derate,
-    radiant_exposure_convert,
-    irradiance_from_radiant_exposure,
-    pulse_energy_from_radiant_exposure,
     average_power_from_radiant_exposure,
+    get_skin_limiting_aperture,
+    get_Tmax_skin,
+    irradiance_from_radiant_exposure,
+    large_area_MPE_skin,
+    pulse_energy_from_radiant_exposure,
+    radiant_exposure_convert,
+    uv_successive_day_derate,
 )
 
 

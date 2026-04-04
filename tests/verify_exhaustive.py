@@ -23,15 +23,35 @@ Organization:
     Part 15: Edge cases and error handling
 """
 
-import sys, os, math
+import math
+import os
+import sys
+
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-from laser_mpe import *
+from laser_mpe import (
+    CA_visible_NIR,
+    H_skin_ICNIRP_MPE,
+    average_power_from_radiant_exposure,
+    get_skin_limiting_aperture,
+    get_Tmax_skin,
+    irradiance_from_radiant_exposure,
+    large_area_MPE_skin,
+    per_pulse_MPE,
+    pulse_energy_from_radiant_exposure,
+    radiant_exposure_convert,
+    uv_successive_day_derate,
+)
 from laser_mpe.legacy import (
-    H_skin_ICNIRP_UV_thermal,
-    H_skin_ICNIRP_UV_photochemical,
     H_skin_ICNIRP_180_400,
+    H_skin_ICNIRP_400_1400,
+    H_skin_ICNIRP_1400_1500,
+    H_skin_ICNIRP_1500_1800,
+    H_skin_ICNIRP_1800_2600,
+    H_skin_ICNIRP_2600_1000um,
+    H_skin_ICNIRP_UV_photochemical,
+    H_skin_ICNIRP_UV_thermal,
 )
 
 passed = 0
@@ -69,7 +89,7 @@ def check(label, actual, expected, rtol=1e-9):
     except AssertionError:
         failed += 1
         errors.append(f"  {label}: expected {expected}, got {actual}")
-    except Exception as e:
+    except Exception:
         # Handle typo in AssertionError -> AssertionError
         if abs(actual - expected) <= abs(expected) * rtol + 1e-15:
             passed += 1
