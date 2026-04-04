@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "description": "Build dependencies for laser-mpe-skin web calculator",
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/preset-react": "^7.24.0"
+  },
+  "scripts": {
+    "build": "cd .. && python3 web/build.py"
+  }
+}

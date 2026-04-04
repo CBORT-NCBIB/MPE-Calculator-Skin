@@ -826,37 +826,155 @@ function ScanTab(p){
   function upPrf(s){setPrfS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<FREQ_UNITS.length;i++){if(FREQ_UNITS[i].id===prfU)m=FREQ_UNITS[i].toHz;}setPrf(v*m);}setDirty(true);}
 
   var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
+  var _workerRef=useRef(null);
+
+  /* ── Web Worker: runs scanning computation off the main thread ── */
+  function getWorker(){
+    if(_workerRef.current)return _workerRef.current;
+    if(typeof __ENGINE_SOURCE__==="undefined")return null;
+    var workerCode=__ENGINE_SOURCE__+"\n"+[
+      "self.onmessage=function(e){",
+      "  var p=e.data;",
+      "  MPEEngine.loadStandard(p.std);",
+      "  var E=MPEEngine;",
+      "  /* Build segments (with engine.js field names) */",
+      "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d){",
+      "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);",
+      "    if(pat==='bidi')return E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d);",
+      "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d);}",
+      "  var segs=bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia);",
+      "  var isCW=p.prf===0&&p.tau===0;",
+      "  var Ep=p.prf>0?p.pw/p.prf:0;",
+      "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
+      "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
+      "  var cr=E.computeScanFluence(beam,segs,p.effPpd);",
+      "  if(!cr){self.postMessage({error:'Computation returned null'});return;}",
+      "  var eg=cr.grid,s=cr.stats;",
+      "  var minV=isCW?(s.min_velocity||p.vel):0;",
+      "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW};",
+      "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV);",
+      "  /* Max permissible power */",
+      "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
+      "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};",
+      "  var ucr=E.computeScanFluence(unitBeam,segs,p.auxPpd);",
+      "  var maxP=Infinity;",
+      "  if(ucr){var upF=0;for(var i=0;i<ucr.grid.fluence.length;i++)if(ucr.grid.fluence[i]>upF)upF=ucr.grid.fluence[i];",
+      "    var mpeT=E.skinMPE(p.wl,ucr.stats.total_time_s||s.total_time_s);",
+      "    if(upF>0)maxP=mpeT/upF;",
+      "    if(!isCW&&p.prf>0){var w2=p.dia/Math.sqrt(2);var maxPr1=E.skinMPE(p.wl,p.tau)*p.prf*Math.PI*w2*w2/(2*100);",
+      "      if(maxPr1<maxP)maxP=maxPr1;}}",
+      "  /* Min safe velocity bisection */",
+      "  var minVel=0;",
+      "  function testV(tv){",
+      "    var ts2=bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia);",
+      "    var tb={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
+      "    var tcr=E.computeScanFluence(tb,ts2,p.auxPpd);",
+      "    if(!tcr)return true;",
+      "    var tmv=isCW?(tcr.stats.min_velocity||tv):0;",
+      "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv);",
+      "    return tsf.safe;}",
+      "  if(testV(1e6)){var vLo=0.01,vHi=1e6;",
+      "    for(var bi=0;bi<p.maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}",
+      "    minVel=vHi;}else{minVel=Infinity;}",
+      "  /* Pulse positions (cap at 50k) */",
+      "  var pulseArr=[];",
+      "  if(!isCW&&p.prf>0){var maxSP=50000,te2=0;",
+      "    for(var si2=0;si2<segs.length&&pulseArr.length<maxSP;si2++){",
+      "      var sg=segs[si2],sd2=p.dia/sg.v_mm_s,ts3=te2;",
+      "      var ca2=Math.cos(sg.angle_rad),sa2=Math.sin(sg.angle_rad);",
+      "      var kf2=Math.ceil(ts3*p.prf),klf2=(te2+sd2)*p.prf;",
+      "      var kl2=(klf2===Math.floor(klf2))?Math.floor(klf2)-1:Math.floor(klf2);",
+      "      for(var k2=kf2;k2<=kl2&&pulseArr.length<maxSP;k2++){",
+      "        var tk2=k2/p.prf,fr2=(tk2-ts3)/sd2;",
+      "        pulseArr.push({t:tk2,x:sg.x_start_mm+fr2*p.dia*ca2,y:sg.y_start_mm+fr2*p.dia*sa2,si:si2});}",
+      "      te2+=sd2;}",
+      "    if(pulseArr.length>=maxSP)p.notes.push('Showing first '+maxSP+' of ~'+Math.round(p.estPulses)+' pulses');}",
+      "  /* Short-name segment aliases for rendering */",
+      "  for(var ai=0;ai<segs.length;ai++){var as=segs[ai];as.x=as.x_start_mm;as.y=as.y_start_mm;as.a=as.angle_rad;as.v=as.v_mm_s;}",
+      "  /* Transfer TypedArrays for zero-copy performance */",
+      "  var result={",
+      "    g:{nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm},",
+      "    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,",
+      "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity},",
+      "    sf:{safe:sf.safe,wr:sf.worst_ratio,wx:sf.worst_x_mm,wy:sf.worst_y_mm,",
+      "      br:sf.binding_rule,sm:sf.safety_margin,mt:sf.mpe_tau,mT:sf.mpe_T,",
+      "      pF:sf.peak_fluence,ppM:sf.peak_pulse_H_max,mP:sf.max_pulses,",
+      "      r1m:sf.rule1_max_ratio,r2m:sf.rule2_max_ratio,",
+      "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate},",
+      "    maxP:maxP,minVel:minVel,pulseArr:pulseArr,segs:segs,notes:p.notes};",
+      "  self.postMessage(result,[eg.fluence.buffer,eg.pulse_count.buffer,eg.peak_pulse_H.buffer,eg.last_visit_t.buffer,eg.min_revisit_s.buffer]);",
+      "};"
+    ].join("\n");
+    try{
+      var blob=new Blob([workerCode],{type:"application/javascript"});
+      _workerRef.current=new Worker(URL.createObjectURL(blob));
+    }catch(err){
+      if(typeof console!=="undefined")console.warn("Web Worker creation failed:",err);
+      _workerRef.current=null;
+    }
+    return _workerRef.current;
+  }
 
   function calculate(){
     setCmp(true);setDirty(false);setPerfNote("");
-    setTimeout(function(){
-      var segs;
-      if(pat==="linear") segs=scanBuildLinear(0,0,0,lineL,vel,dia);
-      else if(pat==="bidi") segs=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia);
-      else segs=scanBuildRaster(0,0,lineL,nLines,hatch,vel,vel*5,dia);
 
-      // ── Performance estimation ──
-      // Estimate total scan time and pulse count
-      var estTime=0;for(var ei=0;ei<segs.length;ei++)estTime+=dia/segs[ei].v;
-      var estPulses=prf*estTime;
-      var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
-      var trunc=Math.ceil(3*sigma/estDx);
-      var estOps=estPulses*Math.PI*trunc*trunc;
+    // ── Performance estimation (fast, runs on main thread) ──
+    var segsEst;
+    if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,vel,dia);
+    else if(pat==="bidi") segsEst=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia);
+    else segsEst=scanBuildRaster(0,0,lineL,nLines,hatch,vel,vel*5,dia);
 
-      // Auto-reduce ppd if computation would be too slow (target <800ms ≈ 40M ops)
-      var effPpd=ppd,notes=[];
-      if(estOps>40e6&&ppd>4){
-        // Find the ppd that brings ops under budget
-        for(effPpd=ppd-1;effPpd>=4;effPpd--){
-          var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
-          if(estPulses*Math.PI*tr2*tr2<40e6)break;
-        }
-        effPpd=Math.max(4,effPpd);
-        notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses ("+Math.round(estOps/1e6)+"M ops at ppd="+ppd+")");
+    var estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
+    var estPulses=prf*estTime;
+    var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
+    var trunc=Math.ceil(3*sigma/estDx);
+    var estOps=estPulses*Math.PI*trunc*trunc;
+    var effPpd=ppd,notes=[];
+    if(estOps>40e6&&ppd>4){
+      for(effPpd=ppd-1;effPpd>=4;effPpd--){
+        var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
+        if(estPulses*Math.PI*tr2*tr2<40e6)break;
       }
-      // Use even lower ppd for auxiliary computations
-      var auxPpd=Math.min(effPpd,4);
+      effPpd=Math.max(4,effPpd);
+      notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses");
+    }
+    var auxPpd=Math.min(effPpd,4);
+    var maxBisect=estPulses>100000?8:15;
 
+    // ── Try Web Worker (off main thread) ──
+    var worker=getWorker();
+    if(worker){
+      var params={std:__STD_DATA__,wl:wl,dia:dia,tau:tau,prf:prf,pw:pw,
+        pat:pat,lineL:lineL,nLines:nLines,hatch:hatch,vel:vel,dwm:dwm,
+        effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
+      worker.onmessage=function(ev){
+        var r=ev.data;
+        if(r.error){if(typeof console!=="undefined")console.error("Worker error:",r.error);setCmp(false);return;}
+        /* Reconstruct grid with transferred TypedArrays */
+        var g={nx:r.g.nx,ny:r.g.ny,dx:r.g.dx,xn:r.g.xn,yn:r.g.yn,
+          flu:r.flu,pc:r.pc,ppH:r.ppH,lvt:r.lvt,mrv:r.mrv};
+        var isCW2=prf===0&&tau===0;
+        var beam2={wl:wl,d:dia,tau:tau,prf:prf,Ep:prf>0?pw/prf:0,P:pw,cw:isCW2};
+        if(r.notes&&r.notes.length>0)setPerfNote(r.notes.join(". ")+".");
+        setRes({g:g,st:r.st,sf:r.sf,segs:r.segs,beam:beam2,maxP:r.maxP,minV:r.minVel,
+          pulses:r.pulseArr,effPpd:effPpd});
+        setCmp(false);
+      };
+      worker.onerror=function(err){
+        if(typeof console!=="undefined")console.error("Worker error:",err);
+        /* Fall back to main-thread computation */
+        calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);
+      };
+      worker.postMessage(params);
+      return;
+    }
+
+    // ── Fallback: main-thread computation ──
+    setTimeout(function(){calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);},60);
+  }
+
+  function calculateMainThread(segs,effPpd,auxPpd,maxBisect,notes){
+    try{
       var Ep=prf>0?pw/prf:0;
       var isCW=prf===0&&tau===0;
       var beam={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
@@ -864,8 +982,6 @@ function ScanTab(p){
       if(cr){
         var minV=isCW?(cr.st.mv||vel):0;
         var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV);
-
-        // Max permissible power (use low-res grid)
         var unitBeam={wl:wl,d:dia,tau:tau,prf:prf,Ep:prf>0?1/prf:0,P:1,cw:isCW};
         var unitCr=scanCompute(unitBeam,segs,auxPpd);
         var maxP=Infinity;
@@ -876,10 +992,7 @@ function ScanTab(p){
           if(!isCW&&prf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,tau)*prf*Math.PI*w22*w22/(2*100);
             if(maxPr1<maxP)maxP=maxPr1;}
         }
-
-        // Min safe velocity (use low-res grid, limit iterations)
         var minVel=0;
-        var maxBisect=estPulses>100000?8:15; // fewer iterations for high PRF
         function testV(tv){
           var ts;
           if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
@@ -892,41 +1005,24 @@ function ScanTab(p){
           var tsf=scanSafety(tcr.g,tb,tcr.st.tt,dwm,tmv);
           return tsf.safe;
         }
-        if(testV(1e6)){
-          var vLo=0.01,vHi=1e6;
-          for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){
-            var vMid=(vLo+vHi)/2;
-            if(testV(vMid))vHi=vMid;else vLo=vMid;
-          }
-          minVel=vHi;
-        }else{minVel=Infinity;}
-
-        // Build pulse position array (cap at 50k for Plotly performance)
-        var pulseArr=[];
-        if(!isCW&&prf>0){
-          var maxStorePulses=50000;
-          var te2=0;
-          for(var si2=0;si2<segs.length&&pulseArr.length<maxStorePulses;si2++){
-            var s2=segs[si2],sd2=dia/s2.v,ts2=te2;
-            var ca2=Math.cos(s2.a),sa2=Math.sin(s2.a);
+        if(testV(1e6)){var vLo=0.01,vHi=1e6;
+          for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}
+          minVel=vHi;}else{minVel=Infinity;}
+        var pulseArr=[];var estPulses=prf*(cr.st.tt||0);
+        if(!isCW&&prf>0){var maxSP=50000,te2=0;
+          for(var si2=0;si2<segs.length&&pulseArr.length<maxSP;si2++){
+            var s2=segs[si2],sd2=dia/s2.v,ts2=te2;var ca2=Math.cos(s2.a),sa2=Math.sin(s2.a);
             var kf2=Math.ceil(ts2*prf),klf2=(te2+sd2)*prf;
             var kl2=(klf2===Math.floor(klf2))?Math.floor(klf2)-1:Math.floor(klf2);
-            for(var k2=kf2;k2<=kl2&&pulseArr.length<maxStorePulses;k2++){
-              var tk2=k2/prf,fr2=(tk2-ts2)/sd2;
-              pulseArr.push({t:tk2,x:s2.x+fr2*dia*ca2,y:s2.y+fr2*dia*sa2,si:si2});
-            }
-            te2+=sd2;
-          }
-          if(pulseArr.length>=maxStorePulses&&estPulses>maxStorePulses)
-            notes.push("Showing first "+maxStorePulses+" of ~"+Math.round(estPulses)+" pulses in diagrams");
+            for(var k2=kf2;k2<=kl2&&pulseArr.length<maxSP;k2++){var tk2=k2/prf,fr2=(tk2-ts2)/sd2;
+              pulseArr.push({t:tk2,x:s2.x+fr2*dia*ca2,y:s2.y+fr2*dia*sa2,si:si2});}te2+=sd2;}
+          if(pulseArr.length>=maxSP&&estPulses>maxSP)notes.push("Showing first "+maxSP+" of ~"+Math.round(estPulses)+" pulses");
         }
         if(notes.length>0)setPerfNote(notes.join(". ")+".");
-
-        setRes({g:cr.g,st:cr.st,sf:sf,segs:segs,beam:beam,maxP:maxP,minV:minVel,
-          pulses:pulseArr,effPpd:effPpd});
+        setRes({g:cr.g,st:cr.st,sf:sf,segs:segs,beam:beam,maxP:maxP,minV:minVel,pulses:pulseArr,effPpd:effPpd});
       }
-      setCmp(false);
-    },60);
+    }catch(err){if(typeof console!=="undefined")console.error("Calculation error:",err);}
+    setCmp(false);
   }
 
   var _hover=useState(null),hover=_hover[0],setHover=_hover[1];
