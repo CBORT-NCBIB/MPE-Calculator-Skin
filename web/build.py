@@ -164,6 +164,7 @@ html = f'''<!DOCTYPE html>
 <script>var le=[];function se(n){{return function(){{le.push(n);document.getElementById('le').textContent='Failed to load: '+le.join(', ')+'.';}}}}</script>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" onerror="se('React')()"></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
 <script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
 {babel_cdn}
@@ -193,11 +194,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 </script>
 
 <noscript>
-  <div style="text-align:center;padding:40px;font-size:16px;color:#333;max-width:600px;margin:0 auto;line-height:1.6">
-    <h2>Laser Skin MPE Calculator</h2>
-    <p>This interactive calculator requires JavaScript to run.</p>
-    <p>Alternatively, you can use the <a href="https://github.com/itgall/MPE-Calculator-Skin">Python package</a>:
-       <code style="display:block;margin:10px auto;padding:8px;background:#f5f5f5;border-radius:4px">pip install laser-mpe-skin</code></p>
+  <div style="text-align:center;padding:40px;font-size:16px;color:#333">
+    This calculator requires JavaScript to be enabled.
   </div>
 </noscript>
 </body>
