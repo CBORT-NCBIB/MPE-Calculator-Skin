@@ -162,10 +162,10 @@ html = f'''<!DOCTYPE html>
 <div id="le" style="text-align:center;padding:20px;color:#c00;font-size:14px"></div>
 
 <script>var le=[];function se(n){{return function(){{le.push(n);document.getElementById('le').textContent='Failed to load: '+le.join(', ')+'.';}}}}</script>
-<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin="anonymous" onerror="se('React')()"></script>
-<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous" onerror="se('ReactDOM')()"></script>
-<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin="anonymous" onerror="se('Recharts')()"></script>
-<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" crossorigin="anonymous" onerror="se('Plotly')()"></script>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" onerror="se('React')()"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
+<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
 {babel_cdn}
 <script>
 // Calculation engine (from engine.js — single source of truth for all MPE logic)

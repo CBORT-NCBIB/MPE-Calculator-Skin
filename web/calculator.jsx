@@ -3,7 +3,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot, Re
 
 /* ═══════ ENGINE BRIDGE ═══════ */
 /*
- * Architecture: All calculation logic lives in engine.js (loaded as a separate <script>).
+ * Architecture: All calculation logic lives in engine.js (loaded separately).
  * This bridge provides short-name aliases that the UI code uses.
  * NO calculation code is duplicated here.
  *
