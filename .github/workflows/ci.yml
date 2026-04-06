@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
     branches: [main]
 
@@ -79,5 +79,9 @@ jobs:
       - name: Build index.html
         run: python web/build.py
 
-      - name: Verify build output exists
-        run: test -f web/index.html && echo "Build OK"
+      - name: Verify build output
+        run: |
+          test -f web/index.html || { echo "FAIL: index.html not found"; exit 1; }
+          grep -q 'ReactDOM' web/index.html || { echo "FAIL: ReactDOM not in output"; exit 1; }
+          grep -q 'MPEEngine' web/index.html || { echo "FAIL: MPEEngine not in output"; exit 1; }
+          echo "Build OK: index.html contains expected markers"

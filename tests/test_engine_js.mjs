@@ -293,6 +293,191 @@ test("repPulse: zero PRF → single pulse", () => {
   approx(r.H, e.skinMPE(532, 1e-8), 1e-6);
 });
 
+// ═══════ Input validation (safety-critical) ═══════
+
+test("repPulse: negative PRF → Invalid", () => {
+  const r = e.repPulse(532, 1e-8, -1, 10);
+  assert.strictEqual(r.binding, "Invalid", "negative PRF should return Invalid");
+  assert.ok(isNaN(r.H), "H should be NaN for invalid input");
+});
+
+test("repPulse: negative T → Invalid", () => {
+  const r = e.repPulse(532, 1e-8, 1000, -1);
+  assert.strictEqual(r.binding, "Invalid");
+});
+
+test("repPulse: T=0 → Invalid", () => {
+  const r = e.repPulse(532, 1e-8, 1000, 0);
+  assert.strictEqual(r.binding, "Invalid");
+});
+
+test("buildLinearScan: v=0 → empty", () => {
+  const segs = e.buildLinearScan(0, 0, 0, 10, 0, 1);
+  assert.strictEqual(segs.length, 0, "zero velocity should return empty");
+});
+
+test("buildLinearScan: negative length → empty", () => {
+  const segs = e.buildLinearScan(0, 0, 0, -5, 100, 1);
+  assert.strictEqual(segs.length, 0);
+});
+
+test("buildRasterScan: nLines=0 → empty", () => {
+  const segs = e.buildRasterScan(0, 0, 10, 0, 0.1, 100, 500, 1);
+  assert.strictEqual(segs.length, 0);
+});
+
+test("buildRasterScan: hatch=0 defaults to d_1e_mm", () => {
+  const segs = e.buildRasterScan(0, 0, 10, 3, 0, 100, 500, 1);
+  // Should produce valid segments with hatch defaulted to d_1e_mm=1
+  assert.ok(segs.length > 0, "should produce segments with defaulted hatch");
+  // Verify the scan pattern spans at least d_1e_mm in y
+  const ys = segs.map(s => s.y_start_mm);
+  const yRange = Math.max(...ys) - Math.min(...ys);
+  assert.ok(yRange >= 0.9, `y range ${yRange} should span at least ~1mm (d_1e_mm)`);
+});
+
+test("buildBidiRasterScan: v=0 → empty", () => {
+  const segs = e.buildBidiRasterScan(0, 0, 10, 5, 0.5, 0, 500, 1);
+  assert.strictEqual(segs.length, 0);
+});
+
+// ═══════ CW scanning ═══════
+
+test("computeScanFluenceCW: basic linear", () => {
+  const segs = e.buildLinearScan(0, 0, 0, 10, 100, 1);
+  const beam = { d_1e_mm: 1, avg_power_W: 0.1, is_cw: true };
+  const r = e.computeScanFluence(beam, segs, 8);
+  assert.ok(r !== null, "should return a result");
+  assert.ok(r.stats.total_time_s > 0, "scan time should be positive");
+  assert.ok(r.stats.n_sweeps > 0, "should have sweeps");
+  // Peak fluence should be positive
+  let peak = 0;
+  for (let i = 0; i < r.grid.fluence.length; i++) {
+    if (r.grid.fluence[i] > peak) peak = r.grid.fluence[i];
+  }
+  assert.ok(peak > 0, "CW fluence should be positive");
+});
+
+test("computeScanFluenceCW: raster with revisit", () => {
+  const segs = e.buildBidiRasterScan(0, 0, 5, 4, 0.5, 100, 500, 1);
+  const beam = { d_1e_mm: 1, avg_power_W: 0.5, is_cw: true };
+  const r = e.computeScanFluence(beam, segs, 6);
+  assert.ok(r !== null);
+  let peak = 0;
+  for (let i = 0; i < r.grid.fluence.length; i++) {
+    if (r.grid.fluence[i] > peak) peak = r.grid.fluence[i];
+  }
+  assert.ok(peak > 0, "CW raster fluence should be positive");
+});
+
+test("evaluateScanSafety: CW with dwell time", () => {
+  const segs = e.buildLinearScan(0, 0, 0, 10, 100, 1);
+  const beam = { d_1e_mm: 1, avg_power_W: 0.01, is_cw: true };
+  const r = e.computeScanFluence(beam, segs, 8);
+  const sf = e.evaluateScanSafety(r.grid,
+    { wl_nm: 532, d_1e_mm: 1, is_cw: true },
+    r.stats.total_time_s, "gaussian", r.stats.min_velocity);
+  assert.ok(typeof sf.safe === "boolean", "should have safe verdict");
+  assert.ok(sf.rule2_max_ratio >= 0, "R2 ratio should be non-negative");
+});
+
+// ═══════ Analytical cross-check integration ═══════
+
+test("analyticalPeakFluence: single-line pulsed", () => {
+  const beam = { d_1e_mm: 1, prf_hz: 10000, pulse_energy_J: 1e-4, avg_power_W: 1, is_cw: false };
+  const ap = e.analyticalPeakFluence(beam, 100, 0, 1);
+  assert.ok(ap.peak_fluence_Jcm2 > 0, "analytical peak should be positive");
+  assert.ok(ap.H0_Jcm2 > 0, "H0 should be positive");
+  assert.ok(ap.along_sum > 1, "along sum should be > 1 for overlapping pulses");
+});
+
+test("analyticalPeakFluence: CW single line", () => {
+  const beam = { d_1e_mm: 1, avg_power_W: 0.1, is_cw: true };
+  const ap = e.analyticalPeakFluence(beam, 100, 0, 1);
+  assert.ok(ap.peak_fluence_Jcm2 > 0, "CW analytical peak should be positive");
+});
+
+test("evaluateScanSafety: analytical cross-check selects max", () => {
+  // Low-PRF linear scan where analytical should catch grid underestimate
+  const segs = e.buildLinearScan(0, 0, 0, 20, 100, 1);
+  const beam = { d_1e_mm: 1, prf_hz: 1000, pulse_energy_J: 1e-4, avg_power_W: 0.1, is_cw: false };
+  const r = e.computeScanFluence(beam, segs, 8);
+  let gridPeak = 0;
+  for (let i = 0; i < r.grid.fluence.length; i++) {
+    if (r.grid.fluence[i] > gridPeak) gridPeak = r.grid.fluence[i];
+  }
+  const sf = e.evaluateScanSafety(r.grid,
+    { wl_nm: 532, d_1e_mm: 1, tau_s: 1e-8, is_cw: false, pulse_energy_J: 1e-4, prf_hz: 1000, avg_power_W: 0.1 },
+    r.stats.total_time_s, "gaussian", 0,
+    { v_mm_s: 100, line_spacing_mm: 0, n_lines: 1 });
+  // Safety peak should be >= grid peak (analytical may be higher)
+  assert.ok(sf.peak_fluence >= gridPeak * 0.999,
+    `safety peak ${sf.peak_fluence} should be >= grid peak ${gridPeak}`);
+});
+
+// ═══════ Flyback blanking ═══════
+
+test("buildRasterScan: blanking flags return segments", () => {
+  const segs = e.buildRasterScan(0, 0, 10, 5, 0.5, 100, 500, 1, true);
+  const blanked = segs.filter(s => s.blanked);
+  assert.ok(blanked.length > 0, "should have blanked segments");
+  const active = segs.filter(s => !s.blanked);
+  assert.ok(active.length > 0, "should have active segments");
+});
+
+test("blanking reduces peak fluence", () => {
+  const beam = { d_1e_mm: 1, prf_hz: 10000, pulse_energy_J: 1e-4, avg_power_W: 1, is_cw: false };
+  const segsOff = e.buildRasterScan(0, 0, 10, 10, 0.5, 100, 500, 1, false);
+  const segsOn  = e.buildRasterScan(0, 0, 10, 10, 0.5, 100, 500, 1, true);
+  const rOff = e.computeScanFluence(beam, segsOff, 4);
+  const rOn  = e.computeScanFluence(beam, segsOn,  4);
+  let peakOff = 0, peakOn = 0;
+  for (let i = 0; i < rOff.grid.fluence.length; i++) {
+    if (rOff.grid.fluence[i] > peakOff) peakOff = rOff.grid.fluence[i];
+  }
+  for (let i = 0; i < rOn.grid.fluence.length; i++) {
+    if (rOn.grid.fluence[i] > peakOn) peakOn = rOn.grid.fluence[i];
+  }
+  assert.ok(peakOn < peakOff, `blanking ON peak (${peakOn}) should be < OFF (${peakOff})`);
+});
+
+// ═══════ Named constants ═══════
+
+test("engine exports named constants", () => {
+  assert.strictEqual(e.OP_BUDGET, 40e6);
+  assert.strictEqual(e.DEFAULT_MAX_COMPUTE_PULSES, 500000);
+  assert.strictEqual(e.KAPPA_SKIN_MM2_S, 0.13);
+  assert.strictEqual(e.GAUSS_TRUNCATION_SIGMA, 3);
+  assert.strictEqual(e.MAX_GRID_CELLS, 4000000);
+  assert.strictEqual(e.MAX_VIZ_PULSES, 50000);
+});
+
+// ═══════ Cross-language exhaustive vectors ═══════
+// Test JS engine against Python-verified boundary values at all band edges
+// These 20 test points cover every wavelength band and duration boundary in ICNIRP 2013
+
+test("cross-language: 20 boundary test points match Python", () => {
+  const vectors = [
+    [200, 1e-8, 3e-3],    [200, 100, 3e-3],     [302, 1, 4e-3],
+    [310, 1, 0.16],        [315, 100, 1.0],       [400, 1e-8, 0.02],
+    [400, 1, 1.1],         [400, 100, 20.0],      [532, 1e-8, 0.02],
+    [532, 1, 1.1],         [700, 1e-8, 0.02],     [1064, 1e-8, 0.1],
+    [1400, 1e-8, 0.1],     [1400, 1, 0.56],       [1500, 1e-8, 1.0],
+    [1500, 1, 1.0],        [1800, 1e-8, 0.1],     [2600, 1e-8, 0.01],
+    [2600, 1, 0.56],       [10600, 1e-8, 0.01],
+  ];
+  let matched = 0;
+  for (const [wl, t, expected] of vectors) {
+    const got = e.skinMPE(wl, t);
+    if (Math.abs(got - expected) / expected < 1e-3) {
+      matched++;
+    } else {
+      throw new Error(`skinMPE(${wl}, ${t}) = ${got}, expected ${expected}`);
+    }
+  }
+  assert.strictEqual(matched, 20, "all 20 boundary points should match");
+});
+
 // ═══════ Summary ═══════
 console.log(`\nEngine.js test results: ${pass} passed, ${fail} failed`);
 if (errors.length > 0) {

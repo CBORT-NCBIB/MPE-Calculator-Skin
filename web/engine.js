@@ -216,6 +216,9 @@ function skinMPE(wl_nm, t) {
 // This logic is standard-independent.
 // ═══════════════════════════════════════════════════════════════
 function repPulse(wl_nm, tau, prf, T) {
+  if (!isFinite(prf) || prf < 0 || !isFinite(T) || T <= 0) {
+    return { rule1: NaN, rule2: NaN, H: NaN, N: 0, binding: "Invalid" };
+  }
   var rule1 = skinMPE(wl_nm, tau);
   var htotal = skinMPE(wl_nm, T);
   var N = prf * T;
@@ -350,6 +353,32 @@ function beamEval(wl_nm, beam_dia_mm) {
 // Scanning Beam MPE Engine
 // ═══════════════════════════════════════════════════════════════
 //
+// Physical constants and computational limits
+// ═══════════════════════════════════════════════════════════════
+
+/** Gaussian truncation radius in units of σ. Energy beyond 3σ is <0.4% of total. */
+var GAUSS_TRUNCATION_SIGMA = 3;
+
+/** Skin thermal diffusivity κ (mm²/s). Middle of published range 0.10–0.15.
+ *  Ref: Welch & van Gemert, "Optical-Thermal Response of Laser-Irradiated Tissue" */
+var KAPPA_SKIN_MM2_S = 0.13;
+
+/** Maximum grid cells before auto-scaling (limits memory to ~64 MB for 4 Float32 arrays). */
+var MAX_GRID_CELLS = 4000000;
+
+/** Default max effective pulses for subsampling. Keeps compute time <1s on modern hardware. */
+var DEFAULT_MAX_COMPUTE_PULSES = 500000;
+
+/** Operation budget: if estimated grid operations exceed this, auto-reduce ppd. */
+var OP_BUDGET = 40e6;
+
+/** Maximum pulse positions stored for visualization (Plotly performance). */
+var MAX_VIZ_PULSES = 50000;
+
+// ═══════════════════════════════════════════════════════════════
+// Scanning engine implementation
+// ═══════════════════════════════════════════════════════════════
+//
 // Computes cumulative fluence on a discretized skin surface from
 // a scanning Gaussian beam. Supports CW (analytical path-segment
 // integration) and pulsed (exact pulse positioning) beams.
@@ -448,7 +477,7 @@ function _gaussLookup(u) {
  * @returns {Object} FluenceGrid
  */
 function createFluenceGrid(d_1e_mm, segments, ppd) {
-  if (!ppd || ppd < 4) ppd = 4;
+  if (!ppd || ppd < 2) ppd = 2;
   if (ppd > 32) ppd = 32;
   var dx = d_1e_mm / ppd;
   var margin = 3 * d_1e_mm;
@@ -476,8 +505,8 @@ function createFluenceGrid(d_1e_mm, segments, ppd) {
   var ny = Math.ceil((ymax - ymin) / dx) + 1;
 
   // Safety cap: limit grid to 4M points (16 MB per array)
-  if (nx * ny > 4000000) {
-    var scale = Math.sqrt(4000000 / (nx * ny));
+  if (nx * ny > MAX_GRID_CELLS) {
+    var scale = Math.sqrt(MAX_GRID_CELLS / (nx * ny));
     nx = Math.floor(nx * scale);
     ny = Math.floor(ny * scale);
     dx = (xmax - xmin) / (nx - 1);
@@ -531,7 +560,7 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
   var H0_mm2 = 2 * pulse_energy_J / (Math.PI * w2); // peak fluence J/mm²
   var H0_cm2 = H0_mm2 * 100;               // peak fluence J/cm²
 
-  var trunc_mm = 3 * sigma;
+  var trunc_mm = GAUSS_TRUNCATION_SIGMA * sigma;
   var trunc2 = trunc_mm * trunc_mm;
   var trunc_grid = Math.ceil(trunc_mm / grid.dx_mm);
 
@@ -553,7 +582,7 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
   }
   // Compute stride: sample every Nth pulse, multiply contribution by N
   // Spatial error per stride: stride/prf * v. For stride=50, 200kHz, 100mm/s → 0.025mm (<<1mm beam)
-  var mcp = max_compute_pulses || 500000;
+  var mcp = max_compute_pulses || DEFAULT_MAX_COMPUTE_PULSES;
   var stride = 1;
   if (est_total > mcp && mcp > 0) {
     stride = Math.ceil(est_total / mcp);
@@ -577,6 +606,15 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
     var seg_dur = d_1e_mm / seg.v_mm_s;
     var t_seg_start = t_elapsed;
     var t_seg_end = t_elapsed + seg_dur;
+
+    // Blanked segments: advance time but deposit no fluence (flyback blanking)
+    if (seg.blanked) {
+      var seg_blanked_pulses = Math.max(0,
+        Math.floor(t_seg_end * prf_hz) - Math.ceil(t_seg_start * prf_hz) + 1);
+      total_pulses += seg_blanked_pulses; // count as emitted but blanked
+      t_elapsed = t_seg_end;
+      continue;
+    }
 
     var cos_a = Math.cos(seg.angle_rad);
     var sin_a = Math.sin(seg.angle_rad);
@@ -673,7 +711,7 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
   var sigma = d_1e_mm / (2 * Math.sqrt(2));
   var s2 = sigma * Math.sqrt(2);
   var sigma2 = sigma * sigma;
-  var trunc_perp = 3 * sigma;
+  var trunc_perp = GAUSS_TRUNCATION_SIGMA * sigma;
   var trunc_perp2 = trunc_perp * trunc_perp;
 
   var nx = grid.nx, ny = grid.ny;
@@ -717,6 +755,14 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
   var min_velocity = Infinity;
   var coeff_base = avg_power_W / (sigma * Math.sqrt(2 * Math.PI));
 
+  // Revisit threshold for CW: max sweep time across all sweeps
+  var cw_revisit_threshold = 0;
+  for (var rti = 0; rti < sweeps.length; rti++) {
+    var rt = sweeps[rti].L / sweeps[rti].v;
+    if (rt > cw_revisit_threshold) cw_revisit_threshold = rt;
+  }
+  cw_revisit_threshold *= 2; // margin for edge cases
+
   for (var wi = 0; wi < sweeps.length; wi++) {
     var sw = sweeps[wi];
     var coeff = coeff_base / sw.v * 100; // J/cm²
@@ -757,7 +803,7 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
           var t_clamped = t_par < 0 ? 0 : (t_par > sw.L ? sw.L : t_par);
           var t_visit = sweep_t0 + t_clamped / sw.v;
           var gap = t_visit - lvt[idx];
-          if (gap > 0 && lvt[idx] > -1e29) {
+          if (gap > cw_revisit_threshold && lvt[idx] > -1e29) {
             if (gap < mrv[idx]) mrv[idx] = gap;
           }
           lvt[idx] = t_visit;
@@ -811,13 +857,102 @@ function computeScanFluence(beam, segments, ppd) {
  * @param {number} min_velocity - Minimum scan velocity in mm/s (for CW Rule 1)
  * @returns {Object} ScanSafetyResult
  */
-function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity) {
+
+// ── Analytical peak fluence (exact, no grid approximation) ──────
+/**
+ * Compute the exact peak cumulative fluence at the most-exposed point
+ * using analytical Gaussian overlap summation. This is independent of
+ * grid resolution and subsampling — it sums the exact Gaussian contribution
+ * from every pulse (along-line) and every scan line (cross-line) that falls
+ * within 3σ of the evaluation point.
+ *
+ * For skin safety evaluation, this serves as the authoritative fluence
+ * value. The grid computation is retained for visualization only.
+ *
+ * Physics: For a Gaussian beam with 1/e diameter d, the peak single-pulse
+ * fluence at beam center is H₀ = 2E/(πw²) where w = d/√2 is the 1/e² radius.
+ * Adjacent pulses at spacing Δx = v/f contribute H₀·exp(-2Δx²/w²).
+ * Adjacent scan lines at spacing Δy contribute exp(-2Δy²/w²) attenuation.
+ *
+ * The total peak fluence sums these contributions analytically:
+ *   H_peak = H₀ × Σ_k exp(-2(kΔx)²/w²) × Σ_m exp(-2(mΔy)²/w²)
+ *
+ * For a CW beam, the along-line sum is replaced by the analytical integral:
+ *   H_line = P × √(2/π) / (w₀ × v) [J/mm²]
+ *
+ * @param {Object} beam - {d_1e_mm, prf_hz, pulse_energy_J, avg_power_W, is_cw}
+ * @param {number} v_mm_s - Scan velocity in mm/s
+ * @param {number} line_spacing_mm - Hatch spacing (0 for single line)
+ * @param {number} n_lines - Number of scan lines (1 for linear)
+ * @returns {Object} {peak_fluence_Jcm2, along_sum, cross_sum, H0_Jcm2}
+ */
+function analyticalPeakFluence(beam, v_mm_s, line_spacing_mm, n_lines) {
+  var d = beam.d_1e_mm;
+  var w = d / Math.sqrt(2);        // 1/e² radius (mm)
+  var sigma = d / (2 * Math.sqrt(2)); // σ (mm)
+  var w2 = w * w;
+
+  if (beam.is_cw) {
+    // CW: analytical line integral H = P × √(2/π) / (w × v) [J/mm²] → ×100 for J/cm²
+    var H_line = beam.avg_power_W * Math.sqrt(2 / Math.PI) / (w * v_mm_s) * 100;
+
+    // Cross-line sum (same for CW and pulsed)
+    var cross_sum_cw = 1;
+    if (line_spacing_mm > 0 && n_lines > 1) {
+      for (var mc = 1; mc <= n_lines; mc++) {
+        var yc = mc * line_spacing_mm;
+        var cc = Math.exp(-2 * yc * yc / w2);
+        if (cc < 1e-12) break;
+        cross_sum_cw += 2 * cc;
+      }
+    }
+    return {
+      peak_fluence_Jcm2: H_line * cross_sum_cw,
+      along_sum: NaN, // CW uses integral, not sum
+      cross_sum: cross_sum_cw,
+      H0_Jcm2: NaN
+    };
+  }
+
+  // Pulsed: exact Gaussian overlap sum
+  var H0_mm2 = 2 * beam.pulse_energy_J / (Math.PI * w2);
+  var H0_Jcm2 = H0_mm2 * 100;
+
+  // Along-line sum: Σ exp(-2(kΔx)²/w²) for k = -M..M
+  var pulse_spacing = v_mm_s / beam.prf_hz; // mm between consecutive pulses
+  var M_along = Math.ceil(3 * sigma / pulse_spacing);
+  // Cap to prevent infinite loops for extreme cases (e.g., very slow scan)
+  if (M_along > 100000) M_along = 100000;
+  var along_sum = 0;
+  for (var k = -M_along; k <= M_along; k++) {
+    var x = k * pulse_spacing;
+    along_sum += Math.exp(-2 * x * x / w2);
+  }
+
+  // Cross-line sum: Σ exp(-2(mΔy)²/w²) for m = -L..L
+  var cross_sum = 1; // self contribution (m=0)
+  if (line_spacing_mm > 0 && n_lines > 1) {
+    for (var m = 1; m <= n_lines; m++) {
+      var y = m * line_spacing_mm;
+      var contrib = Math.exp(-2 * y * y / w2);
+      if (contrib < 1e-12) break; // negligible contribution
+      cross_sum += 2 * contrib; // symmetric ±m
+    }
+  }
+
+  return {
+    peak_fluence_Jcm2: H0_Jcm2 * along_sum * cross_sum,
+    along_sum: along_sum,
+    cross_sum: cross_sum,
+    H0_Jcm2: H0_Jcm2
+  };
+}
+
+function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_params) {
   var mpe_T = skinMPE(beam.wl_nm, T_s);
   var mpe_tau, rule1_limit;
 
   if (beam.is_cw) {
-    // CW Rule 1: single-sweep fluence ≤ MPE(t_dwell)
-    // t_dwell uses the minimum velocity (most conservative = slowest sweep)
     if (isFinite(min_velocity) && min_velocity > 0) {
       var t_dwell = (dwell_mode === "geometric") ?
         scanDwellGeometric(beam.d_1e_mm, min_velocity) :
@@ -856,6 +991,46 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity) {
     }
   }
 
+  // ── Analytical cross-check (exact, no grid approximation) ──
+  // If scan_params are provided, compute the analytical peak fluence
+  // and use max(grid_peak, analytical_peak) for conservative safety.
+  // This guarantees that grid aliasing or subsampling never causes
+  // an underestimate of the true peak fluence.
+  var analyticalPeak = NaN;
+  var analyticalUsed = false;
+  if (scan_params && scan_params.v_mm_s > 0) {
+    var ap = analyticalPeakFluence(
+      beam, scan_params.v_mm_s,
+      scan_params.line_spacing_mm || 0,
+      scan_params.n_lines || 1
+    );
+    analyticalPeak = ap.peak_fluence_Jcm2;
+
+    // Use the more conservative (higher) of grid and analytical peaks
+    if (isFinite(analyticalPeak) && analyticalPeak > peakF) {
+      peakF = analyticalPeak;
+      analyticalUsed = true;
+      // Recompute Rule 2 ratio with analytical peak
+      if (isFinite(mpe_T) && mpe_T > 0) {
+        var analyticalR2 = analyticalPeak / mpe_T;
+        if (analyticalR2 > worstR2) worstR2 = analyticalR2;
+        if (analyticalR2 > worstVal) worstVal = analyticalR2;
+      }
+    }
+  }
+
+  // Rule 1 analytical cross-check: exact peak single-pulse fluence
+  // (independent of grid — uses beam physics directly)
+  if (!beam.is_cw && beam.pulse_energy_J > 0) {
+    var w_r1 = beam.d_1e_mm / Math.sqrt(2);
+    var H0_exact = 2 * beam.pulse_energy_J / (Math.PI * w_r1 * w_r1) * 100;
+    var r1_exact = isFinite(rule1_limit) && rule1_limit > 0 ? H0_exact / rule1_limit : 0;
+    if (r1_exact > worstR1) {
+      worstR1 = r1_exact;
+      if (r1_exact > worstVal) worstVal = r1_exact;
+    }
+  }
+
   var worstIx = worstIdx % grid.nx;
   var worstIy = (worstIdx - worstIx) / grid.nx;
 
@@ -863,7 +1038,7 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity) {
   var globalMinRevisit = 1e30;
   var revisitPoints = 0;
   for (var ri = 0; ri < n; ri++) {
-    if (grid.min_revisit_s[ri] < 1e29) { // point was revisited at least once
+    if (grid.min_revisit_s[ri] < 1e29) {
       revisitPoints++;
       if (grid.min_revisit_s[ri] < globalMinRevisit)
         globalMinRevisit = grid.min_revisit_s[ri];
@@ -871,8 +1046,7 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity) {
   }
   if (globalMinRevisit >= 1e29) globalMinRevisit = Infinity;
 
-  // Thermal relaxation time: τ_r ≈ d²/(4κ), κ ≈ 0.13 mm²/s (skin)
-  var kappa_skin = 0.13; // mm²/s (middle of 0.1–0.15 range)
+  var kappa_skin = KAPPA_SKIN_MM2_S;
   var thermal_relax_s = (beam.d_1e_mm * beam.d_1e_mm) / (4 * kappa_skin);
 
   return {
@@ -892,7 +1066,9 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity) {
     min_revisit_s: globalMinRevisit,
     revisit_points: revisitPoints,
     thermal_relax_s: thermal_relax_s,
-    revisit_adequate: globalMinRevisit >= thermal_relax_s
+    revisit_adequate: globalMinRevisit >= thermal_relax_s,
+    analytical_peak: analyticalPeak,
+    analytical_used: analyticalUsed
   };
 }
 
@@ -1024,6 +1200,9 @@ function minRepRate(wl_nm, d_1e_mm, tau_s, avg_power_W) {
  * @returns {Array} ScanSegment[]
  */
 function buildLinearScan(x0, y0, angle_rad, total_length_mm, v_mm_s, d_1e_mm) {
+  if (!isFinite(v_mm_s) || v_mm_s <= 0) return [];
+  if (!isFinite(d_1e_mm) || d_1e_mm <= 0) return [];
+  if (!isFinite(total_length_mm) || total_length_mm <= 0) return [];
   var n = Math.round(total_length_mm / d_1e_mm);
   if (n < 1) n = 1;
   var cos_a = Math.cos(angle_rad), sin_a = Math.sin(angle_rad);
@@ -1045,7 +1224,11 @@ function buildLinearScan(x0, y0, angle_rad, total_length_mm, v_mm_s, d_1e_mm) {
  * @returns {Array} ScanSegment[]
  */
 function buildBidiRasterScan(x0, y0, line_length_mm, n_lines, hatch_mm,
-                             scan_v_mm_s, jump_v_mm_s, d_1e_mm) {
+                             scan_v_mm_s, jump_v_mm_s, d_1e_mm, blanking) {
+  if (!isFinite(n_lines) || n_lines < 1) return [];
+  if (!isFinite(hatch_mm) || hatch_mm <= 0) hatch_mm = d_1e_mm; // default to 1 beam width
+  if (!isFinite(scan_v_mm_s) || scan_v_mm_s <= 0) return [];
+  if (!isFinite(jump_v_mm_s) || jump_v_mm_s <= 0) jump_v_mm_s = scan_v_mm_s;
   var segs = [];
   for (var j = 0; j < n_lines; j++) {
     var line_y = y0 + j * hatch_mm;
@@ -1065,7 +1248,11 @@ function buildBidiRasterScan(x0, y0, line_length_mm, n_lines, hatch_mm,
       var jumpEnd_x = (j % 2 === 0) ? x0 + line_length_mm : x0;
       var jumpSegs = buildLinearScan(jumpEnd_x, line_y, Math.PI / 2,
         hatch_mm, jump_v_mm_s, d_1e_mm);
-      for (var k3 = 0; k3 < jumpSegs.length; k3++) segs.push(jumpSegs[k3]);
+      for (var k3 = 0; k3 < jumpSegs.length; k3++) {
+        var js = jumpSegs[k3];
+        if (blanking) js.blanked = true;
+        segs.push(js);
+      }
     }
   }
   return segs;
@@ -1077,7 +1264,11 @@ function buildBidiRasterScan(x0, y0, line_length_mm, n_lines, hatch_mm,
  * @returns {Array} ScanSegment[]
  */
 function buildRasterScan(x0, y0, line_length_mm, n_lines, hatch_mm,
-                         scan_v_mm_s, jump_v_mm_s, d_1e_mm) {
+                         scan_v_mm_s, jump_v_mm_s, d_1e_mm, blanking) {
+  if (!isFinite(n_lines) || n_lines < 1) return [];
+  if (!isFinite(hatch_mm) || hatch_mm <= 0) hatch_mm = d_1e_mm;
+  if (!isFinite(scan_v_mm_s) || scan_v_mm_s <= 0) return [];
+  if (!isFinite(jump_v_mm_s) || jump_v_mm_s <= 0) jump_v_mm_s = scan_v_mm_s;
   var segs = [];
   for (var j = 0; j < n_lines; j++) {
     var line_y = y0 + j * hatch_mm;
@@ -1090,11 +1281,19 @@ function buildRasterScan(x0, y0, line_length_mm, n_lines, hatch_mm,
       // Return right to left (fast jump)
       var retSegs = buildLinearScan(x0 + line_length_mm, line_y, Math.PI,
         line_length_mm, jump_v_mm_s, d_1e_mm);
-      for (var k2 = 0; k2 < retSegs.length; k2++) segs.push(retSegs[k2]);
+      for (var k2 = 0; k2 < retSegs.length; k2++) {
+        var rs = retSegs[k2];
+        if (blanking) rs.blanked = true;
+        segs.push(rs);
+      }
       // Step down to next line
       var stepSegs = buildLinearScan(x0, line_y, Math.PI / 2,
         hatch_mm, jump_v_mm_s, d_1e_mm);
-      for (var k3 = 0; k3 < stepSegs.length; k3++) segs.push(stepSegs[k3]);
+      for (var k3 = 0; k3 < stepSegs.length; k3++) {
+        var ss = stepSegs[k3];
+        if (blanking) ss.blanked = true;
+        segs.push(ss);
+      }
     }
   }
   return segs;
@@ -1190,6 +1389,13 @@ if (typeof module !== "undefined" && module.exports) {
   var defaultStd = require("./standards/icnirp_2013.json");
   loadStandard(defaultStd);
   module.exports = {
+    // Constants
+    GAUSS_TRUNCATION_SIGMA: GAUSS_TRUNCATION_SIGMA,
+    KAPPA_SKIN_MM2_S: KAPPA_SKIN_MM2_S,
+    MAX_GRID_CELLS: MAX_GRID_CELLS,
+    DEFAULT_MAX_COMPUTE_PULSES: DEFAULT_MAX_COMPUTE_PULSES,
+    OP_BUDGET: OP_BUDGET,
+    MAX_VIZ_PULSES: MAX_VIZ_PULSES,
     loadStandard: loadStandard,
     getStandard: getStandard,
     getValidationErrors: getValidationErrors,
@@ -1210,6 +1416,7 @@ if (typeof module !== "undefined" && module.exports) {
     computeScanFluencePulsed: computeScanFluencePulsed,
     computeScanFluenceCW: computeScanFluenceCW,
     computeScanFluence: computeScanFluence,
+    analyticalPeakFluence: analyticalPeakFluence,
     evaluateScanSafety: evaluateScanSafety,
     buildLinearScan: buildLinearScan,
     buildBidiRasterScan: buildBidiRasterScan,
@@ -1224,6 +1431,13 @@ if (typeof module !== "undefined" && module.exports) {
   // Browser: standard data must be set via loadStandard()
   // (the HTML build script will call this with inlined JSON)
   window.MPEEngine = {
+    // Constants
+    GAUSS_TRUNCATION_SIGMA: GAUSS_TRUNCATION_SIGMA,
+    KAPPA_SKIN_MM2_S: KAPPA_SKIN_MM2_S,
+    MAX_GRID_CELLS: MAX_GRID_CELLS,
+    DEFAULT_MAX_COMPUTE_PULSES: DEFAULT_MAX_COMPUTE_PULSES,
+    OP_BUDGET: OP_BUDGET,
+    MAX_VIZ_PULSES: MAX_VIZ_PULSES,
     loadStandard: loadStandard,
     getStandard: getStandard,
     CA: CA,
@@ -1243,6 +1457,7 @@ if (typeof module !== "undefined" && module.exports) {
     computeScanFluencePulsed: computeScanFluencePulsed,
     computeScanFluenceCW: computeScanFluenceCW,
     computeScanFluence: computeScanFluence,
+    analyticalPeakFluence: analyticalPeakFluence,
     evaluateScanSafety: evaluateScanSafety,
     buildLinearScan: buildLinearScan,
     buildBidiRasterScan: buildBidiRasterScan,

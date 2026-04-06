@@ -140,6 +140,7 @@ html = f'''<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline' unpkg.com cdn.plot.ly; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src blob:;">
   <title>Laser Skin MPE Calculator</title>
   <style>
     *{{margin:0;padding:0;box-sizing:border-box}}
@@ -162,11 +163,10 @@ html = f'''<!DOCTYPE html>
 <div id="le" style="text-align:center;padding:20px;color:#c00;font-size:14px"></div>
 
 <script>var le=[];function se(n){{return function(){{le.push(n);document.getElementById('le').textContent='Failed to load: '+le.join(', ')+'.';}}}}</script>
-<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" onerror="se('React')()"></script>
-<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
-<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
-<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
-<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
+<script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" crossorigin="anonymous" onerror="se('React')()"></script>
+<script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous" onerror="se('ReactDOM')()"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" crossorigin="anonymous" onerror="se('Recharts')()"></script>
+<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" crossorigin="anonymous" onerror="se('Plotly')()"></script>
 {babel_cdn}
 <script>
 // Calculation engine (from engine.js — single source of truth for all MPE logic)
@@ -194,8 +194,11 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 </script>
 
 <noscript>
-  <div style="text-align:center;padding:40px;font-size:16px;color:#333">
-    This calculator requires JavaScript to be enabled.
+  <div style="text-align:center;padding:40px;font-size:16px;color:#333;max-width:600px;margin:0 auto;line-height:1.6">
+    <h2>Laser Skin MPE Calculator</h2>
+    <p>This interactive calculator requires JavaScript to run.</p>
+    <p>Alternatively, you can use the <a href="https://github.com/itgall/MPE-Calculator-Skin">Python package</a>:
+       <code style="display:block;margin:10px auto;padding:8px;background:#f5f5f5;border-radius:4px">pip install laser-mpe-skin</code></p>
   </div>
 </noscript>
 </body>

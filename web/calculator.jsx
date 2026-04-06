@@ -3,9 +3,29 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot, Re
 
 /* ═══════ ENGINE BRIDGE ═══════ */
 /*
- * All calculation logic lives in engine.js (loaded as a separate <script>).
+ * Architecture: All calculation logic lives in engine.js (loaded as a separate <script>).
  * This bridge provides short-name aliases that the UI code uses.
  * NO calculation code is duplicated here.
+ *
+ * Field name translation:
+ *   Bridge (short)  →  Engine (full)
+ *   g.flu           →  grid.fluence
+ *   g.xn            →  grid.x_min_mm
+ *   g.ppH           →  grid.peak_pulse_H
+ *   sf.wr           →  worst_ratio
+ *   sf.br           →  binding_rule
+ *   st.tt           →  total_time_s
+ *
+ * Safety evaluation path:
+ *   1. Grid computation (with pulse subsampling for high-PRF)
+ *   2. Analytical peak fluence cross-check (exact, no grid approximation)
+ *   3. Safety verdict uses max(grid_peak, analytical_peak)
+ *   4. Rule 1 uses exact analytical H₀ = 2E/(πw²)
+ *
+ * CW scanning: The engine supports CW scanning (is_cw flag), but the Scanning
+ * Protocols tab currently requires pulsed parameters (PRF + tau). CW scanning
+ * evaluation is not yet exposed in the web interface. For CW analysis, use the
+ * Python package: from laser_mpe import skin_mpe
  */
 var _E = (typeof MPEEngine !== "undefined") ? MPEEngine : null;
 if (!_E) { throw new Error("MPEEngine not loaded. Ensure engine.js is included before calculator.jsx."); }
@@ -40,16 +60,18 @@ function scanCompute(beam,segs,ppd){
   return{g:g,st:st};
 }
 
-function scanSafety(g,beam,T,dwMode,minV){
+function scanSafety(g,beam,T,dwMode,minV,scanP){
   var eg={nx:g.nx,ny:g.ny,dx_mm:g.dx,x_min_mm:g.xn,y_min_mm:g.yn,
     fluence:g.flu,pulse_count:g.pc,peak_pulse_H:g.ppH,last_visit_t:g.lvt,min_revisit_s:g.mrv};
-  var eb={wl_nm:beam.wl,d_1e_mm:beam.d,tau_s:beam.tau,is_cw:beam.cw};
-  var r=_E.evaluateScanSafety(eg,eb,T,dwMode,minV);
+  var eb={wl_nm:beam.wl,d_1e_mm:beam.d,tau_s:beam.tau,is_cw:beam.cw,
+    pulse_energy_J:beam.Ep,prf_hz:beam.prf,avg_power_W:beam.P};
+  var r=_E.evaluateScanSafety(eg,eb,T,dwMode,minV,scanP);
   return{safe:r.safe,wr:r.worst_ratio,wx:r.worst_x_mm,wy:r.worst_y_mm,
     br:r.binding_rule,sm:r.safety_margin,mt:r.mpe_tau,mT:r.mpe_T,
     pF:r.peak_fluence,ppM:r.peak_pulse_H_max,mP:r.max_pulses,
     r1m:r.rule1_max_ratio,r2m:r.rule2_max_ratio,
-    minRv:r.min_revisit_s,rvPts:r.revisit_points,tauR:r.thermal_relax_s,rvOk:r.revisit_adequate};
+    minRv:r.min_revisit_s,rvPts:r.revisit_points,tauR:r.thermal_relax_s,rvOk:r.revisit_adequate,
+    anPeak:r.analytical_peak,anUsed:r.analytical_used};
 }
 
 /* Scan builders — add short-name aliases so rendering code (s.x, s.y, s.a, s.v) still works */
@@ -58,8 +80,8 @@ function _addShortNames(segs){
   return segs;
 }
 function scanBuildLinear(x0,y0,a,L,v,d){return _addShortNames(_E.buildLinearScan(x0,y0,a,L,v,d));}
-function scanBuildBidi(x0,y0,lL,nL,h,sv,jv,d){return _addShortNames(_E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d));}
-function scanBuildRaster(x0,y0,lL,nL,h,sv,jv,d){return _addShortNames(_E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d));}
+function scanBuildBidi(x0,y0,lL,nL,h,sv,jv,d,bl){return _addShortNames(_E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl));}
+function scanBuildRaster(x0,y0,lL,nL,h,sv,jv,d,bl){return _addShortNames(_E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl));}
 var scanMaxPulseEnergy = _E.maxPulseEnergy;
 var scanMinRepRate = _E.minRepRate;
 
@@ -135,7 +157,7 @@ function paOptPRF(wl,tau,T){ return _E.paOptimalPRF(wl,tau,T); }
 var getAperture = _E.getAperture;
 var beamEval = _E.beamEval;
 
-var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#F0E442","#000000"];
+var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#B8860B","#000000"];
 var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
 var WLTICKS=[200,400,700,1000,1400,2000,3000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
@@ -813,6 +835,7 @@ function ScanTab(p){
   var _ht=useState("0.5"),htS=_ht[0],setHtS=_ht[1]; var _htn=useState(0.5),hatch=_htn[0],setHatch=_htn[1];
   var _ppd=useState(8),ppd=_ppd[0],setPpd=_ppd[1];
   var _dwm=useState("gaussian"),dwm=_dwm[0],setDwm=_dwm[1];
+  var _blk=useState(false),blk=_blk[0],setBlk=_blk[1];
   var _res=useState(null),res=_res[0],setRes=_res[1];
   var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
   var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
@@ -841,11 +864,11 @@ function ScanTab(p){
       "  MPEEngine.loadStandard(p.std);",
       "  var E=MPEEngine;",
       "  /* Build segments (with engine.js field names) */",
-      "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d){",
+      "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d,bl){",
       "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);",
-      "    if(pat==='bidi')return E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d);",
-      "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d);}",
-      "  var segs=bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia);",
+      "    if(pat==='bidi')return E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);",
+      "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);}",
+      "  var segs=bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia,p.blk);",
       "  var isCW=p.prf===0&&p.tau===0;",
       "  var Ep=p.prf>0?p.pw/p.prf:0;",
       "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
@@ -854,8 +877,8 @@ function ScanTab(p){
       "  if(!cr){self.postMessage({error:'Computation returned null'});return;}",
       "  var eg=cr.grid,s=cr.stats;",
       "  var minV=isCW?(s.min_velocity||p.vel):0;",
-      "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW};",
-      "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV);",
+      "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW,pulse_energy_J:Ep,prf_hz:p.prf,avg_power_W:p.pw};",
+      "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV,{v_mm_s:p.vel,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});",
       "  /* Max permissible power */",
       "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
       "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};",
@@ -869,12 +892,12 @@ function ScanTab(p){
       "  /* Min safe velocity bisection */",
       "  var minVel=0;",
       "  function testV(tv){",
-      "    var ts2=bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia);",
+      "    var ts2=bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia,p.blk);",
       "    var tb={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
       "    var tcr=E.computeScanFluence(tb,ts2,p.auxPpd);",
       "    if(!tcr)return true;",
       "    var tmv=isCW?(tcr.stats.min_velocity||tv):0;",
-      "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv);",
+      "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv,{v_mm_s:tv,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});",
       "    return tsf.safe;}",
       "  if(testV(1e6)){var vLo=0.01,vHi=1e6;",
       "    for(var bi=0;bi<p.maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}",
@@ -898,12 +921,13 @@ function ScanTab(p){
       "  var result={",
       "    g:{nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm},",
       "    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,",
-      "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity},",
+      "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity,stride:s.stride||1},",
       "    sf:{safe:sf.safe,wr:sf.worst_ratio,wx:sf.worst_x_mm,wy:sf.worst_y_mm,",
       "      br:sf.binding_rule,sm:sf.safety_margin,mt:sf.mpe_tau,mT:sf.mpe_T,",
       "      pF:sf.peak_fluence,ppM:sf.peak_pulse_H_max,mP:sf.max_pulses,",
       "      r1m:sf.rule1_max_ratio,r2m:sf.rule2_max_ratio,",
-      "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate},",
+      "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate,",
+      "      anPeak:sf.analytical_peak,anUsed:sf.analytical_used},",
       "    maxP:maxP,minVel:minVel,pulseArr:pulseArr,segs:segs,notes:p.notes};",
       "  self.postMessage(result,[eg.fluence.buffer,eg.pulse_count.buffer,eg.peak_pulse_H.buffer,eg.last_visit_t.buffer,eg.min_revisit_s.buffer]);",
       "};"
@@ -918,14 +942,31 @@ function ScanTab(p){
     return _workerRef.current;
   }
 
+  var SCAN_WORKER_TIMEOUT_MS = 30000; // 30-second safety timeout
+  var _workerTimeout = useRef(null);
+
   function calculate(){
+    // ── Input validation (safety-critical) ──
+    if(!isFinite(wl)||wl<180||wl>1e6){alert("Wavelength must be 180–1,000,000 nm");return;}
+    if(!isFinite(dia)||dia<=0){alert("Beam diameter must be > 0");return;}
+    if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
+    if(!isFinite(pw)||pw<=0){alert("Average power must be > 0");return;}
+    if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
+    if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
+    if(pat!=="linear"){
+      if(!isFinite(nLines)||nLines<1){alert("Number of lines must be ≥ 1");return;}
+      if(!isFinite(hatch)||hatch<=0){alert("Hatch spacing must be > 0");return;}
+      if(!isFinite(lineL)||lineL<=0){alert("Line length must be > 0");return;}
+    }else{
+      if(!isFinite(lineL)||lineL<=0){alert("Line length must be > 0");return;}
+    }
     setCmp(true);setDirty(false);setPerfNote("");
 
     // ── Performance estimation (fast, runs on main thread) ──
     var segsEst;
     if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,vel,dia);
-    else if(pat==="bidi") segsEst=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia);
-    else segsEst=scanBuildRaster(0,0,lineL,nLines,hatch,vel,vel*5,dia);
+    else if(pat==="bidi") segsEst=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia,blk);
+    else segsEst=scanBuildRaster(0,0,lineL,nLines,hatch,vel,vel*5,dia,blk);
 
     var estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
     var estPulses=prf*estTime;
@@ -933,29 +974,37 @@ function ScanTab(p){
     var trunc=Math.ceil(3*sigma/estDx);
     var estOps=estPulses*Math.PI*trunc*trunc;
     var effPpd=ppd,notes=[];
-    if(estOps>40e6&&ppd>2){
-      for(effPpd=ppd-1;effPpd>=2;effPpd--){
+    if(estOps>_E.OP_BUDGET&&ppd>3){
+      for(effPpd=ppd-1;effPpd>=3;effPpd--){
         var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
-        if(estPulses*Math.PI*tr2*tr2<40e6)break;
+        if(estPulses*Math.PI*tr2*tr2<_E.OP_BUDGET)break;
       }
-      effPpd=Math.max(2,effPpd);
+      effPpd=Math.max(3,effPpd);
       notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses");
     }
     // Pulse subsampling note (engine handles this internally at >500k pulses)
-    if(estPulses>500000){
-      var estStride=Math.ceil(estPulses/500000);
+    if(estPulses>_E.DEFAULT_MAX_COMPUTE_PULSES){
+      var estStride=Math.ceil(estPulses/_E.DEFAULT_MAX_COMPUTE_PULSES);
       notes.push("Pulse subsampling active (stride="+estStride+"): computing 1 in every "+estStride+" pulses for "+Math.round(estPulses/1000)+"k total");
     }
-    var auxPpd=Math.min(effPpd,2);
+    var auxPpd=Math.min(effPpd,3);
     var maxBisect=estPulses>100000?6:estPulses>10000?8:15;
 
     // ── Try Web Worker (off main thread) ──
     var worker=getWorker();
     if(worker){
       var params={std:__STD_DATA__,wl:wl,dia:dia,tau:tau,prf:prf,pw:pw,
-        pat:pat,lineL:lineL,nLines:nLines,hatch:hatch,vel:vel,dwm:dwm,
+        pat:pat,lineL:lineL,nLines:nLines,hatch:hatch,vel:vel,dwm:dwm,blk:blk,
         effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
+      // Safety timeout: kill Worker if it takes too long
+      if(_workerTimeout.current)clearTimeout(_workerTimeout.current);
+      _workerTimeout.current=setTimeout(function(){
+        if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
+        setPerfNote("Computation timed out after 30 seconds. Try reducing line count, increasing hatch spacing, or lowering PRF.");
+        setCmp(false);
+      },SCAN_WORKER_TIMEOUT_MS);
       worker.onmessage=function(ev){
+        if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
         var r=ev.data;
         if(r.error){if(typeof console!=="undefined")console.error("Worker error:",r.error);setCmp(false);return;}
         /* Reconstruct grid with transferred TypedArrays */
@@ -989,7 +1038,7 @@ function ScanTab(p){
       var cr=scanCompute(beam,segs,effPpd);
       if(cr){
         var minV=isCW?(cr.st.mv||vel):0;
-        var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV);
+        var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:vel,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
         var unitBeam={wl:wl,d:dia,tau:tau,prf:prf,Ep:prf>0?1/prf:0,P:1,cw:isCW};
         var unitCr=scanCompute(unitBeam,segs,auxPpd);
         var maxP=Infinity;
@@ -1004,13 +1053,13 @@ function ScanTab(p){
         function testV(tv){
           var ts;
           if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
-          else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia);
-          else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia);
+          else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
+          else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
           var tb={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
           var tcr=scanCompute(tb,ts,auxPpd);
           if(!tcr)return true;
           var tmv=isCW?(tcr.st.mv||tv):0;
-          var tsf=scanSafety(tcr.g,tb,tcr.st.tt,dwm,tmv);
+          var tsf=scanSafety(tcr.g,tb,tcr.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
           return tsf.safe;
         }
         if(testV(1e6)){var vLo=0.01,vHi=1e6;
@@ -1276,11 +1325,11 @@ function ScanTab(p){
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Beam Parameters</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <div><label style={lb}>Wavelength (nm)</label><input type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
-          <div><label style={lb}>Beam 1/e Diameter (mm)</label><input type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
+          <div><label htmlFor="scan-wl" style={lb}>Wavelength (nm)</label><input id="scan-wl" type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
+          <div><label htmlFor="scan-dia" style={lb}>Beam 1/e Diameter (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
           <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
           <div><label style={lb}>Repetition Rate</label><div style={{display:"flex",gap:4}}><input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
-          <div><label style={lb}>Average Power (W)</label><input type="text" value={pwS} onChange={function(e){upN(setPwS,setPw,e.target.value)}} style={ip}/></div>
+          <div><label htmlFor="scan-pw" style={lb}>Average Power (W)</label><input id="scan-pw" type="text" value={pwS} onChange={function(e){upN(setPwS,setPw,e.target.value)}} style={ip}/></div>
         </div>
       </div>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
@@ -1292,12 +1341,12 @@ function ScanTab(p){
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <div><label style={lb}>Scan Velocity (mm/s)</label><input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value)}} style={ip}/></div>
-            <div><label style={lb}>Line Length (mm)</label><input type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value)}} style={ip}/></div>
+            <div><label htmlFor="scan-vel" style={lb}>Scan Velocity (mm/s)</label><input id="scan-vel" type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value)}} style={ip}/></div>
+            <div><label htmlFor="scan-ll" style={lb}>Line Length (mm)</label><input id="scan-ll" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value)}} style={ip}/></div>
           </div>
           {pat!=="linear"?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <div><label style={lb}>Number of Lines</label><input type="text" value={nLS} onChange={function(e){upN(setNLS,setNLines,e.target.value)}} style={ip}/></div>
-            <div><label style={lb}>Hatch Spacing (mm)</label><input type="text" value={htS} onChange={function(e){upN(setHtS,setHatch,e.target.value)}} style={ip}/></div>
+            <div><label htmlFor="scan-nl" style={lb}>Number of Lines</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){upN(setNLS,setNLines,e.target.value)}} style={ip}/></div>
+            <div><label htmlFor="scan-ht" style={lb}>Hatch Spacing (mm)</label><input id="scan-ht" type="text" value={htS} onChange={function(e){upN(setHtS,setHatch,e.target.value)}} style={ip}/></div>
           </div>:null}
         </div>
       </div>
@@ -1307,7 +1356,7 @@ function ScanTab(p){
           <div style={{marginBottom:10}}>
             <label style={lb}>Grid Resolution (pts/diameter)</label>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <input type="range" min={4} max={32} value={ppd} onChange={function(e){setPpd(Number(e.target.value));setDirty(true)}} style={{flex:1}}/>
+              <input type="range" min={3} max={32} value={ppd} onChange={function(e){setPpd(Number(e.target.value));setDirty(true)}} style={{flex:1}}/>
               <span style={{fontSize:12,fontFamily:"monospace",fontWeight:700,color:T.ac,minWidth:20}}>{ppd}</span>
             </div>
             <div style={{fontSize:9,color:T.td,marginTop:2,fontFamily:"monospace"}}>Spacing: {(dia/ppd).toFixed(4)} mm {ppd>=8?"\u2713 converged":""}</div>
@@ -1320,6 +1369,14 @@ function ScanTab(p){
               })}
             </div>
           </div>
+          {pat!=="linear"?<div>
+            <label style={lb}>Galvo Flyback Blanking</label>
+            <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,color:blk?T.ac:T.tm}}>
+              <input type="checkbox" checked={blk} onChange={function(){setBlk(!blk);setDirty(true);}} style={{accentColor:T.ac,width:14,height:14}}/>
+              {blk?"Laser blanked during flyback/jumps":"Laser fires during flyback (conservative)"}
+            </label>
+            <div style={{fontSize:8,color:T.td,marginTop:2}}>OCT/confocal systems typically blank during galvo return</div>
+          </div>:null}
         </div>
         <button onClick={calculate} style={{padding:"10px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer",width:"100%",marginTop:12}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
       </div>
@@ -1373,7 +1430,7 @@ function ScanTab(p){
 
     {/* ── Safety Results ── */}
     {res?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-      <div style={{background:res.sf.safe?"#e8f5e9":"#fbe9e7",borderRadius:6,padding:14,textAlign:"center"}}>
+      <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#e8f5e9":"#fbe9e7",borderRadius:6,padding:14,textAlign:"center"}}>
         <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:res.sf.safe?"#2e7d32":"#bf360c",marginBottom:4}}>Safety Verdict</div>
         <div style={{fontSize:22,fontWeight:700,color:res.sf.safe?"#2e7d32":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div>
         <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.safe?"#388e3c":"#d84315",marginTop:4}}>Margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
@@ -1409,12 +1466,13 @@ function ScanTab(p){
         </tr>;})}</tbody></table>
         <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
           ["Pattern",pat==="bidi"?"Bidirectional raster":pat==="raster"?"Unidirectional raster":"Linear"],
+          ["Flyback blanking",pat==="linear"?"N/A":(blk?"Yes (laser off during jumps)":"No (conservative)")],
           ["Total segments",String(res.segs.length)],
           ["Total scan time",numFmt(res.st.tt,4)+" s"],
           ["Dwell time ("+dwm+")",numFmt(dwm==="gaussian"?scanDwellGaussian(dia,vel):scanDwellGeometric(dia,vel),4)+" s"],
-          ["Grid",res.g.nx+"\u00d7"+res.g.ny+" ("+ppd+" pts/dia)"],
-          ["Peak fluence",numFmt(res.sf.pF,4)+" J/cm\u00b2"],
-          ["Max pulses at point",String(res.sf.mP)],
+          ["Grid",res.g.nx+"\u00d7"+res.g.ny+" ("+ppd+" pts/dia)"+(res.st.stride>1?", stride="+res.st.stride:"")],
+          ["Peak fluence",numFmt(res.sf.pF,4)+" J/cm\u00b2"+(res.sf.anUsed?" (analytical bound)":"")],
+          ["Max pulses at point",String(res.sf.mP)+(res.st.stride&&res.st.stride>1?" (approx)":"")],
           ["\u03c4\u1d63 (thermal)",numFmt(res.sf.tauR,4)+" s"],
         ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bd}}>
           <td style={{padding:"4px 8px",fontSize:10,color:T.tm}}>{row[0]}</td>
@@ -1480,6 +1538,16 @@ function ScanTab(p){
         })()}
       </div>
     </div>:null}
+
+    {/* ── Safety Disclaimer ── */}
+    <div style={{background:T.bgI,borderRadius:6,border:"1px solid "+T.bd,padding:"12px 14px",fontSize:10,color:T.td,lineHeight:1.7}}>
+      <strong style={{color:T.tx}}>{"\u26a0"} Important Safety Notice</strong><br/>
+      This scanning protocol analysis evaluates skin MPE compliance per {STD_NAME} (Tables 5 and 7) using the repetitive-pulse framework (Rules 1 and 2). Rule 3 (N{"\u207b\u00b0\u00b7\u00b2\u2075"} correction) does not apply to skin {"\u2014"} only to retinal thermal hazards.<br/>
+      <strong>Safety evaluation method:</strong> The safety verdict uses the maximum of the grid-sampled peak fluence and an exact analytical Gaussian overlap computation, ensuring grid resolution and pulse subsampling cannot cause unsafe underestimates. Rule 1 uses the exact analytical single-pulse peak fluence H{"\u2080"} = 2E/({"\u03c0"}w{"\u00b2"}).<br/>
+      <strong>Limitations:</strong> This tool assumes a perfectly Gaussian beam profile, uniform pulse energy, and ideal galvanometer positioning. Real-world deviations (beam aberrations, pointing jitter, power fluctuations) may increase actual exposure.{" "}
+      <strong style={{color:T.no}}>This is a research and educational tool, not a certified safety instrument.</strong>{" "}
+      Verify all values independently against the applicable standard before any safety-critical use.
+    </div>
   </div>);
 }
 
@@ -1519,15 +1587,15 @@ export default function App(){
         <div style={{display:"flex",gap:6,alignItems:"center"}}>{msg?<span style={{fontSize:11,color:T.a2,fontWeight:600}}>{msg}</span>:null}<button onClick={function(){setTheme(theme==="light"?"dark":"light")}} style={{padding:"3px 8px",fontSize:13,border:"1px solid "+T.bd,cursor:"pointer",background:"transparent",color:T.tm,borderRadius:4}} title="Toggle theme">{theme==="light"?"\u263E":"\u2600"}</button></div>
       </div>
       {/* Tab bar */}
-      <div style={{borderBottom:"1px solid "+T.bd,padding:"0 24px",background:T.card,display:"flex",gap:4}}>
-        <button onClick={function(){setTab("mpe")}} style={tabBt("mpe")}>MPE Calculator</button>
-        <button onClick={function(){setTab("scan")}} style={tabBt("scan")}>Scanning Protocols</button>
-        <button onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
+      <div role="tablist" aria-label="Calculator sections" style={{borderBottom:"1px solid "+T.bd,padding:"0 24px",background:T.card,display:"flex",gap:4}}>
+        <button role="tab" aria-selected={tab==="mpe"} aria-controls="panel-mpe" id="tab-mpe" onClick={function(){setTab("mpe")}} style={tabBt("mpe")}>MPE Calculator</button>
+        <button role="tab" aria-selected={tab==="scan"} aria-controls="panel-scan" id="tab-scan" onClick={function(){setTab("scan")}} style={tabBt("scan")}>Scanning Protocols</button>
+        <button role="tab" aria-selected={tab==="pa"} aria-controls="panel-pa" id="tab-pa" onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
       </div>
       <div style={{padding:"16px 24px 40px",maxWidth:1100,margin:"0 auto"}}>
-        {tab==="mpe"?<ErrorBoundary theme={T}><MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary>:null}
-        {tab==="scan"?<ErrorBoundary theme={T}><ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary>:null}
-        {tab==="pa"?<ErrorBoundary theme={T}><PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary>:null}
+        {tab==="mpe"?<div role="tabpanel" id="panel-mpe" aria-labelledby="tab-mpe"><ErrorBoundary theme={T}><MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
+        {tab==="scan"?<div role="tabpanel" id="panel-scan" aria-labelledby="tab-scan"><ErrorBoundary theme={T}><ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
+        {tab==="pa"?<div role="tabpanel" id="panel-pa" aria-labelledby="tab-pa"><ErrorBoundary theme={T}><PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
         <div style={{textAlign:"center",fontSize:10,color:T.td,padding:"12px 0 4px",lineHeight:1.7,borderTop:"1px solid "+T.bd,marginTop:16}}>{STD_NAME} {"\u00b7"} {STD_REF} {"\u00b7"} {STD_TABLES}<br/>For research and educational purposes only. Not a certified safety instrument. Skin MPE only {"\u2014"} ocular limits are not evaluated.<br/>Verify all values independently against the applicable standard before any safety-critical use.</div>
       </div>
     </div>

@@ -12,7 +12,6 @@ const crypto = require("crypto");
 const scripts = [
   { name: "react", url: "https://unpkg.com/react@18.2.0/umd/react.production.min.js" },
   { name: "react-dom", url: "https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" },
-  { name: "prop-types", url: "https://unpkg.com/prop-types@15.8.1/prop-types.min.js" },
   { name: "recharts", url: "https://unpkg.com/recharts@2.12.7/umd/Recharts.js" },
   { name: "plotly-basic", url: "https://cdn.plot.ly/plotly-basic-2.35.2.min.js" },
 ];

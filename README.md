@@ -26,6 +26,30 @@ Associated with [OCT Research](https://octresearch.org/).
 - **Unit conversions:** J/cm², mJ/cm², W/cm², mW/cm², pulse energy, average power
 - **Verified:** 325 automated checks against hand-computed values from the standard
 
+## Web Calculator
+
+An interactive browser-based calculator is available at [octresearch.org](https://octresearch.org/) or by opening `web/index.html` locally. No Python installation, server, or build step is required — it runs entirely in the browser.
+
+The web calculator has three tabs:
+
+### MPE Calculator Tab
+Compute single-pulse and repetitive-pulse skin MPE for any wavelength and duration. Supports multiple simultaneous laser configurations with per-wavelength unit selection. Includes interactive plots of MPE vs. wavelength and MPE vs. duration, beam geometry evaluation with limiting aperture logic, and CSV/SVG export.
+
+### Scanning Protocols Tab
+Evaluate laser safety for scanning beam systems (OCT, photoacoustic imaging, confocal microscopy, laser processing). Supports linear, unidirectional raster, and bidirectional raster scan patterns with configurable parameters including:
+
+- **Beam parameters:** wavelength, diameter, pulse duration, PRF, average power
+- **Scan pattern:** velocity, line length, number of lines, hatch spacing
+- **Flyback blanking:** option to blank laser during galvo return (typical for OCT)
+- **Safety evaluation:** Rule 1 (single-pulse) and Rule 2 (cumulative) per ICNIRP 2013, with analytical Gaussian cross-check ensuring grid approximations never cause unsafe underestimates
+- **Visualization:** cumulative fluence heatmap, pulse timing diagram, fluence cross-section
+- **Derived limits:** maximum permissible power and minimum safe scan velocity
+
+Handles high-PRF systems (100–400 kHz) via pulse subsampling with conservative analytical bounds.
+
+### Photoacoustic SNR Optimizer Tab
+Optimize pulse repetition frequency for photoacoustic imaging based on the Francis et al. framework. Computes effective per-pulse fluence, relative SNR, and optimal PRF across multiple wavelength/pulse-duration configurations simultaneously.
+
 ## Standards Compliance
 
 All values are verified against the loaded standard (default: ICNIRP 2013).
@@ -134,27 +158,29 @@ print(f"{radiant_exposure_convert(H, 'mJ/cm2')} mJ/cm²")
 
 ## Testing
 
-325 automated checks across 4 test suites, verified against hand-computed values from the standard:
-
-```
-Test Suite                                 Checks
-──────────────────────────────────────────────────
-test_skin_mpe                              38
-test_skin_parameters                       32
-test_correction_factors                    5
-verify_exhaustive                          254
-──────────────────────────────────────────────────
-TOTAL                                      329
-```
+### Python tests (71 checks)
 
 ```bash
-python tests/test_skin_mpe.py
-python tests/test_skin_parameters.py
-python tests/test_correction_factors.py
-python tests/verify_exhaustive.py
+pytest tests/ -v
 ```
 
-Full test outputs are available in [`tests/outputs/`](tests/outputs/).
+### JavaScript engine tests (62 checks)
+
+```bash
+node tests/test_engine_js.mjs
+```
+
+Covers: core MPE computation, correction factors, repetitive-pulse rules, band classification, photoacoustic functions, beam geometry, scanning engine (pulsed + CW), analytical cross-check, flyback blanking, input validation edge cases, and cross-language equivalence (20 boundary points verified against Python).
+
+### CI
+
+GitHub Actions runs all tests automatically on every push:
+- Python tests across Python 3.9–3.12
+- Python linting (ruff)
+- JavaScript engine tests (Node.js 20)
+- Build verification (index.html generation + content check)
+
+Full Python test outputs are available in [`tests/outputs/`](tests/outputs/).
 
 ## Package Structure
 
@@ -168,17 +194,19 @@ MPE-Calculator-Skin/
 │   ├── repetitive_pulse.py     # Rules 1 and 2
 │   └── skin_parameters.py      # T_max, apertures, conversions
 ├── web/
-│   ├── index.html               # Standalone interactive calculator
-│   ├── calculator.jsx           # React component source
-│   ├── engine.js                # JS calculation engine (Node.js)
-│   ├── config.js                # Points to active standard file
+│   ├── index.html               # Built interactive calculator (generated)
+│   ├── calculator.jsx           # React component source (3 tabs)
+│   ├── engine.js                # JS calculation engine (single source of truth)
+│   ├── build.py                 # Build script (JSX pre-compilation + bundling)
+│   ├── compute-sri.js           # SRI hash computation for CDN scripts
 │   ├── standards/               # JSON standard data files
 │   │   ├── icnirp_2013.json     # Default standard data
 │   │   └── README.md            # Schema documentation
 │   └── README.md                # Web deployment guide
 ├── tests/
 │   ├── outputs/                 # Full test output logs
-│   └── *.py                     # 4 test suites (329 checks)
+│   ├── test_engine_js.mjs       # JavaScript engine tests (62 checks)
+│   └── *.py                     # 4 Python test suites (71 checks)
 ├── examples/
 │   ├── README.md                # What each example does
 │   ├── outputs/                 # Expected output for cross-checking
