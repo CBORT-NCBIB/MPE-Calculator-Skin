@@ -1067,6 +1067,7 @@ function ScanTab(p){
         setCmp(false);
       };
       worker.onerror=function(err){
+        if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
         if(typeof console!=="undefined")console.error("Worker error:",err);
         /* Fall back to main-thread computation */
         calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);

@@ -1897,9 +1897,11 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
 } else
 // BUILD_STRIP_END
 {
-  // Browser: standard data must be set via loadStandard()
+  // Browser or Web Worker: standard data must be set via loadStandard()
   // (the HTML build script will call this with inlined JSON)
-  window.MPEEngine = {
+  // Use self (works in both Workers and main thread) with window fallback
+  var _global = (typeof self !== "undefined") ? self : (typeof window !== "undefined") ? window : this;
+  _global.MPEEngine = {
     // Constants
     GAUSS_TRUNCATION_SIGMA: GAUSS_TRUNCATION_SIGMA,
     KAPPA_SKIN_MM2_S: KAPPA_SKIN_MM2_S,
