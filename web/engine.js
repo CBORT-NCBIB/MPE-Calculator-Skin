@@ -1765,10 +1765,17 @@ function maxPermissiblePower(beam, segments, T_s, ppd) {
 }
 
 // ── End scanning engine ─────────────────────────────────────────
-if (typeof module !== "undefined" && module.exports) {
-  // Node.js: load JSON from file
-  var defaultStd = require("./standards/icnirp_2013.json");
-  loadStandard(defaultStd);
+// ── Environment detection and exports ───────────────────────────
+// Node.js: load JSON and export module. Browser: set window.MPEEngine.
+// build.py strips the Node.js block (BUILD_STRIP_START → BUILD_STRIP_END)
+// so the browser build only contains the window.MPEEngine assignment.
+
+// BUILD_STRIP_START
+if (typeof module !== "undefined" && module.exports && typeof require === "function") {
+  try {
+    var defaultStd = require("./standards/icnirp_2013.json");
+    loadStandard(defaultStd);
+  } catch(_e) { /* JSON not found — caller must use loadStandard() */ }
   module.exports = {
     // Constants
     GAUSS_TRUNCATION_SIGMA: GAUSS_TRUNCATION_SIGMA,
@@ -1812,7 +1819,9 @@ if (typeof module !== "undefined" && module.exports) {
     maxPulseEnergy: maxPulseEnergy,
     minRepRate: minRepRate
   };
-} else if (typeof window !== "undefined") {
+} else
+// BUILD_STRIP_END
+{
   // Browser: standard data must be set via loadStandard()
   // (the HTML build script will call this with inlined JSON)
   window.MPEEngine = {

@@ -45,6 +45,23 @@ with open(json_path, "r") as f:
 with open(engine_path, "r") as f:
     engine_js = f.read()
 
+# ── Strip Node.js export block from engine for browser embedding ──
+# Lines between BUILD_STRIP_START and BUILD_STRIP_END contain the Node.js
+# require() + module.exports block which must NOT appear in browser code.
+# After stripping, only the unconditional { window.MPEEngine = {...}; } block remains.
+engine_browser = []
+stripping = False
+for line in engine_js.split("\n"):
+    if "BUILD_STRIP_START" in line:
+        stripping = True
+        continue
+    if "BUILD_STRIP_END" in line:
+        stripping = False
+        continue
+    if not stripping:
+        engine_browser.append(line)
+engine_js_browser = "\n".join(engine_browser)
+
 # ── Transform JSX for browser embedding ──
 lines = jsx.split("\n")
 out_lines = []
@@ -170,7 +187,8 @@ html = f'''<!DOCTYPE html>
 {babel_cdn}
 <script>
 // Calculation engine (from engine.js — single source of truth for all MPE logic)
-{engine_js}
+// Node.js exports stripped for browser embedding; see BUILD_STRIP markers in engine.js
+{engine_js_browser}
 </script>
 
 <script>
@@ -182,6 +200,7 @@ if (typeof MPEEngine !== "undefined") MPEEngine.loadStandard(__STD_DATA__);
 
 <script>
 // Engine source for Web Worker (scanning computation runs off main thread)
+// Uses the FULL engine.js (including Node.js exports) since Worker scope is isolated
 var __ENGINE_SOURCE__ = {json.dumps(engine_js)};
 </script>
 
