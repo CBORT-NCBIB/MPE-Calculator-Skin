@@ -467,6 +467,69 @@ function _gaussLookup(u) {
 
 // ── Grid creation ───────────────────────────────────────────────
 
+/** Maximum segments before builders refuse (prevents OOM for micro-beams) */
+var MAX_SEGMENTS = 500000;
+
+/**
+ * Create a fluence grid directly from scan parameters, without
+ * requiring a segment array. Used by the separable fast path to
+ * avoid the O(line_length/beam_diameter × n_lines) segment allocation
+ * that crashes the browser for micro-scale beams.
+ *
+ * @param {Object} sp - Scan parameters:
+ *   {d_1e_mm, x0, y0, line_length_mm, n_lines, hatch_mm, pattern}
+ * @param {number} ppd - Points per diameter (default 8, min 2, max 32)
+ * @returns {Object} FluenceGrid
+ */
+function createFluenceGridFromParams(sp, ppd) {
+  if (!ppd || ppd < 2) ppd = 2;
+  if (ppd > 32) ppd = 32;
+  var d = sp.d_1e_mm;
+  var dx = d / ppd;
+  var margin = 3 * d;
+  var x0 = sp.x0 || 0, y0 = sp.y0 || 0;
+  var nLines = sp.n_lines || 1;
+  var hatch = sp.hatch_mm || 0;
+
+  // Bounding box from scan geometry (no segments needed)
+  var xmin = x0 - margin;
+  var xmax = x0 + sp.line_length_mm + margin;
+  var ymin = y0 - margin;
+  var ymax = y0 + (nLines - 1) * hatch + margin;
+
+  var nx = Math.ceil((xmax - xmin) / dx) + 1;
+  var ny = Math.ceil((ymax - ymin) / dx) + 1;
+
+  // Safety cap
+  if (nx * ny > MAX_GRID_CELLS) {
+    var scale = Math.sqrt(MAX_GRID_CELLS / (nx * ny));
+    nx = Math.floor(nx * scale);
+    ny = Math.floor(ny * scale);
+    dx = (xmax - xmin) / (nx - 1);
+  }
+
+  return {
+    nx: nx,
+    ny: ny,
+    dx_mm: dx,
+    x_min_mm: xmin,
+    y_min_mm: ymin,
+    fluence: new Float32Array(nx * ny),
+    pulse_count: new Float32Array(nx * ny),
+    peak_pulse_H: new Float32Array(nx * ny),
+    last_visit_t: (function() {
+      var a = new Float32Array(nx * ny);
+      for (var i = 0; i < a.length; i++) a[i] = -1e30;
+      return a;
+    })(),
+    min_revisit_s: (function() {
+      var a = new Float32Array(nx * ny);
+      for (var i = 0; i < a.length; i++) a[i] = 1e30;
+      return a;
+    })()
+  };
+}
+
 /**
  * Create a fluence grid covering the scan path bounding box plus
  * a margin of 3 × beam diameter on each side.
@@ -1206,20 +1269,30 @@ function computeScanFluenceSeparable(grid, sp) {
  * @returns {Object} { grid, stats }
  */
 function computeScanFluence(beam, segments, ppd, scanParams) {
-  if (!segments || segments.length === 0) return null;
+  if (!scanParams && (!segments || segments.length === 0)) return null;
   ppd = ppd || 8;
-  var grid = createFluenceGrid(beam.d_1e_mm, segments, ppd);
-  var stats;
+
+  // ── Separable fast path: bypass segment-based grid creation entirely ──
+  // This avoids the O(line_length/beam_diameter × n_lines) segment array
+  // that can crash the browser for micro-scale beams over large areas.
+  if (scanParams && canUseSeparable(scanParams)) {
+    var grid = createFluenceGridFromParams(scanParams, ppd);
+    var stats = computeScanFluenceSeparable(grid, scanParams);
+    return { grid: grid, stats: stats };
+  }
+
+  // ── Standard path: requires pre-built segment array ──
+  if (!segments || segments.length === 0) return null;
+  var grid2 = createFluenceGrid(beam.d_1e_mm, segments, ppd);
+  var stats2;
   if (beam.is_cw) {
-    stats = computeScanFluenceCW(grid, beam.d_1e_mm, beam.avg_power_W, segments);
-    stats.total_pulses = 0;
-  } else if (scanParams && canUseSeparable(scanParams)) {
-    stats = computeScanFluenceSeparable(grid, scanParams);
+    stats2 = computeScanFluenceCW(grid2, beam.d_1e_mm, beam.avg_power_W, segments);
+    stats2.total_pulses = 0;
   } else {
-    stats = computeScanFluencePulsed(grid, beam.d_1e_mm, beam.prf_hz,
+    stats2 = computeScanFluencePulsed(grid2, beam.d_1e_mm, beam.prf_hz,
       beam.pulse_energy_J, segments);
   }
-  return { grid: grid, stats: stats };
+  return { grid: grid2, stats: stats2 };
 }
 
 // ── Safety evaluation ───────────────────────────────────────────
@@ -1805,6 +1878,8 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     scanDwellGaussian: scanDwellGaussian,
     scanDwellGeometric: scanDwellGeometric,
     createFluenceGrid: createFluenceGrid,
+    createFluenceGridFromParams: createFluenceGridFromParams,
+    MAX_SEGMENTS: MAX_SEGMENTS,
     computeScanFluencePulsed: computeScanFluencePulsed,
     computeScanFluenceCW: computeScanFluenceCW,
     computeScanFluence: computeScanFluence,
@@ -1851,6 +1926,8 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     scanDwellGaussian: scanDwellGaussian,
     scanDwellGeometric: scanDwellGeometric,
     createFluenceGrid: createFluenceGrid,
+    createFluenceGridFromParams: createFluenceGridFromParams,
+    MAX_SEGMENTS: MAX_SEGMENTS,
     computeScanFluencePulsed: computeScanFluencePulsed,
     computeScanFluenceCW: computeScanFluenceCW,
     computeScanFluence: computeScanFluence,
