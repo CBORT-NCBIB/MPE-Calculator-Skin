@@ -14,20 +14,19 @@ A Python package for computing laser skin MPE values with support for single-pul
 
 ## Features
 
-- **Full wavelength coverage:** 180 nm to 1000 µm (UV through far infrared)
-- **All exposure durations:** 10⁻⁹ s to 3×10⁴ s (nanoseconds to hours)
+- **Wavelength coverage:** 180 nm to 1000 µm (UV through far infrared)
+- **Exposure durations:** 10⁻⁹ s to 3×10⁴ s (nanoseconds to hours)
 - **Exposure modes:** Single-pulse, continuous-wave (CW), and repetitive-pulse
 - **UV dual-limit logic:** Automatically selects the lower of photochemical and thermal limits (180–400 nm)
 - **Cₐ correction factor:** Wavelength-dependent correction for 400–1400 nm
 - **Repetitive-pulse rules:** Rule 1 (single-pulse limit) and Rule 2 (average power), 
 - **Supporting calculations:** T_max lookup, limiting apertures, large area correction, UV successive-day de-rating
 - **Unit conversions:** J/cm², mJ/cm², W/cm², mW/cm², pulse energy, average power
-- **Verified:** 325 automated checks against hand-computed values from the standard
+- **Verified:** Verification scripts to compare to the ICNIRP standard
 
 ## Web Calculator
 
-An interactive browser-based calculator is available at [octresearch.org](https://octresearch.org/) or by opening `web/index.html` locally. No Python installation, server, or build step is required — it runs entirely in the browser.
-
+An interactive browser-based calculator is available by opening `web/index.html` locally. No Python installation, server, or build step is required.
 The web calculator has three tabs:
 
 ### MPE Calculator Tab
@@ -52,15 +51,15 @@ Optimize pulse repetition frequency for photoacoustic imaging based on the Franc
 
 All values are verified against the loaded standard (default: ICNIRP 2013).
 
-| Component | Description | Status |
-|---|---|---|
-| Skin MPE | All wavelength bands (UV, Visible, Near-IR, Far-IR) | ✅ Verified |
-| Correction factor Cₐ | Wavelength-dependent correction for 400–1400 nm | ✅ Verified |
-| T_max | Recommended maximum exposure durations | ✅ Verified |
-| Limiting apertures | Skin aperture diameters by wavelength | ✅ Verified |
-| Repetitive pulse | Rules 1 and 2 (Rule 3 excluded for skin) | ✅ Verified |
-| Large area correction | Beam area > 100 cm² for λ > 1.4 µm, t > 10 s | ✅ Verified |
-| UV de-rating | Successive-day de-rating for 280–400 nm | ✅ Verified |
+| Component | Description |
+|---|---|
+| Skin MPE | All wavelength bands (UV, Visible, Near-IR, Far-IR) |
+| Correction factor Cₐ | Wavelength-dependent correction for 400–1400 nm |
+| T_max | Recommended maximum exposure durations |
+| Limiting apertures | Skin aperture diameters by wavelength |
+| Repetitive pulse | Rules 1 and 2 (Rule 3 excluded for skin) |
+| Large area correction | Beam area > 100 cm² for λ > 1.4 µm, t > 10 s |
+| UV de-rating | Successive-day de-rating for 280–400 nm |
 
 Boundary conventions follow the standard exactly: `t₁ ≤ t < t₂` and `λ₁ ≤ λ < λ₂`.
 
@@ -178,7 +177,7 @@ GitHub Actions runs all tests automatically on every push:
 - JavaScript engine tests (Node.js 20)
 - Build verification (index.html generation + content check)
 
-Full Python test outputs are available in [`tests/outputs/`](tests/outputs/).
+Python test outputs are available in [`tests/outputs/`](tests/outputs/).
 
 ## Package Structure
 
@@ -221,9 +220,9 @@ MPE-Calculator-Skin/
 
 ## Web Calculator
 
-An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser — no build step or server required. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
+An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
 
-## Roadmap
+## Project Outline
 
 - [x] Skin MPE (all bands, 180 nm–1000 µm)
 - [x] UV dual-limit logic
@@ -244,20 +243,8 @@ If you use this software, please cite it using [CITATION.cff](CITATION.cff).
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT (see [LICENSE](LICENSE))
 
 ## Disclaimer
 
-This software is provided for **research and educational purposes only**.
-
-It is not a certified safety instrument and has not been endorsed or approved by any standards organization — including ICNIRP, ANSI, IEC, or any regulatory body. The output does not constitute professional safety advice and must not be used as the sole basis for any safety determination.
-
-**Key limitations users must understand:**
-
-- **Skin only.** This tool does not evaluate ocular (eye) exposure limits, which are typically far more restrictive and must be assessed separately.
-- **One interpretation.** The formulas implemented here reflect the authors' interpretation of published guidelines. Other qualified professionals may interpret the same standard differently.
-- **No guarantee of accuracy.** Despite careful testing, the authors make no warranty that the calculations are error-free or suitable for any specific purpose.
-- **Standards change.** Users must confirm the implemented edition is current and applicable to their jurisdiction.
-- **Not a complete safety program.** MPE calculation is one component of laser safety. Hazard classification, control measures, and regulatory compliance are not addressed.
-
-All output should be independently verified against the full text of the applicable standard by a qualified Laser Safety Officer (LSO). By using this software, you assume all risk associated with the use of its output.
+This software is provided for **research and educational purposes only**. It is not a certified safety instrument and has not been endorsed or approved by any standards organization — including ICNIRP, ANSI, IEC, or any regulatory body. The output does not constitute professional safety advice and must not be used as the sole basis for any safety determination. All output should be independently verified against the full text of the applicable standard by a qualified Laser Safety Officer (LSO). By using this software, you assume all risk associated with the use of its output.
