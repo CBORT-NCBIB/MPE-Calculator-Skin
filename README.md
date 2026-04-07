@@ -247,4 +247,10 @@ MIT (see [LICENSE](LICENSE))
 
 ## Disclaimer
 
-This software is provided for **research and educational purposes only**. It is not a certified safety instrument and has not been endorsed or approved by any standards organization — including ICNIRP, ANSI, IEC, or any regulatory body. The output does not constitute professional safety advice and must not be used as the sole basis for any safety determination. All output should be independently verified against the full text of the applicable standard by a qualified Laser Safety Officer (LSO). By using this software, you assume all risk associated with the use of its output.
+This software is provided for **research and educational purposes only**. It is not a certified safety instrument and has not been endorsed or approved by any standards organization, including ICNIRP, ANSI, IEC, or any regulatory body. The output does not constitute professional safety advice and must not be used as the sole basis for any safety determination. All output should be independently verified against the full text of the applicable standard by a qualified Laser Safety Officer (LSO). By using this software, you assume all risk associated with the use of its output.
+
+## References
+
+This GitHub repository implements the ICNIRP 2013 standards using the following reference:
+
+"ICNIRP GUIDELINES ON LIMITS OF EXPOSURE TO LASER RADIATION  OF WAVELENGTHS BETWEEN 180 nm AND 1,000 um", International Commission on Non-Ionizing Radiation Protection, 2013
