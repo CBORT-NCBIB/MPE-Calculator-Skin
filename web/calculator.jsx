@@ -1193,7 +1193,7 @@ function ScanTab(p){
     ctx.save();ctx.translate(cbX+cbW+40,MARGIN.t+cbH/2);ctx.rotate(-Math.PI/2);ctx.textAlign="center";
     ctx.font="8px monospace";ctx.fillText("J/cm\u00b2",0,0);ctx.restore();
 
-  },[res,T]);
+  },[res,T,vizTab]);
 
   function onCanvasMove(e){
     if(!res||!canRef.current)return;

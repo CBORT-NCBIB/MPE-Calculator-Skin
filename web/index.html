@@ -6656,7 +6656,7 @@ function ScanTab(p) {
     ctx.font = "8px monospace";
     ctx.fillText("J/cm\u00b2", 0, 0);
     ctx.restore();
-  }, [res, T]);
+  }, [res, T, vizTab]);
   function onCanvasMove(e) {
     if (!res || !canRef.current) return;
     var rect = canRef.current.getBoundingClientRect();
