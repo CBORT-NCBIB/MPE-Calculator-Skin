@@ -1,17 +1,17 @@
-# Laser Skin MPE Calculator — Web Interface
+# Laser Skin MPE Calculator Web Interface
 
 Interactive browser-based calculator for skin Maximum Permissible Exposure.
 
 ## Files
 
-- **`index.html`** — Standalone single-file application. Open directly in any browser — no build step, no server required. Loads React and Recharts from CDN.
-- **`calculator.jsx`** — React component source. Use this if integrating into an existing React project or build system.
-- **`engine.js`** — Standalone JavaScript calculation engine (Node.js compatible). Mirrors the Python engine exactly.
-- **`standards/`** — JSON data files defining standard-specific MPE values. See `standards/README.md` for the schema.
+- **`index.html`** : Standalone single-file application. Open directly in any browser. Loads React and Recharts from CDN.
+- **`calculator.jsx`** : React component source. Use this if integrating into an existing React project or build system.
+- **`engine.js`** : Standalone JavaScript calculation engine (Node.js compatible). Mirrors the Python engine exactly.
+- **`standards/`** : JSON data files defining standard-specific MPE values. See `standards/README.md` for the schema.
 
 ## Quick Start
 
-Open `index.html` in a browser. That's it.
+Open `index.html` in a browser.
 
 ## Development
 
