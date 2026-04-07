@@ -1095,131 +1095,96 @@ function ScanTab(p){
 
   var _hover=useState(null),hover=_hover[0],setHover=_hover[1];
 
-  // Draw heatmap with axes, colorbar, and scan path overlay
-  var MARGIN={l:48,r:70,t:12,b:30};
-  var CW=720,CH=380;
-  var PW=CW-MARGIN.l-MARGIN.r,PH=CH-MARGIN.t-MARGIN.b;
+  // ── Plotly heatmap for cumulative fluence map ─────────────────
+  var fluMapRef=useRef(null);
+  var HEATMAP_MAX_DIM=400; // Max pixels per axis for Plotly heatmap performance
 
-  function colorMap(v){
-    var ri,gi,bi;
-    if(v<0.25){ri=0;gi=Math.round(v*4*255);bi=Math.round(128+127*(1-v*4));}
-    else if(v<0.5){ri=0;gi=255;bi=Math.round((0.5-v)*2*255);}
-    else if(v<0.75){ri=Math.round((v-0.5)*4*255);gi=255;bi=0;}
-    else{ri=255;gi=Math.round((1-v)*4*255);bi=0;}
-    return[ri,gi,bi];
-  }
-
-  useEffect(function(){
-    if(!res||!canRef.current)return;
-    var c=canRef.current,ctx=c.getContext("2d");
-    var g=res.g,maxF=res.sf.pF||1;
-    ctx.clearRect(0,0,CW,CH);ctx.fillStyle=T.bg;ctx.fillRect(0,0,CW,CH);
-
-    // Draw heatmap in plot area
-    var img=ctx.createImageData(g.nx,g.ny);
-    for(var i=0;i<g.nx*g.ny;i++){
-      var v=g.flu[i]/maxF,rgb=colorMap(v);
-      var al=v>0.005?220:0;
-      img.data[i*4]=rgb[0];img.data[i*4+1]=rgb[1];img.data[i*4+2]=rgb[2];img.data[i*4+3]=al;
-    }
-    var tmp=document.createElement("canvas");tmp.width=g.nx;tmp.height=g.ny;
-    tmp.getContext("2d").putImageData(img,0,0);
-    ctx.save();ctx.translate(MARGIN.l,MARGIN.t);
-    ctx.scale(PW/g.nx,PH/g.ny);ctx.drawImage(tmp,0,0);ctx.restore();
-
-    // Plot area border
-    ctx.strokeStyle=T.bd;ctx.lineWidth=1;
-    ctx.strokeRect(MARGIN.l,MARGIN.t,PW,PH);
-
-    // Scan path overlay
-    var xRange=g.xn+(g.nx-1)*g.dx-g.xn,yRange=g.yn+(g.ny-1)*g.dx-g.yn;
-    var sx=PW/xRange,sy=PH/yRange;
-    ctx.strokeStyle="rgba(255,255,255,0.4)";ctx.lineWidth=1;ctx.setLineDash([3,3]);ctx.beginPath();
-    for(var si=0;si<res.segs.length;si++){
-      var s=res.segs[si],px=MARGIN.l+(s.x-g.xn)*sx,py=MARGIN.t+(s.y-g.yn)*sy;
-      if(si===0)ctx.moveTo(px,py);else ctx.lineTo(px,py);
-    }
-    var last=res.segs[res.segs.length-1];
-    ctx.lineTo(MARGIN.l+(last.x+res.beam.d*Math.cos(last.a)-g.xn)*sx,MARGIN.t+(last.y+res.beam.d*Math.sin(last.a)-g.yn)*sy);
-    ctx.stroke();ctx.setLineDash([]);
-
-    // Worst point marker
-    var wpx=MARGIN.l+(res.sf.wx-g.xn)*sx,wpy=MARGIN.t+(res.sf.wy-g.yn)*sy;
-    ctx.strokeStyle="#D55E00";ctx.lineWidth=2;ctx.beginPath();ctx.arc(wpx,wpy,6,0,2*Math.PI);ctx.stroke();
-
-    // Axis labels
-    ctx.fillStyle=T.td;ctx.font="9px monospace";ctx.textAlign="center";
-    var xMin=g.xn,xMax=g.xn+(g.nx-1)*g.dx,yMin=g.yn,yMax=g.yn+(g.ny-1)*g.dx;
-
-    // X-axis ticks
-    function niceTicks(lo,hi,n){var range=hi-lo,step=range/n,mag=Math.pow(10,Math.floor(Math.log10(step)));
-      var frac=step/mag;var ns=frac<1.5?1:frac<3.5?2:frac<7.5?5:10;step=ns*mag;
-      var start=Math.ceil(lo/step)*step,ticks=[];for(var v=start;v<=hi+step*0.01;v+=step)ticks.push(Math.round(v*1e6)/1e6);return ticks;}
-
-    var xTicks=niceTicks(xMin,xMax,6);
-    for(var ti=0;ti<xTicks.length;ti++){
-      var tx=MARGIN.l+(xTicks[ti]-xMin)/(xMax-xMin)*PW;
-      ctx.fillText(xTicks[ti].toFixed(1),tx,MARGIN.t+PH+14);
-      ctx.strokeStyle=T.bd;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(tx,MARGIN.t+PH);ctx.lineTo(tx,MARGIN.t+PH+4);ctx.stroke();
-    }
-    ctx.fillText("x (mm)",MARGIN.l+PW/2,MARGIN.t+PH+26);
-
-    // Y-axis ticks
-    ctx.textAlign="right";
-    var yTicks=niceTicks(yMin,yMax,5);
-    for(var ti2=0;ti2<yTicks.length;ti2++){
-      var ty=MARGIN.t+(yTicks[ti2]-yMin)/(yMax-yMin)*PH;
-      ctx.fillText(yTicks[ti2].toFixed(1),MARGIN.l-6,ty+3);
-      ctx.strokeStyle=T.bd;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(MARGIN.l,ty);ctx.lineTo(MARGIN.l-4,ty);ctx.stroke();
-    }
-    ctx.save();ctx.translate(10,MARGIN.t+PH/2);ctx.rotate(-Math.PI/2);ctx.textAlign="center";
-    ctx.fillText("y (mm)",0,0);ctx.restore();
-
-    // Colorbar
-    var cbX=CW-MARGIN.r+14,cbW=14,cbH=PH;
-    for(var cy=0;cy<cbH;cy++){
-      var frac2=1-cy/cbH;var rgb2=colorMap(frac2);
-      ctx.fillStyle="rgb("+rgb2[0]+","+rgb2[1]+","+rgb2[2]+")";
-      ctx.fillRect(cbX,MARGIN.t+cy,cbW,1);
-    }
-    ctx.strokeStyle=T.bd;ctx.lineWidth=1;ctx.strokeRect(cbX,MARGIN.t,cbW,cbH);
-    ctx.textAlign="left";ctx.fillStyle=T.td;ctx.font="8px monospace";
-    var cbTicks=[0,0.25,0.5,0.75,1.0];
-    for(var ci=0;ci<cbTicks.length;ci++){
-      var cyp=MARGIN.t+cbH*(1-cbTicks[ci]);
-      var cbVal=cbTicks[ci]*maxF;
-      ctx.fillText(numFmt(cbVal,2),cbX+cbW+4,cyp+3);
-    }
-    ctx.save();ctx.translate(cbX+cbW+40,MARGIN.t+cbH/2);ctx.rotate(-Math.PI/2);ctx.textAlign="center";
-    ctx.font="8px monospace";ctx.fillText("J/cm\u00b2",0,0);ctx.restore();
-
-  },[res,T,vizTab]);
-
-  function onCanvasMove(e){
-    if(!res||!canRef.current)return;
-    var rect=canRef.current.getBoundingClientRect();
-    var scaleX=CW/rect.width,scaleY=CH/rect.height;
-    var cx=(e.clientX-rect.left)*scaleX,cy=(e.clientY-rect.top)*scaleY;
-    // Check if inside plot area
-    if(cx<MARGIN.l||cx>MARGIN.l+PW||cy<MARGIN.t||cy>MARGIN.t+PH){setHover(null);return;}
-    var g=res.g;
-    var xRange=g.xn+(g.nx-1)*g.dx-g.xn,yRange=g.yn+(g.ny-1)*g.dx-g.yn;
-    var xMM=g.xn+(cx-MARGIN.l)/PW*xRange;
-    var yMM=g.yn+(cy-MARGIN.t)/PH*yRange;
-    var ix=Math.round((xMM-g.xn)/g.dx),iy=Math.round((yMM-g.yn)/g.dx);
-    if(ix<0||ix>=g.nx||iy<0||iy>=g.ny){setHover(null);return;}
-    var idx=iy*g.nx+ix;
-    setHover({x:xMM,y:yMM,f:g.flu[idx],pc:g.pc[idx],pp:g.ppH[idx],rv:g.mrv[idx]});
-  }
-
-  var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
-  var timRef=useRef(null),spcRef=useRef(null);
-
-  // Plotly theme colors
+  // Plotly theme colors (shared by all three Plotly charts)
   var plotBg=theme==="dark"?"#333338":"#ffffff";
   var plotGrid=theme==="dark"?"#48484f":"#e4e7eb";
   var plotText=theme==="dark"?"#a0a0a8":"#737880";
   var plotLine=theme==="dark"?"#56B4E9":"#0072B2";
+
+  useEffect(function(){
+    if(!res||!fluMapRef.current||typeof Plotly==="undefined")return;
+    var g=res.g,maxF=res.sf.pF||1;
+
+    // Downsample grid for display if larger than HEATMAP_MAX_DIM per axis
+    var strideX=1,strideY=1;
+    if(g.nx>HEATMAP_MAX_DIM)strideX=Math.ceil(g.nx/HEATMAP_MAX_DIM);
+    if(g.ny>HEATMAP_MAX_DIM)strideY=Math.ceil(g.ny/HEATMAP_MAX_DIM);
+    var dispNx=Math.ceil(g.nx/strideX),dispNy=Math.ceil(g.ny/strideY);
+
+    // Build axis arrays and z-matrix (Plotly wants z[row][col])
+    var xArr=new Array(dispNx),yArr=new Array(dispNy);
+    for(var xi=0;xi<dispNx;xi++)xArr[xi]=g.xn+(xi*strideX)*g.dx;
+    for(var yi=0;yi<dispNy;yi++)yArr[yi]=g.yn+(yi*strideY)*g.dx;
+    var zData=new Array(dispNy);
+    for(var iy=0;iy<dispNy;iy++){
+      var row=new Array(dispNx);
+      var srcY=iy*strideY;
+      for(var ix=0;ix<dispNx;ix++){
+        var srcX=ix*strideX;
+        // For downsampled cells, take max of the block (conservative for safety)
+        var maxVal=0;
+        for(var by=0;by<strideY&&srcY+by<g.ny;by++){
+          for(var bx=0;bx<strideX&&srcX+bx<g.nx;bx++){
+            var val=g.flu[(srcY+by)*g.nx+(srcX+bx)];
+            if(val>maxVal)maxVal=val;
+          }
+        }
+        row[ix]=maxVal;
+      }
+      zData[iy]=row;
+    }
+
+    // Scan path overlay as a line trace
+    var pathX=[],pathY=[];
+    // Subsample scan path for display (max 2000 points)
+    var segStep=Math.max(1,Math.floor(res.segs.length/2000));
+    for(var si=0;si<res.segs.length;si+=segStep){
+      var s=res.segs[si];pathX.push(s.x);pathY.push(s.y);
+    }
+    var lastSeg=res.segs[res.segs.length-1];
+    pathX.push(lastSeg.x+res.beam.d*Math.cos(lastSeg.a));
+    pathY.push(lastSeg.y+res.beam.d*Math.sin(lastSeg.a));
+
+    var traces=[
+      {z:zData,x:xArr,y:yArr,type:"heatmap",
+        colorscale:[[0,"#000033"],[0.15,"#0066cc"],[0.35,"#00cc66"],[0.55,"#66ff00"],[0.75,"#ffcc00"],[0.9,"#ff6600"],[1.0,"#cc0000"]],
+        colorbar:{title:{text:"J/cm\u00b2",font:{size:10,family:"monospace",color:plotText},side:"right"},
+          tickfont:{size:9,family:"monospace",color:plotText},
+          thickness:14,len:0.9},
+        hovertemplate:"x: %{x:.3f} mm<br>y: %{y:.3f} mm<br>Fluence: %{z:.4g} J/cm\u00b2<extra></extra>",
+        zsmooth:"best"},
+      {x:pathX,y:pathY,type:"scatter",mode:"lines",
+        line:{color:"rgba(255,255,255,0.5)",width:1,dash:"dot"},
+        hoverinfo:"skip",showlegend:false},
+      // Worst-point marker
+      {x:[res.sf.wx],y:[res.sf.wy],type:"scatter",mode:"markers",
+        marker:{size:12,color:"rgba(0,0,0,0)",line:{color:"#D55E00",width:2.5}},
+        hoverinfo:"text",text:["Worst point: "+numFmt(res.sf.pF,4)+" J/cm\u00b2"],showlegend:false}
+    ];
+    var layout={
+      xaxis:{title:{text:"x (mm)",font:{size:11,family:"monospace",color:plotText}},
+        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
+        tickfont:{size:9,family:"monospace",color:plotText},
+        constrain:"domain",scaleanchor:"y"},
+      yaxis:{title:{text:"y (mm)",font:{size:11,family:"monospace",color:plotText}},
+        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
+        tickfont:{size:9,family:"monospace",color:plotText},
+        constrain:"domain"},
+      plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
+      margin:{l:60,r:20,t:10,b:44},
+      showlegend:false
+    };
+    var config={responsive:true,scrollZoom:true,displayModeBar:true,
+      modeBarButtonsToRemove:["select2d","lasso2d"],displaylogo:false};
+    Plotly.react(fluMapRef.current,traces,layout,config);
+  },[res,vizTab,theme]);
+
+  var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
+  var timRef=useRef(null),spcRef=useRef(null);
 
   // Render Plotly timing diagram
   useEffect(function(){
@@ -1253,70 +1218,110 @@ function ScanTab(p){
     Plotly.react(timRef.current,traces,layout,config);
   },[res,vizTab,theme]);
 
-  // Render Plotly fluence cross-section
+  // Render Plotly fluence cross-section (analytical computation, not capped pulse array)
   useEffect(function(){
-    if(vizTab!=="spatial"||!res||!res.pulses||!res.pulses.length||!spcRef.current||typeof Plotly==="undefined")return;
-    var pp=res.pulses;
+    if(vizTab!=="spatial"||!res||!spcRef.current||typeof Plotly==="undefined")return;
+    // Skip if CW mode
+    if(prf<=0||pw<=0){return;}
+
     var w=dia/Math.sqrt(2); // 1/e² radius in mm
+    var sigma=dia/(2*Math.sqrt(2));
+    var w2=w*w;
     var Ep=prf>0?pw/prf:0;
-    var H0_cm2=2*Ep/(Math.PI*w*w)*100; // peak per-pulse fluence J/cm²
+    var H0_cm2=2*Ep/(Math.PI*w2)*100; // peak per-pulse fluence J/cm²
 
-    // First scan line pulses
-    var yLine=pp[0].y,flp=[];
-    for(var fi=0;fi<pp.length;fi++){
-      if(Math.abs(pp[fi].y-yLine)<dia*0.5)flp.push(pp[fi]);
-      else if(flp.length>0)break;
-    }
-    var xMin=flp[0].x-dia*2,xMax=flp[flp.length-1].x+dia*2;
-    var nPts=600,xR=xMax-xMin||1,dx2=xR/nPts;
+    // Compute fluence analytically along the first scan line using 1D Gaussian sum
+    // This is independent of the capped pulse array — uses actual beam physics
+    var pulse_spacing=vel/prf; // mm between consecutive pulses
+    var line_dur=lineL/vel;
+    var n_pulses_line=Math.max(1,Math.floor(line_dur*prf));
+    var trunc_mm=3*sigma;
 
-    // Compute cumulative fluence
-    var xArr=[],cumArr=[];
-    var cumFlu=new Float64Array(nPts);
-    for(var pi2=0;pi2<flp.length;pi2++){
-      var px0=flp[pi2].x;
-      for(var xi=0;xi<nPts;xi++){
-        var xp=xMin+xi*dx2,r2=(xp-px0)*(xp-px0);
-        cumFlu[xi]+=H0_cm2*Math.exp(-2*r2/(w*w));
+    // Evaluation grid: 800 points spanning the scan line ± 2× beam diameter
+    var xMin0=-dia*2, xMax0=lineL+dia*2;
+    var nPts=800, xRange0=xMax0-xMin0, dxPlot=xRange0/nPts;
+
+    var xArr=new Array(nPts),cumArr=new Array(nPts);
+    var cumMax=0;
+    for(var xi=0;xi<nPts;xi++){
+      var xp=xMin0+xi*dxPlot;
+      xArr[xi]=xp;
+      // Sum Gaussian contributions from all pulses within truncation radius
+      var center_k=(xp-0)/pulse_spacing; // x0=0 for first line
+      var k_range=trunc_mm/pulse_spacing;
+      var k_lo=Math.max(0,Math.ceil(center_k-k_range));
+      var k_hi=Math.min(n_pulses_line-1,Math.floor(center_k+k_range));
+      var sum=0;
+      for(var k=k_lo;k<=k_hi;k++){
+        var dx_k=xp-k*pulse_spacing;
+        sum+=Math.exp(-2*dx_k*dx_k/w2);
       }
+      // Multiply by cross-line sum at y=0 (on the scan line, cross=1 for center line)
+      // For multi-line rasters, adjacent lines contribute:
+      var cross_sum=1.0;
+      if(pat!=="linear"&&hatch>0&&nLines>1){
+        for(var m=1;m<=nLines;m++){
+          var yy=m*hatch;
+          var cy=Math.exp(-2*yy*yy/w2);
+          if(cy<1e-12)break;
+          cross_sum+=2*cy;
+        }
+      }
+      cumArr[xi]=H0_cm2*sum*cross_sum;
+      if(cumArr[xi]>cumMax)cumMax=cumArr[xi];
     }
-    for(var xi2=0;xi2<nPts;xi2++){xArr.push(xMin+xi2*dx2);cumArr.push(cumFlu[xi2]);}
 
-    // Subsample individual pulses for display (max ~25 visible)
-    var step=Math.max(1,Math.floor(flp.length/25));
+    // Individual pulse envelopes (subsample for display, max 30 visible)
     var indivX=[],indivY=[];
-    for(var pi3=0;pi3<flp.length;pi3+=step){
-      var px02=flp[pi3].x;
-      for(var xi3=0;xi3<nPts;xi3++){
-        var xp2=xMin+xi3*dx2,r22=(xp2-px02)*(xp2-px02);
-        var h2=H0_cm2*Math.exp(-2*r22/(w*w));
-        if(h2>H0_cm2*0.001){indivX.push(xp2);indivY.push(h2);}
+    var nShow=Math.min(30,n_pulses_line);
+    var pStep=Math.max(1,Math.floor(n_pulses_line/nShow));
+    for(var pi=0;pi<n_pulses_line;pi+=pStep){
+      var px0=pi*pulse_spacing;
+      // Only draw within ±3σ of this pulse
+      var xlo=Math.max(xMin0,px0-trunc_mm),xhi=Math.min(xMax0,px0+trunc_mm);
+      for(var xii=0;xii<40;xii++){
+        var xp2=xlo+xii*(xhi-xlo)/39;
+        var rr=(xp2-px0)*(xp2-px0);
+        indivX.push(xp2);indivY.push(H0_cm2*Math.exp(-2*rr/w2));
       }
-      indivX.push(null);indivY.push(null); // separator
+      indivX.push(null);indivY.push(null);
     }
 
     var mpeVal=skinMPE(wl,res.st.tt);
-    var traces=[
-      {x:indivX,y:indivY,type:"scatter",mode:"lines",
-        line:{color:plotLine,width:0.8},opacity:0.25,
-        name:"Individual pulses (1 of "+step+" shown)",hoverinfo:"skip"},
-      {x:xArr,y:cumArr,type:"scatter",mode:"lines",
-        line:{color:plotLine,width:2.5},fill:"tozeroy",
-        fillcolor:theme==="dark"?"rgba(86,180,233,0.08)":"rgba(0,114,178,0.08)",
-        name:"Cumulative ("+flp.length+" pulses)"},
-    ];
+
+    // Y-axis should scale to show the cumulative peak and MPE clearly
+    // Hide individual pulses if they'd distort the y-axis (peak pulse << cumulative)
+    var showIndiv=H0_cm2>cumMax*0.05; // only show if individual pulse is >5% of cumulative
+
+    var traces=[];
+    if(showIndiv){
+      traces.push({x:indivX,y:indivY,type:"scatter",mode:"lines",
+        line:{color:plotLine,width:0.8},opacity:0.2,
+        name:"Individual pulses (1 of "+pStep+" shown)",hoverinfo:"skip"});
+    }
+    traces.push({x:xArr,y:cumArr,type:"scatter",mode:"lines",
+      line:{color:plotLine,width:2.5},fill:"tozeroy",
+      fillcolor:theme==="dark"?"rgba(86,180,233,0.08)":"rgba(0,114,178,0.08)",
+      name:"Cumulative ("+n_pulses_line+" pulses"+((pat!=="linear"&&nLines>1)?", "+nLines+" lines":"")+")"});
     if(isFinite(mpeVal)&&mpeVal>0){
-      traces.push({x:[xMin,xMax],y:[mpeVal,mpeVal],type:"scatter",mode:"lines",
+      traces.push({x:[xMin0,xMax0],y:[mpeVal,mpeVal],type:"scatter",mode:"lines",
         line:{color:"#d32f2f",width:2,dash:"dash"},
         name:"MPE(T="+ft(res.st.tt)+") = "+numFmt(mpeVal,3)+" J/cm\u00b2"});
     }
+
+    // Set y-axis to show the relevant range: max of cumulative peak, MPE, or individual pulse (if shown)
+    var yMax=cumMax*1.15;
+    if(isFinite(mpeVal)&&mpeVal>yMax*0.5)yMax=Math.max(yMax,mpeVal*1.15);
+    if(showIndiv&&H0_cm2>yMax)yMax=H0_cm2*1.1;
+
     var layout={
       xaxis:{title:{text:"Position along scan line (mm)",font:{size:12,family:"monospace",color:plotText}},
         rangeslider:{visible:true,thickness:0.08,bgcolor:plotBg,bordercolor:plotGrid},
         color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
         tickfont:{size:10,family:"monospace",color:plotText},ticksuffix:" mm"},
       yaxis:{title:{text:"Fluence, H (J/cm\u00b2)",font:{size:12,family:"monospace",color:plotText}},
-        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,rangemode:"tozero",
+        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
+        range:[0,yMax],
         tickfont:{size:10,family:"monospace",color:plotText}},
       plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
       margin:{l:70,r:16,t:10,b:40},
@@ -1328,7 +1333,7 @@ function ScanTab(p){
       modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],
       displaylogo:false};
     Plotly.react(spcRef.current,traces,layout,config);
-  },[res,vizTab,theme,dia,wl,pw,prf]);
+  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines]);
 
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* ── Inputs: full width, 3-column ── */}
@@ -1409,17 +1414,8 @@ function ScanTab(p){
            which would lose its painted heatmap content. */}
       <div style={{display:vizTab==="fluence"?"block":"none"}}>
         <div style={{fontSize:9,color:T.td,marginBottom:4}}>Total radiant exposure (J/cm{"\u00b2"}) accumulated at each skin surface point from all pulses across the entire scan.</div>
-        {res?<div>
-          <canvas ref={canRef} width={CW} height={CH} onMouseMove={onCanvasMove} onMouseLeave={function(){setHover(null)}} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto",cursor:"crosshair"}}/>
-          {hover?<div style={{fontSize:9,fontFamily:"monospace",color:T.tm,marginTop:4,display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap"}}>
-            <span>x: {hover.x.toFixed(2)} mm</span>
-            <span>y: {hover.y.toFixed(2)} mm</span>
-            <span style={{fontWeight:700,color:T.ac}}>Fluence: {numFmt(hover.f,4)} J/cm{"\u00b2"}</span>
-            <span>Pulses: {hover.pc}</span>
-            <span>Peak pulse: {numFmt(hover.pp,4)} J/cm{"\u00b2"}</span>
-            {hover.rv<1e29?<span>Revisit: {numFmt(hover.rv,3)} s</span>:null}
-          </div>:<div style={{fontSize:9,color:T.td,marginTop:4,textAlign:"center"}}>Hover over the map to query fluence at any point</div>}
-        </div>:<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
+        {res?<div ref={fluMapRef} style={{width:"100%",height:440,borderRadius:6}}/>
+          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
       </div>
 
       <div style={{display:vizTab==="timing"?"block":"none"}}>
@@ -1431,7 +1427,7 @@ function ScanTab(p){
 
       <div style={{display:vizTab==="spatial"?"block":"none"}}>
         <div style={{fontSize:9,color:T.td,marginBottom:4}}>Cumulative fluence profile along the first scan line showing individual pulse Gaussians and their sum. The dashed red line marks the MPE limit. Use the range slider to zoom.</div>
-        {res&&res.pulses&&res.pulses.length>0?
+        {res&&prf>0?
           <div ref={spcRef} style={{width:"100%",height:420,borderRadius:6}}/>
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate fluence profile"}</div>}
       </div>
