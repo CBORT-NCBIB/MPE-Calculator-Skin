@@ -977,7 +977,7 @@ function ScanTab(p){
     return _workerRef.current;
   }
 
-  var SCAN_WORKER_TIMEOUT_MS = 30000; // 30-second safety timeout
+  var SCAN_WORKER_TIMEOUT_MS = 60000; // 60-second safety timeout
   var _workerTimeout = useRef(null);
 
   function calculate(){
@@ -1037,7 +1037,7 @@ function ScanTab(p){
       notes.push("Pulse subsampling active (stride="+estStride+"): computing 1 in every "+estStride+" pulses for "+Math.round(estPulses/1000)+"k total");
     }
     var auxPpd=Math.min(effPpd,3);
-    var maxBisect=estPulses>100000?6:estPulses>10000?8:15;
+    var maxBisect=canSep?3:(estPulses>100000?6:estPulses>10000?8:15);
 
     // ── Try Web Worker (off main thread) ──
     var worker=getWorker();
@@ -1049,7 +1049,7 @@ function ScanTab(p){
       if(_workerTimeout.current)clearTimeout(_workerTimeout.current);
       _workerTimeout.current=setTimeout(function(){
         if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
-        setPerfNote("Computation timed out after 30 seconds. Try reducing line count, increasing hatch spacing, or lowering PRF.");
+        setPerfNote("Computation timed out after 60 seconds. Try reducing line count, increasing hatch spacing, or lowering PRF.");
         setCmp(false);
       },SCAN_WORKER_TIMEOUT_MS);
       worker.onmessage=function(ev){
@@ -1109,27 +1109,25 @@ function ScanTab(p){
             if(maxPr1<maxP)maxP=maxPr1;}
         }
         var minVel=0;
-        function testV(tv){
-          if(canSep){
-            var tcr=scanCompute(beam,[],auxPpd,mkSepP(tv));
-            if(!tcr)return true;
-            var tsf=scanSafety(tcr.g,beam,tcr.st.tt,dwm,0,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
-            return tsf.safe;
+        if(!canSep){
+          // Only run bisection on the main thread for brute-force paths
+          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
+          function testV(tv){
+            var ts;
+            if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
+            else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
+            else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
+            var tb={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
+            var tcr2=scanCompute(tb,ts,auxPpd);
+            if(!tcr2)return true;
+            var tmv=isCW?(tcr2.st.mv||tv):0;
+            var tsf2=scanSafety(tcr2.g,tb,tcr2.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
+            return tsf2.safe;
           }
-          var ts;
-          if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
-          else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
-          else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
-          var tb={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
-          var tcr2=scanCompute(tb,ts,auxPpd);
-          if(!tcr2)return true;
-          var tmv=isCW?(tcr2.st.mv||tv):0;
-          var tsf2=scanSafety(tcr2.g,tb,tcr2.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
-          return tsf2.safe;
+          if(testV(1e6)){var vLo=0.01,vHi=1e6;
+            for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}
+            minVel=vHi;}else{minVel=Infinity;}
         }
-        if(testV(1e6)){var vLo=0.01,vHi=1e6;
-          for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}
-          minVel=vHi;}else{minVel=Infinity;}
 
         // Generate pulse positions and viz segments from scan params (not from segment array)
         var pulseArr=[];
@@ -1177,7 +1175,7 @@ function ScanTab(p){
 
   // ── Plotly heatmap for cumulative fluence map ─────────────────
   var fluMapRef=useRef(null);
-  var HEATMAP_MAX_DIM=400; // Max pixels per axis for Plotly heatmap performance
+  var HEATMAP_MAX_DIM=200; // Max pixels per axis — lower = faster Plotly render
 
   // Plotly theme colors (shared by all three Plotly charts)
   var plotBg=theme==="dark"?"#333338":"#ffffff";
@@ -1187,7 +1185,11 @@ function ScanTab(p){
 
   useEffect(function(){
     if(!res||!fluMapRef.current||typeof Plotly==="undefined")return;
-    var g=res.g,maxF=res.sf.pF||1;
+    var ref=fluMapRef.current;
+    // Defer heavy Plotly render to next animation frame so the main thread
+    // can process pending events first (prevents Chrome "Page Unresponsive")
+    requestAnimationFrame(function(){
+    var g=res.g;
 
     // Downsample grid for display if larger than HEATMAP_MAX_DIM per axis
     var strideX=1,strideY=1;
@@ -1218,10 +1220,9 @@ function ScanTab(p){
       zData[iy]=row;
     }
 
-    // Scan path overlay as a line trace
+    // Scan path overlay as a line trace (cap at 1000 points for Plotly speed)
     var pathX=[],pathY=[];
-    // Subsample scan path for display (max 2000 points)
-    var segStep=Math.max(1,Math.floor(res.segs.length/2000));
+    var segStep=Math.max(1,Math.floor(res.segs.length/1000));
     for(var si=0;si<res.segs.length;si+=segStep){
       var s=res.segs[si];pathX.push(s.x);pathY.push(s.y);
     }
@@ -1236,7 +1237,7 @@ function ScanTab(p){
           tickfont:{size:9,family:"monospace",color:plotText},
           thickness:14,len:0.9},
         hovertemplate:"x: %{x:.3f} mm<br>y: %{y:.3f} mm<br>Fluence: %{z:.4g} J/cm\u00b2<extra></extra>",
-        zsmooth:"best"},
+        zsmooth:false},
       {x:pathX,y:pathY,type:"scatter",mode:"lines",
         line:{color:"rgba(255,255,255,0.5)",width:1,dash:"dot"},
         hoverinfo:"skip",showlegend:false},
@@ -1260,7 +1261,8 @@ function ScanTab(p){
     };
     var config={responsive:true,scrollZoom:true,displayModeBar:true,
       modeBarButtonsToRemove:["select2d","lasso2d"],displaylogo:false};
-    Plotly.react(fluMapRef.current,traces,layout,config);
+    Plotly.react(ref,traces,layout,config);
+    }); // end requestAnimationFrame
   },[res,vizTab,theme]);
 
   var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
