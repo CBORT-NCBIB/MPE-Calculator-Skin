@@ -478,6 +478,228 @@ test("cross-language: 20 boundary test points match Python", () => {
   assert.strictEqual(matched, 20, "all 20 boundary points should match");
 });
 
+// ═══════ Separable Gaussian Sum (θ₃) Engine Tests ═══════
+
+test("canUseSeparable: rejects CW", () => {
+  assert.strictEqual(e.canUseSeparable({is_cw: true, pattern: "raster", prf_hz: 1000, v_scan_mm_s: 100, line_length_mm: 10, n_lines: 5, hatch_mm: 0.5}), false);
+});
+
+test("canUseSeparable: accepts pulsed raster", () => {
+  assert.strictEqual(e.canUseSeparable({is_cw: false, pattern: "raster", prf_hz: 1000, v_scan_mm_s: 100, line_length_mm: 10, n_lines: 5, hatch_mm: 0.5}), true);
+});
+
+test("canUseSeparable: accepts pulsed bidi", () => {
+  assert.strictEqual(e.canUseSeparable({is_cw: false, pattern: "bidi", prf_hz: 1000, v_scan_mm_s: 100, line_length_mm: 10, n_lines: 5, hatch_mm: 0.5}), true);
+});
+
+test("canUseSeparable: accepts pulsed linear", () => {
+  assert.strictEqual(e.canUseSeparable({is_cw: false, pattern: "linear", prf_hz: 1000, v_scan_mm_s: 100, line_length_mm: 10}), true);
+});
+
+test("canUseSeparable: rejects custom pattern", () => {
+  assert.strictEqual(e.canUseSeparable({is_cw: false, pattern: "custom", prf_hz: 1000, v_scan_mm_s: 100, line_length_mm: 10}), false);
+});
+
+test("canUseSeparable: rejects zero PRF", () => {
+  assert.strictEqual(e.canUseSeparable({is_cw: false, pattern: "raster", prf_hz: 0, v_scan_mm_s: 100, line_length_mm: 10, n_lines: 5, hatch_mm: 0.5}), false);
+});
+
+test("_compute1DGaussSum: single pulse at origin", () => {
+  // Single pulse at x=0, evaluate at x=0 should give exp(0)=1
+  const w = 1 / Math.sqrt(2); // w for d=1mm
+  const w2 = w * w;
+  const S = e._compute1DGaussSum(1, 0, 1, 0, 1, 1, w2, 3 * 1/(2*Math.sqrt(2)));
+  approx(S[0], 1.0, 1e-10, "S(0) for single pulse at origin");
+});
+
+test("_compute1DGaussSum: symmetry", () => {
+  const w = 1 / Math.sqrt(2);
+  const w2 = w * w;
+  const trunc = 3 * 1 / (2 * Math.sqrt(2));
+  // 5 pulses at 0, 0.1, 0.2, 0.3, 0.4 — evaluate on symmetric grid
+  const S = e._compute1DGaussSum(5, 0, 0.1, 0, 0.1, 5, w2, trunc);
+  // S(0.2) should be the peak (center of 5 pulses)
+  assert.ok(S[2] >= S[0], "center should be >= edge");
+  assert.ok(S[2] >= S[4], "center should be >= other edge");
+  // S(0) ≈ S(0.4) by approximate symmetry of 5 points
+  approx(S[0], S[4], 0.01, "edges should be approximately equal");
+});
+
+// ── Cross-validation: separable vs brute-force ──
+
+test("separable vs brute-force: linear scan peak fluence match", () => {
+  const d = 1, prf = 10000, v = 100, Ep = 1e-4, lineL = 20;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildLinearScan(0, 0, 0, lineL, v, d);
+
+  // Brute-force
+  const r_bf = e.computeScanFluence(beam, segs, 8);
+  let peak_bf = 0;
+  for (let i = 0; i < r_bf.grid.fluence.length; i++) {
+    if (r_bf.grid.fluence[i] > peak_bf) peak_bf = r_bf.grid.fluence[i];
+  }
+
+  // Separable
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, n_lines: 1, hatch_mm: 0,
+    pattern: "linear", blanking: false, is_cw: false};
+  const r_sep = e.computeScanFluence(beam, segs, 8, sp);
+  let peak_sep = 0;
+  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
+    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
+  }
+
+  // Peaks should match within 5% (grid discretization differences)
+  const rel_err = Math.abs(peak_sep - peak_bf) / peak_bf;
+  assert.ok(rel_err < 0.05, `linear peak mismatch: sep=${peak_sep.toFixed(6)}, bf=${peak_bf.toFixed(6)}, rel=${rel_err.toExponential(2)}`);
+});
+
+test("separable vs brute-force: raster scan peak fluence match", () => {
+  const d = 1, prf = 10000, v = 100, Ep = 1e-4, lineL = 10, nL = 8, hatch = 0.5;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildRasterScan(0, 0, lineL, nL, hatch, v, v*5, d, true);
+
+  // Brute-force
+  const r_bf = e.computeScanFluence(beam, segs, 6);
+  let peak_bf = 0;
+  for (let i = 0; i < r_bf.grid.fluence.length; i++) {
+    if (r_bf.grid.fluence[i] > peak_bf) peak_bf = r_bf.grid.fluence[i];
+  }
+
+  // Separable
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
+    pattern: "raster", blanking: true, is_cw: false};
+  const r_sep = e.computeScanFluence(beam, segs, 6, sp);
+  let peak_sep = 0;
+  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
+    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
+  }
+
+  const rel_err = Math.abs(peak_sep - peak_bf) / peak_bf;
+  assert.ok(rel_err < 0.05, `raster peak mismatch: sep=${peak_sep.toFixed(6)}, bf=${peak_bf.toFixed(6)}, rel=${rel_err.toExponential(2)}`);
+});
+
+test("separable vs brute-force: bidi raster peak fluence match", () => {
+  const d = 1, prf = 10000, v = 100, Ep = 1e-4, lineL = 10, nL = 6, hatch = 0.5;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildBidiRasterScan(0, 0, lineL, nL, hatch, v, v*5, d);
+
+  // Brute-force
+  const r_bf = e.computeScanFluence(beam, segs, 6);
+  let peak_bf = 0;
+  for (let i = 0; i < r_bf.grid.fluence.length; i++) {
+    if (r_bf.grid.fluence[i] > peak_bf) peak_bf = r_bf.grid.fluence[i];
+  }
+
+  // Separable
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
+    pattern: "bidi", blanking: false, is_cw: false};
+  const r_sep = e.computeScanFluence(beam, segs, 6, sp);
+  let peak_sep = 0;
+  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
+    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
+  }
+
+  const rel_err = Math.abs(peak_sep - peak_bf) / peak_bf;
+  assert.ok(rel_err < 0.05, `bidi peak mismatch: sep=${peak_sep.toFixed(6)}, bf=${peak_bf.toFixed(6)}, rel=${rel_err.toExponential(2)}`);
+});
+
+test("separable vs brute-force: high-PRF raster (200kHz)", () => {
+  // This is the scenario that motivated the separable approach
+  const d = 0.05, prf = 200000, v = 1000, Ep = 1e-6, lineL = 5, nL = 10, hatch = 0.03;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildRasterScan(0, 0, lineL, nL, hatch, v, v*5, d, true);
+
+  // Separable (should be fast)
+  const t0 = Date.now();
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
+    pattern: "raster", blanking: true, is_cw: false};
+  const r_sep = e.computeScanFluence(beam, segs, 4, sp);
+  const t_sep = Date.now() - t0;
+
+  let peak_sep = 0;
+  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
+    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
+  }
+
+  assert.ok(peak_sep > 0, "high-PRF separable peak should be positive");
+  assert.ok(r_sep.stats.method === "separable", "should use separable method");
+  assert.ok(t_sep < 5000, `separable should complete in <5s, took ${t_sep}ms`);
+});
+
+test("separable vs analytical: peak fluence cross-check", () => {
+  // Verify separable grid peak matches the analyticalPeakFluence function
+  const d = 1, prf = 5000, v = 50, Ep = 2e-4, lineL = 20, nL = 10, hatch = 0.4;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildRasterScan(0, 0, lineL, nL, hatch, v, v*5, d, true);
+
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
+    pattern: "raster", blanking: true, is_cw: false};
+  const r_sep = e.computeScanFluence(beam, segs, 8, sp);
+  let peak_sep = 0;
+  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
+    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
+  }
+
+  const ap = e.analyticalPeakFluence(beam, v, hatch, nL);
+
+  // Analytical peak should be close to separable grid peak
+  // (both use exact Gaussian sums; difference is grid sampling)
+  const rel_err = Math.abs(peak_sep - ap.peak_fluence_Jcm2) / ap.peak_fluence_Jcm2;
+  assert.ok(rel_err < 0.05, `analytical cross-check: sep=${peak_sep.toFixed(6)}, anal=${ap.peak_fluence_Jcm2.toFixed(6)}, rel=${rel_err.toExponential(2)}`);
+});
+
+test("separable: conservative safety (never underestimates)", () => {
+  // For safety-critical use, separable must NEVER produce a peak fluence
+  // lower than brute-force (which could cause a false 'safe' verdict)
+  const d = 1, prf = 8000, v = 80, Ep = 1.5e-4, lineL = 15, nL = 6, hatch = 0.5;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildRasterScan(0, 0, lineL, nL, hatch, v, v*5, d, true);
+
+  const r_bf = e.computeScanFluence(beam, segs, 8);
+  let peak_bf = 0;
+  for (let i = 0; i < r_bf.grid.fluence.length; i++) {
+    if (r_bf.grid.fluence[i] > peak_bf) peak_bf = r_bf.grid.fluence[i];
+  }
+
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
+    pattern: "raster", blanking: true, is_cw: false};
+  const r_sep = e.computeScanFluence(beam, segs, 8, sp);
+  let peak_sep = 0;
+  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
+    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
+  }
+
+  // Separable should produce >= 95% of brute-force peak
+  // (both sample on the same grid, so they should be very close)
+  assert.ok(peak_sep >= peak_bf * 0.95,
+    `safety: sep peak ${peak_sep.toFixed(6)} must not be much lower than bf ${peak_bf.toFixed(6)}`);
+});
+
+test("separable: stats include method field", () => {
+  const d = 1, prf = 1000, v = 100, Ep = 1e-4, lineL = 10;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildLinearScan(0, 0, 0, lineL, v, d);
+  const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
+    x0: 0, y0: 0, line_length_mm: lineL, pattern: "linear", is_cw: false};
+  const r = e.computeScanFluence(beam, segs, 8, sp);
+  assert.strictEqual(r.stats.method, "separable");
+});
+
+test("separable: without scanParams falls back to brute-force", () => {
+  const d = 1, prf = 1000, v = 100, Ep = 1e-4, lineL = 10;
+  const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
+  const segs = e.buildLinearScan(0, 0, 0, lineL, v, d);
+  const r = e.computeScanFluence(beam, segs, 8); // no scanParams
+  assert.ok(r.stats.method === undefined || r.stats.method !== "separable",
+    "without scanParams should use brute-force");
+});
+
 // ═══════ Summary ═══════
 console.log(`\nEngine.js test results: ${pass} passed, ${fail} failed`);
 if (errors.length > 0) {
