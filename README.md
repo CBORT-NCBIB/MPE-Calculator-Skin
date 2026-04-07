@@ -1,10 +1,8 @@
-# Laser MPE Calculator — Skin
+# Laser MPE Calculator for the Skin
 
 **Laser Maximum Permissible Exposure (MPE) Calculator for Skin**
 
 A Python package for computing laser skin MPE values with support for single-pulse, CW, and repetitive-pulse exposure regimes. Designed for researchers, laser safety officers, and engineers working in biophotonics (OCT, photoacoustic imaging, confocal microscopy), laser manufacturing, telecommunications, and any application requiring laser skin safety evaluation.
-
-Associated with [OCT Research](https://octresearch.org/).
 
 <p align="center">
   <img src="docs/images/skin_mpe_overview.png" alt="Skin MPE vs exposure duration" width="65%">
