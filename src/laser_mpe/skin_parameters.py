@@ -3,19 +3,19 @@ Supplementary skin MPE parameters.
 
 This module reads T_max, limiting apertures, large-area correction,
 and UV de-rating values from the loaded standard's JSON data file.
+Unit conversion functions are standard-independent (pure mathematics).
 
 These values are defined in the "supplementary" section of the JSON.
 When switching standards, the supplementary values travel with the
-standard data (no code changes needed)
+standard data — no code changes are needed.
 """
 
 import numpy as np
 
 from . import engine as _engine
 
-
 # =========================================================================
-# T_max : Recommended Limiting Exposure Durations
+# T_max — Recommended Limiting Exposure Durations
 # =========================================================================
 
 def get_Tmax_skin(wavelength):
@@ -178,7 +178,7 @@ def uv_successive_day_derate(wavelength, H_mpe):
 
 
 # =========================================================================
-# Unit Conversions
+# Unit Conversions (standard-independent — pure mathematics)
 # =========================================================================
 
 def radiant_exposure_convert(H_J_cm2, to_unit='mJ/cm2'):

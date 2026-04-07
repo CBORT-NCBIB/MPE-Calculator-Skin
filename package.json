@@ -1,0 +1,18 @@
+{
+  "name": "laser-mpe-skin",
+  "version": "3.0.0",
+  "private": true,
+  "description": "Laser Maximum Permissible Exposure (MPE) calculator for skin safety",
+  "license": "MIT",
+  "author": "OCT Research (https://octresearch.org)",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/itgall/MPE-Calculator-Skin"
+  },
+  "scripts": {
+    "build": "cd web && python3 build.py",
+    "test:py": "pytest tests/ -v",
+    "test:js": "node tests/test_engine_js.mjs",
+    "test": "npm run test:js"
+  }
+}

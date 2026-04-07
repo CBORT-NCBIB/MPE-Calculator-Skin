@@ -1,11 +1,11 @@
 """
-Test script for laser_mpe package.
+Test suite for laser_mpe package.
 
 All test values are verified against the standard tables 5 and 7.
 The boundary convention is: t_1 <= t < t_2 (left-inclusive, right-exclusive).
 
 Test organization:
-    - TestCorrectionFactors: C_A from ICNIRP Table 3
+    - TestCorrectionFactors: C_A from Table 3
     - TestUVBand: UV 180-400 nm from the standard tables 5 and 7 (dual limits)
     - Test_*: Each wavelength band from the standard tables 5 and 7
     - TestBoundaryConvention: Exact boundary values verify left-inclusive/right-exclusive
@@ -14,14 +14,15 @@ Test organization:
     - TestEdgeCases: Out-of-range, nm/um equivalence, array input
 """
 
-import sys
 import os
+import sys
+
 import numpy as np
 import numpy.testing as npt
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from laser_mpe import skin_mpe, CA_visible_NIR, per_pulse_MPE
+from laser_mpe import CA_visible_NIR, per_pulse_MPE, skin_mpe
 from laser_mpe.legacy import (
     H_skin_ICNIRP_180_400,
     H_skin_ICNIRP_400_1400,
@@ -77,7 +78,7 @@ class TestCorrectionFactors:
 # =====================================================================
 
 class TestUVBand:
-    """Test against the standard (Ultraviolet)."""
+    """Verified against the standard (Ultraviolet)."""
 
     def test_thermal(self):
         """0.180-0.400 um, 1e-9 <= t < 10: H = 0.56 * t^0.25"""
@@ -283,7 +284,6 @@ class TestBoundaryConvention:
         CA = 1.0
         t = 10.0
         expected_row3 = 0.2 * CA * t  # = 2.0
-        expected_row2 = 1.1 * CA * (t ** 0.25)
         result = H_skin_ICNIRP_400_1400(0.500, t)
         assert_close(result, expected_row3, label="400-1400 boundary at 10")
 
@@ -291,7 +291,6 @@ class TestBoundaryConvention:
         """At t=1e-3 exactly: should be in row 2 (0.56*t^0.25), not row 1."""
         t = 1e-3
         expected_row2 = 0.56 * (t ** 0.25)
-        expected_row1 = 0.1
         result = H_skin_ICNIRP_1400_1500(t)
         assert_close(result, expected_row2, label="1400-1500 boundary at 1e-3")
 
@@ -306,7 +305,6 @@ class TestBoundaryConvention:
         """At t=1e-7 exactly: should be in row 2 (0.56*t^0.25), not row 1."""
         t = 1e-7
         expected_row2 = 0.56 * (t ** 0.25)
-        expected_row1 = 1.0e-2
         result = H_skin_ICNIRP_2600_1000um(t)
         assert_close(result, expected_row2, label="2600+ boundary at 1e-7")
 

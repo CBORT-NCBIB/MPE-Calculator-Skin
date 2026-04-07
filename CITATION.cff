@@ -25,7 +25,5 @@ keywords:
   - photoacoustic imaging
   - data-driven
 authors:
-  - family-names: "Gallegos"
-    given-names: "Isaac"
-    # orcid: "https://orcid.org/0000-0000-0000-0000"
-    affiliation: "Harvard Medical School, Wellman Center for Photomedicine"
+  - name: "OCT Research"
+    website: "https://octresearch.org/"

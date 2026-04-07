@@ -1,6 +1,6 @@
-# API Reference for Skin MPE
+# API Reference — Skin MPE
 
-Reference for the `laser_mpe` skin MPE package.
+Complete reference for the `laser_mpe` skin MPE package.
 
 ---
 
@@ -36,7 +36,7 @@ For array inputs over multiple durations, use `skin_mpe_array(wl_nm, t_array)`.
 
 ### `per_pulse_MPE(wl_nm, tau, f_array, T)`
 
-Per-pulse skin MPE using Rules 1 and 2 (ICNIRP Rule 3 excluded for skin).
+Per-pulse skin MPE using Rules 1 and 2 (Rule 3 excluded for skin).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -44,7 +44,7 @@ Per-pulse skin MPE using Rules 1 and 2 (ICNIRP Rule 3 excluded for skin).
 | `tau` | float | Single pulse duration in seconds |
 | `f_array` | float or array | Pulse repetition frequency in Hz |
 | `T` | float | Total exposure duration in seconds |
-| **Returns** | tuple | `(H_pulse, N)`: per-pulse MPE in J/cm² and pulse count |
+| **Returns** | tuple | `(H_pulse, N)` — per-pulse MPE in J/cm² and pulse count |
 
 ```python
 import numpy as np
@@ -77,7 +77,7 @@ ca(800)     # 1.585
 ca(1064)    # 5.0
 ```
 
-The legacy function `CA_visible_NIR(wl_um)` takes wavelength in **micrometers** and is available for backward compatibility.
+The legacy function `CA_visible_NIR(wl_um)` takes wavelength in micrometers and is available for backward compatibility.
 
 ---
 

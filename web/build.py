@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 """
-Build script: generates web/index.html from calculator.jsx + standards JSON.
+Build script: generates web/index.html from calculator.jsx + engine.js + standards JSON.
 
-Transformations applied to calculator.jsx for browser embedding:
+Transformations:
   1. Strip ESM import lines (React/Recharts loaded via CDN globals)
-  2. Rename Tooltip → RTooltip (avoids HTML <tooltip> collision in some browsers)
+  2. Rename Tooltip → RTooltip (avoids HTML collision)
   3. Strip 'export default' from App function
-  4. Add ReactDOM.createRoot() bootstrap at the end
+  4. Pre-compile JSX → JS via Babel (eliminates ~800KB runtime Babel dependency)
+  5. Inject engine.js as a separate <script> block
+  6. Inject standard data JSON and initialize the engine
 
-Run from the repository root or web/ directory:
-  python3 build.py
+Prerequisites:
+  npm install  (from web/ directory — installs @babel/core, @babel/preset-react)
+
+Run:
+  python3 web/build.py
 """
 
 import json
 import os
+import subprocess
 import sys
 
-# Find the web/ directory
+# ── Locate files ──
 script_dir = os.path.dirname(os.path.abspath(__file__))
 if os.path.basename(script_dir) == "web":
     web_dir = script_dir
@@ -28,33 +34,124 @@ else:
 
 jsx_path = os.path.join(web_dir, "calculator.jsx")
 json_path = os.path.join(web_dir, "standards", "icnirp_2013.json")
+engine_path = os.path.join(web_dir, "engine.js")
 out_path = os.path.join(web_dir, "index.html")
 
-# Read sources
+# ── Read sources ──
 with open(jsx_path, "r") as f:
     jsx = f.read()
 with open(json_path, "r") as f:
     std_json = f.read().strip()
+with open(engine_path, "r") as f:
+    engine_js = f.read()
 
-# Transform JSX for browser embedding
+# ── Strip Node.js export block from engine for browser embedding ──
+# Lines between BUILD_STRIP_START and BUILD_STRIP_END contain the Node.js
+# require() + module.exports block which must NOT appear in browser code.
+# After stripping, only the unconditional { window.MPEEngine = {...}; } block remains.
+engine_browser = []
+stripping = False
+for line in engine_js.split("\n"):
+    if "BUILD_STRIP_START" in line:
+        stripping = True
+        continue
+    if "BUILD_STRIP_END" in line:
+        stripping = False
+        continue
+    if not stripping:
+        engine_browser.append(line)
+engine_js_browser = "\n".join(engine_browser)
+
+# ── Transform JSX for browser embedding ──
 lines = jsx.split("\n")
 out_lines = []
 for line in lines:
-    # Strip ESM imports
     if line.startswith("import ") and (" from " in line):
         continue
-    # Strip 'export default'
     line = line.replace("export default function App()", "function App()")
     out_lines.append(line)
 
 jsx_body = "\n".join(out_lines)
-
-# Rename Tooltip → RTooltip (Recharts component)
-# Only rename the JSX tag usage, not the string "Tooltip" in labels/text
 jsx_body = jsx_body.replace("<Tooltip ", "<RTooltip ")
 jsx_body = jsx_body.replace("</Tooltip>", "</RTooltip>")
 
-# Build the HTML
+# ── Pre-compile JSX → JS via Babel ──
+# Tries @babel/core (npm install). Falls back to runtime Babel if unavailable.
+babel_script = r"""
+var babel;
+try { babel = require('@babel/core'); } catch(e) {
+  try { babel = require('./node_modules/@babel/core'); } catch(e2) {
+    process.stderr.write('BABEL_NOT_FOUND');
+    process.exit(1);
+  }
+}
+var presetPath;
+try { presetPath = require.resolve('@babel/preset-react'); } catch(e) {
+  try { presetPath = require.resolve('./node_modules/@babel/preset-react'); } catch(e2) {
+    process.stderr.write('PRESET_NOT_FOUND');
+    process.exit(1);
+  }
+}
+var code = require('fs').readFileSync(0, 'utf8');
+try {
+  var result = babel.transformSync(code, {
+    presets: [presetPath],
+    filename: 'calculator.jsx'
+  });
+  process.stdout.write(result.code);
+} catch(e) {
+  process.stderr.write('BABEL_ERROR: ' + e.message);
+  process.exit(2);
+}
+"""
+
+use_precompiled = False
+try:
+    result = subprocess.run(
+        ["node", "-e", babel_script],
+        input=jsx_body.encode("utf-8"),
+        capture_output=True,
+        cwd=web_dir,
+        timeout=30
+    )
+    if result.returncode == 0:
+        jsx_body = result.stdout.decode("utf-8")
+        use_precompiled = True
+    else:
+        err = result.stderr.decode("utf-8", errors="replace")
+        if "BABEL_NOT_FOUND" in err or "PRESET_NOT_FOUND" in err:
+            print("  ⚠ Babel not installed — using runtime transpilation.")
+            print("    To pre-compile: cd web && npm install")
+        else:
+            print(f"  ⚠ Babel error: {err[:200]}")
+            print("    Falling back to runtime transpilation.")
+except FileNotFoundError:
+    print("  ⚠ Node.js not found — using runtime Babel for JSX transpilation.")
+except subprocess.TimeoutExpired:
+    print("  ⚠ Babel timed out — using runtime transpilation.")
+
+# ── Recharts destructuring (needed for both precompiled and runtime) ──
+recharts_destructure = ("var useState=React.useState,useMemo=React.useMemo,"
+    "useEffect=React.useEffect,useRef=React.useRef;\n"
+    "var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,"
+    "YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,"
+    "RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,"
+    "ResponsiveContainer=Recharts.ResponsiveContainer,"
+    "ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend,"
+    "Label=Recharts.Label;\n")
+
+# ── Determine script type ──
+if use_precompiled:
+    script_type = ""  # plain <script>
+    babel_cdn = ""
+    mode_label = "pre-compiled"
+else:
+    script_type = ' type="text/babel"'
+    babel_cdn = ('<script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" '
+                 'onerror="se(\'Babel\')()"></script>\n')
+    mode_label = "runtime Babel"
+
+# ── Build the HTML ──
 html = f'''<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -63,36 +160,63 @@ html = f'''<!DOCTYPE html>
   <title>Laser Skin MPE Calculator</title>
   <style>
     *{{margin:0;padding:0;box-sizing:border-box}}
-    body{{font-family:system-ui,sans-serif}}
-    #root{{min-height:100vh}}
-    .ls{{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:#f0f2f5;color:#525960;font-family:monospace;font-size:14px;gap:12px}}
-    .ls .err{{color:#D55E00;font-size:12px;max-width:600px;text-align:center;line-height:1.5}}
+    body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
+      -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}}
+    input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{{
+      -webkit-appearance:none;margin:0}}
+    input[type=number]{{-moz-appearance:textfield}}
+    ::-webkit-scrollbar{{width:6px;height:6px}}
+    ::-webkit-scrollbar-track{{background:transparent}}
+    ::-webkit-scrollbar-thumb{{background:#bbb;border-radius:3px}}
+    ::-webkit-scrollbar-thumb:hover{{background:#888}}
+    select{{cursor:pointer}}
+    .plotly .modebar{{opacity:0.4;transition:opacity .2s}}
+    .plotly:hover .modebar{{opacity:1}}
   </style>
 </head>
 <body>
-<div id="root"><div class="ls"><div id="lt">Loading calculator...</div><div id="le" class="err"></div></div></div>
+<div id="root"></div>
+<div id="le" style="text-align:center;padding:20px;color:#c00;font-size:14px"></div>
 
 <script>var le=[];function se(n){{return function(){{le.push(n);document.getElementById('le').textContent='Failed to load: '+le.join(', ')+'.';}}}}</script>
 <script src="https://unpkg.com/react@18.2.0/umd/react.production.min.js" onerror="se('React')()"></script>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
-<script src="https://unpkg.com/@babel/standalone@7.24.0/babel.min.js" onerror="se('Babel')()"></script>
+<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
+{babel_cdn}
+<script>
+// Calculation engine (from engine.js — single source of truth for all MPE logic)
+// Node.js exports stripped for browser embedding; see BUILD_STRIP markers in engine.js
+{engine_js_browser}
+</script>
 
 <script>
 // Standard data (injected from ./standards/icnirp_2013.json)
 var __STD_DATA__ = {std_json};
+// Initialize the engine with the standard data
+if (typeof MPEEngine !== "undefined") MPEEngine.loadStandard(__STD_DATA__);
 </script>
 
-<script type="text/babel">
+<script>
+// Engine source for Web Worker (scanning computation runs off main thread)
+// Uses the FULL engine.js (including Node.js exports) since Worker scope is isolated
+var __ENGINE_SOURCE__ = {json.dumps(engine_js)};
+</script>
 
-var useState=React.useState,useMemo=React.useMemo,useEffect=React.useEffect,useRef=React.useRef;
-var LineChart=Recharts.LineChart,Line=Recharts.Line,XAxis=Recharts.XAxis,YAxis=Recharts.YAxis,CartesianGrid=Recharts.CartesianGrid,RTooltip=Recharts.Tooltip,ReferenceDot=Recharts.ReferenceDot,ResponsiveContainer=Recharts.ResponsiveContainer,ReferenceLine=Recharts.ReferenceLine,Legend=Recharts.Legend;
+<script{script_type}>
 
+{recharts_destructure}
 {jsx_body}
 
 ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
 </script>
+
+<noscript>
+  <div style="text-align:center;padding:40px;font-size:16px;color:#333">
+    This calculator requires JavaScript to be enabled.
+  </div>
+</noscript>
 </body>
 </html>'''
 
@@ -101,6 +225,7 @@ with open(out_path, "w") as f:
 
 line_count = html.count("\n") + 1
 print(f"Built {out_path}")
-print(f"  Sources: calculator.jsx ({len(lines)} lines), icnirp_2013.json")
+print(f"  Sources: calculator.jsx ({len(lines)} lines), engine.js ({len(engine_js.splitlines())} lines), icnirp_2013.json")
 print(f"  Output:  index.html ({line_count} lines)")
+print(f"  JSX mode: {mode_label}")
 print(f"  Transforms: stripped imports, Tooltip→RTooltip, stripped export default")

@@ -1,7 +1,7 @@
 """
-Test script for skin_parameters module.
+Test suite for skin_parameters module.
 
-Values are verified against the loaded standard (default: ICNIRP 2013):
+All values verified against the loaded standard (default: ICNIRP 2013):
     - Table 4 (T_max)
     - Table 8 (Limiting apertures for skin)
     - Large area exposures (Table 7 note c)
@@ -9,22 +9,23 @@ Values are verified against the loaded standard (default: ICNIRP 2013):
     - Unit conversions (arithmetic correctness)
 """
 
-import sys
 import os
+import sys
+
 import numpy as np
 import numpy.testing as npt
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from laser_mpe import (
-    get_Tmax_skin,
-    get_skin_limiting_aperture,
-    large_area_MPE_skin,
-    uv_successive_day_derate,
-    radiant_exposure_convert,
-    irradiance_from_radiant_exposure,
-    pulse_energy_from_radiant_exposure,
     average_power_from_radiant_exposure,
+    get_skin_limiting_aperture,
+    get_Tmax_skin,
+    irradiance_from_radiant_exposure,
+    large_area_MPE_skin,
+    pulse_energy_from_radiant_exposure,
+    radiant_exposure_convert,
+    uv_successive_day_derate,
 )
 
 
@@ -36,11 +37,11 @@ def assert_close(actual, expected, rtol=1e-9, label=""):
 
 
 # =====================================================================
-# Table 4 : T_max
+# Table 4 — T_max
 # =====================================================================
 
 class TestTmax:
-    """Verify against the standard (Table 4 column)."""
+    """Verified against the standard (Table 4 column)."""
 
     def test_uv(self):
         """UV 0.18-0.4 um: T_max = 30,000 s"""
@@ -87,11 +88,11 @@ class TestTmax:
 
 
 # =====================================================================
-# Table 8 : Limiting Apertures for Skin
+# Table 8 — Limiting Apertures for Skin
 # =====================================================================
 
 class TestLimitingAperture:
-    """Verify against the standard (Table 8 (Skin column)."""
+    """Verified against the standard (Table 8 (Skin column)."""
 
     def test_uv_aperture(self):
         """UV: 3.5 mm"""
@@ -137,11 +138,11 @@ class TestLimitingAperture:
 
 
 # =====================================================================
-# Large Area Exposures : Large Area Exposures
+# Large Area Exposures — Large Area Exposures
 # =====================================================================
 
 class TestLargeArea:
-    """Verify against the standard (Table 7 note c."""
+    """Verified against the standard (Table 7 note c."""
 
     def test_small_beam_returns_none(self):
         """Beam < 100 cm^2: standard Table 7 values apply."""
@@ -166,7 +167,7 @@ class TestLargeArea:
 # =====================================================================
 
 class TestUVDerate:
-    """Verify against the standard."""
+    """Verified against the standard."""
 
     def test_derate_280_400(self):
         """280-400 nm: MPE reduced by factor of 2.5."""
@@ -207,7 +208,7 @@ class TestUVDerate:
 # =====================================================================
 
 class TestUnitConversions:
-    """Correctness of unit conversions."""
+    """Arithmetic correctness of unit conversions."""
 
     def test_radiant_exposure_to_mJ(self):
         assert_close(radiant_exposure_convert(0.02, 'mJ/cm2'), 20.0, label="J->mJ")

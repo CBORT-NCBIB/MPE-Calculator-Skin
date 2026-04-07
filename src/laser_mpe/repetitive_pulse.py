@@ -7,7 +7,7 @@ Skin:
     Rule 3: Does NOT apply to skin exposure.
     Effective per-pulse MPE = min(Rule 1, Rule 2) for N > 1.
 
-This module uses the data-driven engine. The repetitive-pulse
+This module uses the generic data-driven engine. The repetitive-pulse
 logic is standard-independent.
 """
 

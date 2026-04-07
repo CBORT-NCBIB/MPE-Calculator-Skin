@@ -1,8 +1,10 @@
-# Laser MPE Calculator for the Skin
+# Laser MPE Calculator — Skin
 
 **Laser Maximum Permissible Exposure (MPE) Calculator for Skin**
 
-A Python package for computing laser skin MPE values with support for single-pulse, CW, and repetitive-pulse exposure regimes. Designed for researchers, laser safety officers, and engineers working in biophotonics (OCT, photoacoustic imaging, confocal microscopy) and any application requiring laser skin safety evaluation.
+A Python package for computing laser skin MPE values with support for single-pulse, CW, and repetitive-pulse exposure regimes. Designed for researchers, laser safety officers, and engineers working in biophotonics (OCT, photoacoustic imaging, confocal microscopy), laser manufacturing, telecommunications, and any application requiring laser skin safety evaluation.
+
+Associated with [OCT Research](https://octresearch.org/).
 
 <p align="center">
   <img src="docs/images/skin_mpe_overview.png" alt="Skin MPE vs exposure duration" width="65%">
@@ -14,31 +16,55 @@ A Python package for computing laser skin MPE values with support for single-pul
 
 ## Features
 
-- **Wavelength coverage:** 180 nm to 1000 µm (UV through far infrared)
-- **Exposure durations:** 10⁻⁹ s to 3×10⁴ s (nanoseconds to hours)
+- **Full wavelength coverage:** 180 nm to 1000 µm (UV through far infrared)
+- **All exposure durations:** 10⁻⁹ s to 3×10⁴ s (nanoseconds to hours)
 - **Exposure modes:** Single-pulse, continuous-wave (CW), and repetitive-pulse
 - **UV dual-limit logic:** Automatically selects the lower of photochemical and thermal limits (180–400 nm)
 - **Cₐ correction factor:** Wavelength-dependent correction for 400–1400 nm
 - **Repetitive-pulse rules:** Rule 1 (single-pulse limit) and Rule 2 (average power), 
 - **Supporting calculations:** T_max lookup, limiting apertures, large area correction, UV successive-day de-rating
 - **Unit conversions:** J/cm², mJ/cm², W/cm², mW/cm², pulse energy, average power
-- **Verification:** Checks against hand-computed values from the standard
+- **Verified:** 325 automated checks against hand-computed values from the standard
+
+## Web Calculator
+
+An interactive browser-based calculator is available at [octresearch.org](https://octresearch.org/) or by opening `web/index.html` locally. No Python installation, server, or build step is required — it runs entirely in the browser.
+
+The web calculator has three tabs:
+
+### MPE Calculator Tab
+Compute single-pulse and repetitive-pulse skin MPE for any wavelength and duration. Supports multiple simultaneous laser configurations with per-wavelength unit selection. Includes interactive plots of MPE vs. wavelength and MPE vs. duration, beam geometry evaluation with limiting aperture logic, and CSV/SVG export.
+
+### Scanning Protocols Tab
+Evaluate laser safety for scanning beam systems (OCT, photoacoustic imaging, confocal microscopy, laser processing). Supports linear, unidirectional raster, and bidirectional raster scan patterns with configurable parameters including:
+
+- **Beam parameters:** wavelength, diameter, pulse duration, PRF, average power
+- **Scan pattern:** velocity, line length, number of lines, hatch spacing
+- **Flyback blanking:** option to blank laser during galvo return (typical for OCT)
+- **Safety evaluation:** Rule 1 (single-pulse) and Rule 2 (cumulative) per ICNIRP 2013, with analytical Gaussian cross-check ensuring grid approximations never cause unsafe underestimates
+- **Visualization:** cumulative fluence heatmap, pulse timing diagram, fluence cross-section
+- **Derived limits:** maximum permissible power and minimum safe scan velocity
+
+Handles high-PRF systems (100–400 kHz) via pulse subsampling with conservative analytical bounds.
+
+### Photoacoustic SNR Optimizer Tab
+Optimize pulse repetition frequency for photoacoustic imaging based on the Francis et al. framework. Computes effective per-pulse fluence, relative SNR, and optimal PRF across multiple wavelength/pulse-duration configurations simultaneously.
 
 ## Standards Compliance
 
 All values are verified against the loaded standard (default: ICNIRP 2013).
 
-| Component | Description |
-|---|---|
-| Skin MPE | All wavelength bands (UV, Visible, Near-IR, Far-IR) |
-| Correction factor Cₐ | Wavelength-dependent correction for 400–1400 nm |
-| T_max | Recommended maximum exposure durations |
-| Limiting apertures | Skin aperture diameters by wavelength |
-| Repetitive pulse | Rules 1 and 2 (Rule 3 excluded for skin) |
-| Large area correction | Beam area > 100 cm² for λ > 1.4 µm, t > 10 s |
-| UV de-rating | Successive-day de-rating for 280–400 nm |
+| Component | Description | Status |
+|---|---|---|
+| Skin MPE | All wavelength bands (UV, Visible, Near-IR, Far-IR) | ✅ Verified |
+| Correction factor Cₐ | Wavelength-dependent correction for 400–1400 nm | ✅ Verified |
+| T_max | Recommended maximum exposure durations | ✅ Verified |
+| Limiting apertures | Skin aperture diameters by wavelength | ✅ Verified |
+| Repetitive pulse | Rules 1 and 2 (Rule 3 excluded for skin) | ✅ Verified |
+| Large area correction | Beam area > 100 cm² for λ > 1.4 µm, t > 10 s | ✅ Verified |
+| UV de-rating | Successive-day de-rating for 280–400 nm | ✅ Verified |
 
-Boundary conventions follow the ICNIRP standard: `t₁ ≤ t < t₂` and `λ₁ ≤ λ < λ₂`.
+Boundary conventions follow the standard exactly: `t₁ ≤ t < t₂` and `λ₁ ≤ λ < λ₂`.
 
 
 ## Installation
@@ -53,7 +79,7 @@ cd MPE-Calculator-Skin
 pip install -e .
 ```
 
-Once installed, you can import `laser_mpe` from any Python script or notebook on your system. See the [Quick Start](#quick-start) section below for usage examples, and [`docs/API.md`](docs/API.md) for the API reference.
+Once installed, you can import `laser_mpe` from any Python script or notebook on your system. See the [Quick Start](#quick-start) section below for usage examples, and [`docs/API.md`](docs/API.md) for the complete API reference.
 
 ### For contributors (development setup)
 
@@ -132,27 +158,29 @@ print(f"{radiant_exposure_convert(H, 'mJ/cm2')} mJ/cm²")
 
 ## Testing
 
-There are four test scripts to verify values against the standard:
-
-```
-Test Script                                 Checks
-──────────────────────────────────────────────────
-test_skin_mpe                              38
-test_skin_parameters                       32
-test_correction_factors                    5
-verify_exhaustive                          254
-──────────────────────────────────────────────────
-TOTAL                                      329
-```
+### Python tests (71 checks)
 
 ```bash
-python tests/test_skin_mpe.py
-python tests/test_skin_parameters.py
-python tests/test_correction_factors.py
-python tests/verify_exhaustive.py
+pytest tests/ -v
 ```
 
-Test outputs are available in [`tests/outputs/`](tests/outputs/).
+### JavaScript engine tests (62 checks)
+
+```bash
+node tests/test_engine_js.mjs
+```
+
+Covers: core MPE computation, correction factors, repetitive-pulse rules, band classification, photoacoustic functions, beam geometry, scanning engine (pulsed + CW), analytical cross-check, flyback blanking, input validation edge cases, and cross-language equivalence (20 boundary points verified against Python).
+
+### CI
+
+GitHub Actions runs all tests automatically on every push:
+- Python tests across Python 3.9–3.12
+- Python linting (ruff)
+- JavaScript engine tests (Node.js 20)
+- Build verification (index.html generation + content check)
+
+Full Python test outputs are available in [`tests/outputs/`](tests/outputs/).
 
 ## Package Structure
 
@@ -162,27 +190,29 @@ MPE-Calculator-Skin/
 │   ├── __init__.py              # Public API
 │   ├── engine.py                # Core data-driven MPE engine
 │   ├── correction_factors.py    # Cₐ correction factor
-│   ├── legacy.py                # Backward-compatible ICNIRP function names
-│   ├── repetitive_pulse.py      # Rules 1 and 2
-│   └── skin_parameters.py       # T_max, apertures, conversions
+│   ├── legacy.py              # Backward-compatible ICNIRP function names
+│   ├── repetitive_pulse.py     # Rules 1 and 2
+│   └── skin_parameters.py      # T_max, apertures, conversions
 ├── web/
-│   ├── index.html               # Standalone interactive calculator
-│   ├── calculator.jsx           # React component source
-│   ├── engine.js                # JS calculation engine (Node.js)
-│   ├── config.js                # Points to active standard file
+│   ├── index.html               # Built interactive calculator (generated)
+│   ├── calculator.jsx           # React component source (3 tabs)
+│   ├── engine.js                # JS calculation engine (single source of truth)
+│   ├── build.py                 # Build script (JSX pre-compilation + bundling)
+│   ├── compute-sri.js           # SRI hash computation for CDN scripts
 │   ├── standards/               # JSON standard data files
 │   │   ├── icnirp_2013.json     # Default standard data
 │   │   └── README.md            # Schema documentation
 │   └── README.md                # Web deployment guide
 ├── tests/
-│   ├── outputs/                 # Test output logs
-│   └── *.py                     # 4 test scripts (329 checks)
+│   ├── outputs/                 # Full test output logs
+│   ├── test_engine_js.mjs       # JavaScript engine tests (62 checks)
+│   └── *.py                     # 4 Python test suites (71 checks)
 ├── examples/
 │   ├── README.md                # What each example does
 │   ├── outputs/                 # Expected output for cross-checking
 │   └── *.py                     # 4 example scripts
 ├── docs/
-│   ├── API.md                   # API reference
+│   ├── API.md                   # Complete API reference
 │   └── images/                  # Figures
 ├── LICENSE                      # MIT
 ├── README.md
@@ -193,16 +223,16 @@ MPE-Calculator-Skin/
 
 ## Web Calculator
 
-An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
+An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser — no build step or server required. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
 
-## Project roadmap
+## Roadmap
 
-- [x] Skin MPE calculations (180 nm–1000 µm)
+- [x] Skin MPE (all bands, 180 nm–1000 µm)
 - [x] UV dual-limit logic
 - [x] Repetitive-pulse Rules 1 and 2
 - [x] T_max, limiting apertures, large area correction, UV de-rating
 - [x] Unit conversions
-- [x] Four tests scripts
+- [x] 329-check test suite
 - [x] Interactive web calculator
 - [ ] JOSS paper submission
 
@@ -216,8 +246,20 @@ If you use this software, please cite it using [CITATION.cff](CITATION.cff).
 
 ## License
 
-MIT (see [LICENSE](LICENSE))
+MIT — see [LICENSE](LICENSE).
 
 ## Disclaimer
 
-This software is provided for **research and educational purposes only**. It is not a certified safety instrument and has not been endorsed or approved by any standards organization, including ICNIRP, ANSI, IEC, or any regulatory body. The output does not constitute professional safety advice and must not be used as the sole basis for any safety determination. All output should be independently verified against the full text of the applicable standard by a qualified Laser Safety Officer (LSO). By using this software, you assume all risk associated with the use of its output.
+This software is provided for **research and educational purposes only**.
+
+It is not a certified safety instrument and has not been endorsed or approved by any standards organization — including ICNIRP, ANSI, IEC, or any regulatory body. The output does not constitute professional safety advice and must not be used as the sole basis for any safety determination.
+
+**Key limitations users must understand:**
+
+- **Skin only.** This tool does not evaluate ocular (eye) exposure limits, which are typically far more restrictive and must be assessed separately.
+- **One interpretation.** The formulas implemented here reflect the authors' interpretation of published guidelines. Other qualified professionals may interpret the same standard differently.
+- **No guarantee of accuracy.** Despite careful testing, the authors make no warranty that the calculations are error-free or suitable for any specific purpose.
+- **Standards change.** Users must confirm the implemented edition is current and applicable to their jurisdiction.
+- **Not a complete safety program.** MPE calculation is one component of laser safety. Hazard classification, control measures, and regulatory compliance are not addressed.
+
+All output should be independently verified against the full text of the applicable standard by a qualified Laser Safety Officer (LSO). By using this software, you assume all risk associated with the use of its output.

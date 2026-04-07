@@ -2,7 +2,7 @@
 ICNIRP 2013 Skin Maximum Permissible Exposure (MPE) calculations.
 
 This module provides backward-compatible function signatures that
-delegate to the data-driven engine (engine.py). All
+delegate to the generic data-driven engine (engine.py). All
 standard-specific values are read from web/standards/icnirp_2013.json.
 
 For skin, the ICNIRP guidelines specify:
@@ -27,9 +27,8 @@ import numpy as np
 
 from . import engine as _engine
 
-
 # =========================================================================
-# Ultraviolet (180-400 nm) : ICNIRP 2013, Table 5
+# Ultraviolet (180-400 nm) — ICNIRP 2013, Table 5
 # =========================================================================
 
 def H_skin_ICNIRP_UV_thermal(wl_um: float, t: float) -> float:
@@ -91,7 +90,7 @@ def H_skin_ICNIRP_180_400(wl_um: float, t: float) -> float:
 
 
 # =========================================================================
-# Visible and Near Infrared (400-1400 nm) : ICNIRP 2013, Table 7
+# Visible and Near Infrared (400-1400 nm) — ICNIRP 2013, Table 7
 # =========================================================================
 
 def H_skin_ICNIRP_400_1400(wl_um: float, t: float) -> float:
@@ -100,7 +99,7 @@ def H_skin_ICNIRP_400_1400(wl_um: float, t: float) -> float:
 
 
 # =========================================================================
-# Far Infrared bands : ICNIRP 2013, Table 5
+# Far Infrared bands — ICNIRP 2013, Table 5
 # =========================================================================
 
 def H_skin_ICNIRP_1400_1500(t: float) -> float:
