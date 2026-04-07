@@ -2244,8 +2244,8 @@ function bnd(wl) {
 /* Scanning engine — adapters translate engine.js field names to short UI names */
 var scanDwellGaussian = _E.scanDwellGaussian;
 var scanDwellGeometric = _E.scanDwellGeometric;
-function scanCompute(beam, segs, ppd) {
-  if (!segs || !segs.length) return null;
+function scanCompute(beam, segs, ppd, sepP) {
+  if (!sepP && (!segs || !segs.length)) return null;
   var eb = {
     d_1e_mm: beam.d,
     wl_nm: beam.wl,
@@ -2255,7 +2255,7 @@ function scanCompute(beam, segs, ppd) {
     avg_power_W: beam.P,
     is_cw: beam.cw
   };
-  var r = _E.computeScanFluence(eb, segs, ppd || 8);
+  var r = _E.computeScanFluence(eb, segs || [], ppd || 8, sepP || null);
   if (!r) return null;
   var eg = r.grid,
     s = r.stats;
@@ -2273,7 +2273,8 @@ function scanCompute(beam, segs, ppd) {
   };
   var st = {
     tt: s.total_time_s,
-    tp: s.total_pulses || 0
+    tp: s.total_pulses || 0,
+    method: s.method
   };
   if (s.min_velocity !== undefined) st.mv = s.min_velocity;
   return {
@@ -6236,7 +6237,7 @@ function ScanTab(p) {
   function getWorker() {
     if (_workerRef.current) return _workerRef.current;
     if (typeof __ENGINE_SOURCE__ === "undefined") return null;
-    var workerCode = __ENGINE_SOURCE__ + "\n" + ["self.onmessage=function(e){", "  var p=e.data;", "  MPEEngine.loadStandard(p.std);", "  var E=MPEEngine;", "  var isCW=p.prf===0&&p.tau===0;", "  var Ep=p.prf>0?p.pw/p.prf:0;", "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,", "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};", "  /* Separable fast-path: bypass segment construction entirely */", "  var sepP=(!isCW&&p.prf>0&&(p.pat==='linear'||p.pat==='raster'||p.pat==='bidi'))?", "    {d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:Ep,v_scan_mm_s:p.vel,", "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,", "     pattern:p.pat,blanking:p.blk,is_cw:false}:null;", "  /* Only build segments if separable path not available */", "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d,bl){", "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);", "    if(pat==='bidi')return E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);", "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);}", "  var segs=sepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia,p.blk);", "  var cr=E.computeScanFluence(beam,segs,p.effPpd,sepP);", "  if(!cr){self.postMessage({error:'Computation returned null'});return;}", "  var eg=cr.grid,s=cr.stats;", "  var minV=isCW?(s.min_velocity||p.vel):0;", "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW,pulse_energy_J:Ep,prf_hz:p.prf,avg_power_W:p.pw};", "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV,{v_mm_s:p.vel,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});", "  /* Max permissible power */", "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,", "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};", "  var unitSepP=sepP?{d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:p.prf>0?1/p.prf:0,v_scan_mm_s:p.vel,", "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,", "     pattern:p.pat,blanking:p.blk,is_cw:false}:null;", "  var ucr=E.computeScanFluence(unitBeam,sepP?[]:segs,p.auxPpd,unitSepP);", "  var maxP=Infinity;", "  if(ucr){var upF=0;for(var i=0;i<ucr.grid.fluence.length;i++)if(ucr.grid.fluence[i]>upF)upF=ucr.grid.fluence[i];", "    var mpeT=E.skinMPE(p.wl,ucr.stats.total_time_s||s.total_time_s);", "    if(upF>0)maxP=mpeT/upF;", "    if(!isCW&&p.prf>0){var w2=p.dia/Math.sqrt(2);var maxPr1=E.skinMPE(p.wl,p.tau)*p.prf*Math.PI*w2*w2/(2*100);", "      if(maxPr1<maxP)maxP=maxPr1;}}", "  /* Min safe velocity bisection */", "  var minVel=0;", "  function testV(tv){", "    var tSepP=sepP?{d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:Ep,v_scan_mm_s:tv,", "       x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,", "       pattern:p.pat,blanking:p.blk,is_cw:false}:null;", "    var ts2=tSepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia,p.blk);", "    var tb={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};", "    var tcr=E.computeScanFluence(tb,ts2,p.auxPpd,tSepP);", "    if(!tcr)return true;", "    var tmv=isCW?(tcr.stats.min_velocity||tv):0;", "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv,{v_mm_s:tv,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});", "    return tsf.safe;}", "  if(testV(1e6)){var vLo=0.01,vHi=1e6;", "    for(var bi=0;bi<p.maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}", "    minVel=vHi;}else{minVel=Infinity;}", "  /* Pulse positions for visualization (generated from scan params, not segments) */", "  var pulseArr=[];", "  if(!isCW&&p.prf>0){", "    var maxSP=5000;", "    var ps_mm=p.vel/p.prf;", "    var nPulsesLine=Math.max(1,Math.floor((p.lineL/p.vel)*p.prf));", "    var totalEst=nPulsesLine*(p.nLines||1);", "    var pStride=Math.max(1,Math.ceil(totalEst/maxSP));", "    var nL=p.nLines||1,hh=p.hatch||0,tAcc=0;", "    for(var li=0;li<nL&&pulseArr.length<maxSP;li++){", "      var ly=li*hh;", "      var scanDir=(p.pat==='bidi'&&li%2===1)?-1:1;", "      var xStart=scanDir===1?0:p.lineL;", "      for(var ki=0;ki<nPulsesLine&&pulseArr.length<maxSP;ki+=pStride){", "        var px=xStart+scanDir*ki*ps_mm;", "        pulseArr.push({t:tAcc+ki/p.prf,x:px,y:ly,si:li});", "      }", "      tAcc+=p.lineL/p.vel;", "      if(li<nL-1)tAcc+=hh/(p.vel*5);", "    }", "    if(pulseArr.length>=maxSP)p.notes.push('Showing '+maxSP+' of ~'+Math.round(totalEst)+' pulses');", "  }", "  /* Coarse segment array for scan path visualization only */", "  var vizSegs=[];", "  var vizStep=Math.max(1,Math.ceil((p.lineL/p.dia)/200));", "  var nL2=p.nLines||1;", "  for(var vli=0;vli<nL2;vli++){", "    var vly=vli*(p.hatch||0);", "    var vDir=(p.pat==='bidi'&&vli%2===1)?-1:1;", "    var vx0=vDir===1?0:p.lineL;", "    var nVizPts=Math.ceil(p.lineL/p.dia/vizStep);", "    for(var vsi=0;vsi<=nVizPts;vsi++){", "      vizSegs.push({x:vx0+vDir*vsi*vizStep*p.dia,y:vly,a:vDir===1?0:Math.PI,v:p.vel});", "    }", "  }", "  /* Transfer TypedArrays for zero-copy performance */", "  var result={", "    g:{nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm},", "    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,", "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity,stride:s.stride||1},", "    sf:{safe:sf.safe,wr:sf.worst_ratio,wx:sf.worst_x_mm,wy:sf.worst_y_mm,", "      br:sf.binding_rule,sm:sf.safety_margin,mt:sf.mpe_tau,mT:sf.mpe_T,", "      pF:sf.peak_fluence,ppM:sf.peak_pulse_H_max,mP:sf.max_pulses,", "      r1m:sf.rule1_max_ratio,r2m:sf.rule2_max_ratio,", "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate,", "      anPeak:sf.analytical_peak,anUsed:sf.analytical_used},", "    maxP:maxP,minVel:minVel,pulseArr:pulseArr,segs:vizSegs,notes:p.notes};", "  self.postMessage(result,[eg.fluence.buffer,eg.pulse_count.buffer,eg.peak_pulse_H.buffer,eg.last_visit_t.buffer,eg.min_revisit_s.buffer]);", "};"].join("\n");
+    var workerCode = __ENGINE_SOURCE__ + "\n" + ["self.onmessage=function(e){", "  var p=e.data;", "  MPEEngine.loadStandard(p.std);", "  var E=MPEEngine;", "  var isCW=p.prf===0&&p.tau===0;", "  var Ep=p.prf>0?p.pw/p.prf:0;", "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,", "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};", "  /* Separable fast-path: bypass segment construction entirely */", "  var sepP=(!isCW&&p.prf>0&&(p.pat==='linear'||p.pat==='raster'||p.pat==='bidi'))?", "    {d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:Ep,v_scan_mm_s:p.vel,", "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,", "     pattern:p.pat,blanking:p.blk,is_cw:false}:null;", "  /* Only build segments if separable path not available */", "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d,bl){", "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);", "    if(pat==='bidi')return E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);", "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);}", "  var segs=sepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia,p.blk);", "  var cr=E.computeScanFluence(beam,segs,p.effPpd,sepP);", "  if(!cr){self.postMessage({error:'Computation returned null'});return;}", "  var eg=cr.grid,s=cr.stats;", "  var minV=isCW?(s.min_velocity||p.vel):0;", "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW,pulse_energy_J:Ep,prf_hz:p.prf,avg_power_W:p.pw};", "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV,{v_mm_s:p.vel,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});", "  /* Max permissible power */", "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,", "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};", "  var unitSepP=sepP?{d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:p.prf>0?1/p.prf:0,v_scan_mm_s:p.vel,", "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,", "     pattern:p.pat,blanking:p.blk,is_cw:false}:null;", "  var ucr=E.computeScanFluence(unitBeam,sepP?[]:segs,p.auxPpd,unitSepP);", "  var maxP=Infinity;", "  if(ucr){var upF=0;for(var i=0;i<ucr.grid.fluence.length;i++)if(ucr.grid.fluence[i]>upF)upF=ucr.grid.fluence[i];", "    var mpeT=E.skinMPE(p.wl,ucr.stats.total_time_s||s.total_time_s);", "    if(upF>0)maxP=mpeT/upF;", "    if(!isCW&&p.prf>0){var w2=p.dia/Math.sqrt(2);var maxPr1=E.skinMPE(p.wl,p.tau)*p.prf*Math.PI*w2*w2/(2*100);", "      if(maxPr1<maxP)maxP=maxPr1;}}", "  /* Min safe velocity bisection */", "  var minVel=0;", "  function testV(tv){", "    var tSepP=sepP?{d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:Ep,v_scan_mm_s:tv,", "       x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,", "       pattern:p.pat,blanking:p.blk,is_cw:false}:null;", "    var ts2=tSepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia,p.blk);", "    var tb={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};", "    var tcr=E.computeScanFluence(tb,ts2,p.auxPpd,tSepP);", "    if(!tcr)return true;", "    var tmv=isCW?(tcr.stats.min_velocity||tv):0;", "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv,{v_mm_s:tv,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});", "    return tsf.safe;}", "  if(testV(1e6)){var vLo=0.01,vHi=1e6;", "    for(var bi=0;bi<p.maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}", "    minVel=vHi;}else{minVel=Infinity;}", "  /* Pulse positions for visualization (generated from scan params, not segments) */", "  var pulseArr=[];", "  if(!isCW&&p.prf>0){", "    var maxSP=5000;", "    var ps_mm=p.vel/p.prf;", "    var nPulsesLine=Math.max(1,Math.floor((p.lineL/p.vel)*p.prf));", "    var totalEst=nPulsesLine*(p.nLines||1);", "    var pStride=Math.max(1,Math.ceil(totalEst/maxSP));", "    var nL=p.nLines||1,hh=p.hatch||0,tAcc=0;", "    for(var li=0;li<nL&&pulseArr.length<maxSP;li++){", "      var ly=li*hh;", "      var scanDir=(p.pat==='bidi'&&li%2===1)?-1:1;", "      var xStart=scanDir===1?0:p.lineL;", "      for(var ki=0;ki<nPulsesLine&&pulseArr.length<maxSP;ki+=pStride){", "        var px=xStart+scanDir*ki*ps_mm;", "        pulseArr.push({t:tAcc+ki/p.prf,x:px,y:ly,si:li});", "      }", "      tAcc+=p.lineL/p.vel;", "      if(li<nL-1)tAcc+=hh/(p.vel*5);", "    }", "    if(pulseArr.length>=maxSP)p.notes.push('Showing '+maxSP+' of ~'+Math.round(totalEst)+' pulses');", "  }", "  /* Coarse segment array for scan path visualization only */", "  var vizSegs=[];", "  var MAX_VIZ_SEGS=5000;", "  var nL2=p.nLines||1;", "  var ptsPerLine=Math.ceil(p.lineL/p.dia);", "  /* Budget: distribute MAX_VIZ_SEGS across lines, skip lines if too many */", "  var lineStride=Math.max(1,Math.ceil(nL2*Math.min(ptsPerLine,200)/MAX_VIZ_SEGS));", "  var vizStep=Math.max(1,Math.ceil(ptsPerLine/Math.min(200,Math.floor(MAX_VIZ_SEGS/Math.ceil(nL2/lineStride)))));", "  for(var vli=0;vli<nL2&&vizSegs.length<MAX_VIZ_SEGS;vli+=lineStride){", "    var vly=vli*(p.hatch||0);", "    var vDir=(p.pat==='bidi'&&vli%2===1)?-1:1;", "    var vx0=vDir===1?0:p.lineL;", "    var nVizPts=Math.ceil(ptsPerLine/vizStep);", "    for(var vsi=0;vsi<=nVizPts&&vizSegs.length<MAX_VIZ_SEGS;vsi++){", "      vizSegs.push({x:vx0+vDir*vsi*vizStep*p.dia,y:vly,a:vDir===1?0:Math.PI,v:p.vel});", "    }", "  }", "  /* Transfer TypedArrays for zero-copy performance */", "  var result={", "    g:{nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm},", "    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,", "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity,stride:s.stride||1},", "    sf:{safe:sf.safe,wr:sf.worst_ratio,wx:sf.worst_x_mm,wy:sf.worst_y_mm,", "      br:sf.binding_rule,sm:sf.safety_margin,mt:sf.mpe_tau,mT:sf.mpe_T,", "      pF:sf.peak_fluence,ppM:sf.peak_pulse_H_max,mP:sf.max_pulses,", "      r1m:sf.rule1_max_ratio,r2m:sf.rule2_max_ratio,", "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate,", "      anPeak:sf.analytical_peak,anUsed:sf.analytical_used},", "    maxP:maxP,minVel:minVel,pulseArr:pulseArr,segs:vizSegs,notes:p.notes};", "  self.postMessage(result,[eg.fluence.buffer,eg.pulse_count.buffer,eg.peak_pulse_H.buffer,eg.last_visit_t.buffer,eg.min_revisit_s.buffer]);", "};"].join("\n");
     try {
       var blob = new Blob([workerCode], {
         type: "application/javascript"
@@ -6452,7 +6453,27 @@ function ScanTab(p) {
         P: pw,
         cw: isCW
       };
-      var cr = scanCompute(beam, segs, effPpd);
+
+      // Build separable params if applicable (same logic as Worker)
+      var canSep = !isCW && prf > 0 && (pat === "linear" || pat === "raster" || pat === "bidi");
+      function mkSepP(vv, ep) {
+        if (!canSep) return null;
+        return {
+          d_1e_mm: dia,
+          prf_hz: prf,
+          pulse_energy_J: ep || Ep,
+          v_scan_mm_s: vv,
+          x0: 0,
+          y0: 0,
+          line_length_mm: lineL,
+          n_lines: pat === "linear" ? 1 : nLines,
+          hatch_mm: pat === "linear" ? 0 : hatch,
+          pattern: pat,
+          blanking: blk,
+          is_cw: false
+        };
+      }
+      var cr = scanCompute(beam, canSep ? [] : segs, effPpd, mkSepP(vel));
       if (cr) {
         var minV = isCW ? cr.st.mv || vel : 0;
         var sf = scanSafety(cr.g, beam, cr.st.tt, dwm, minV, {
@@ -6469,7 +6490,7 @@ function ScanTab(p) {
           P: 1,
           cw: isCW
         };
-        var unitCr = scanCompute(unitBeam, segs, auxPpd);
+        var unitCr = scanCompute(unitBeam, canSep ? [] : segs, auxPpd, mkSepP(vel, prf > 0 ? 1 / prf : 0));
         var maxP = Infinity;
         if (unitCr) {
           var upF = 0;
@@ -6484,6 +6505,16 @@ function ScanTab(p) {
         }
         var minVel = 0;
         function testV(tv) {
+          if (canSep) {
+            var tcr = scanCompute(beam, [], auxPpd, mkSepP(tv));
+            if (!tcr) return true;
+            var tsf = scanSafety(tcr.g, beam, tcr.st.tt, dwm, 0, {
+              v_mm_s: tv,
+              line_spacing_mm: pat === "linear" ? 0 : hatch,
+              n_lines: pat === "linear" ? 1 : nLines
+            });
+            return tsf.safe;
+          }
           var ts;
           if (pat === "linear") ts = scanBuildLinear(0, 0, 0, lineL, tv, dia);else if (pat === "bidi") ts = scanBuildBidi(0, 0, lineL, nLines, hatch, tv, tv * 5, dia, blk);else ts = scanBuildRaster(0, 0, lineL, nLines, hatch, tv, tv * 5, dia, blk);
           var tb = {
@@ -6495,15 +6526,15 @@ function ScanTab(p) {
             P: pw,
             cw: isCW
           };
-          var tcr = scanCompute(tb, ts, auxPpd);
-          if (!tcr) return true;
-          var tmv = isCW ? tcr.st.mv || tv : 0;
-          var tsf = scanSafety(tcr.g, tb, tcr.st.tt, dwm, tmv, {
+          var tcr2 = scanCompute(tb, ts, auxPpd);
+          if (!tcr2) return true;
+          var tmv = isCW ? tcr2.st.mv || tv : 0;
+          var tsf2 = scanSafety(tcr2.g, tb, tcr2.st.tt, dwm, tmv, {
             v_mm_s: tv,
             line_spacing_mm: pat === "linear" ? 0 : hatch,
             n_lines: pat === "linear" ? 1 : nLines
           });
-          return tsf.safe;
+          return tsf2.safe;
         }
         if (testV(1e6)) {
           var vLo = 0.01,
@@ -6516,40 +6547,60 @@ function ScanTab(p) {
         } else {
           minVel = Infinity;
         }
+
+        // Generate pulse positions and viz segments from scan params (not from segment array)
         var pulseArr = [];
-        var estPulses = prf * (cr.st.tt || 0);
         if (!isCW && prf > 0) {
-          var maxSP = 5000,
-            te2 = 0;
-          for (var si2 = 0; si2 < segs.length && pulseArr.length < maxSP; si2++) {
-            var s2 = segs[si2],
-              sd2 = dia / s2.v,
-              ts2 = te2;
-            var ca2 = Math.cos(s2.a),
-              sa2 = Math.sin(s2.a);
-            var kf2 = Math.ceil(ts2 * prf),
-              klf2 = (te2 + sd2) * prf;
-            var kl2 = klf2 === Math.floor(klf2) ? Math.floor(klf2) - 1 : Math.floor(klf2);
-            for (var k2 = kf2; k2 <= kl2 && pulseArr.length < maxSP; k2++) {
-              var tk2 = k2 / prf,
-                fr2 = (tk2 - ts2) / sd2;
+          var maxSP2 = 5000,
+            ps_mm2 = vel / prf;
+          var nPL2 = Math.max(1, Math.floor(lineL / vel * prf));
+          var nLV = pat === "linear" ? 1 : nLines;
+          var totalEst2 = nPL2 * nLV;
+          var pStride2 = Math.max(1, Math.ceil(totalEst2 / maxSP2));
+          var tAcc2 = 0;
+          for (var li2 = 0; li2 < nLV && pulseArr.length < maxSP2; li2++) {
+            var ly2 = li2 * (pat === "linear" ? 0 : hatch);
+            var sDir2 = pat === "bidi" && li2 % 2 === 1 ? -1 : 1;
+            var xSt2 = sDir2 === 1 ? 0 : lineL;
+            for (var ki2 = 0; ki2 < nPL2 && pulseArr.length < maxSP2; ki2 += pStride2) {
               pulseArr.push({
-                t: tk2,
-                x: s2.x + fr2 * dia * ca2,
-                y: s2.y + fr2 * dia * sa2,
-                si: si2
+                t: tAcc2 + ki2 / prf,
+                x: xSt2 + sDir2 * ki2 * ps_mm2,
+                y: ly2,
+                si: li2
               });
             }
-            te2 += sd2;
+            tAcc2 += lineL / vel;
+            if (li2 < nLV - 1) tAcc2 += (pat === "linear" ? 0 : hatch) / (vel * 5);
           }
-          if (pulseArr.length >= maxSP && estPulses > maxSP) notes.push("Showing first " + maxSP + " of ~" + Math.round(estPulses) + " pulses");
+        }
+        // Capped viz segments
+        var vizSegs2 = [];
+        var MAX_VIZ2 = 5000,
+          nLV2 = pat === "linear" ? 1 : nLines;
+        var ppl2 = Math.ceil(lineL / dia);
+        var lStr2 = Math.max(1, Math.ceil(nLV2 * Math.min(ppl2, 200) / MAX_VIZ2));
+        var vStp2 = Math.max(1, Math.ceil(ppl2 / Math.min(200, Math.floor(MAX_VIZ2 / Math.ceil(nLV2 / lStr2)))));
+        for (var vl2 = 0; vl2 < nLV2 && vizSegs2.length < MAX_VIZ2; vl2 += lStr2) {
+          var vly2 = vl2 * (pat === "linear" ? 0 : hatch);
+          var vDir2 = pat === "bidi" && vl2 % 2 === 1 ? -1 : 1;
+          var vx02 = vDir2 === 1 ? 0 : lineL;
+          var nVP2 = Math.ceil(ppl2 / vStp2);
+          for (var vs2 = 0; vs2 <= nVP2 && vizSegs2.length < MAX_VIZ2; vs2++) {
+            vizSegs2.push({
+              x: vx02 + vDir2 * vs2 * vStp2 * dia,
+              y: vly2,
+              a: vDir2 === 1 ? 0 : Math.PI,
+              v: vel
+            });
+          }
         }
         if (notes.length > 0) setPerfNote(notes.join(". ") + ".");
         setRes({
           g: cr.g,
           st: cr.st,
           sf: sf,
-          segs: segs,
+          segs: vizSegs2,
           beam: beam,
           maxP: maxP,
           minV: minVel,
