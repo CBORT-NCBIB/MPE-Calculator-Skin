@@ -1404,7 +1404,10 @@ function ScanTab(p){
         {res?<div style={{fontSize:9,color:T.td,fontFamily:"monospace"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
       </div>
 
-      {vizTab==="fluence"?<div>
+      {/* All three panels are always mounted; only visibility toggles.
+           This prevents the canvas from being destroyed/recreated on tab switch,
+           which would lose its painted heatmap content. */}
+      <div style={{display:vizTab==="fluence"?"block":"none"}}>
         <div style={{fontSize:9,color:T.td,marginBottom:4}}>Total radiant exposure (J/cm{"\u00b2"}) accumulated at each skin surface point from all pulses across the entire scan.</div>
         {res?<div>
           <canvas ref={canRef} width={CW} height={CH} onMouseMove={onCanvasMove} onMouseLeave={function(){setHover(null)}} style={{borderRadius:6,border:"1px solid "+T.bd,width:"100%",height:"auto",cursor:"crosshair"}}/>
@@ -1417,21 +1420,21 @@ function ScanTab(p){
             {hover.rv<1e29?<span>Revisit: {numFmt(hover.rv,3)} s</span>:null}
           </div>:<div style={{fontSize:9,color:T.td,marginTop:4,textAlign:"center"}}>Hover over the map to query fluence at any point</div>}
         </div>:<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
-      </div>:null}
+      </div>
 
-      {vizTab==="timing"?<div>
+      <div style={{display:vizTab==="timing"?"block":"none"}}>
         <div style={{fontSize:9,color:T.td,marginBottom:4}}>Each vertical stem represents one laser pulse. Use the range slider below the chart to zoom into any time region. Scroll to zoom, drag to pan.</div>
         {res&&res.pulses&&res.pulses.length>0?
           <div ref={timRef} style={{width:"100%",height:380,borderRadius:6}}/>
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
-      </div>:null}
+      </div>
 
-      {vizTab==="spatial"?<div>
+      <div style={{display:vizTab==="spatial"?"block":"none"}}>
         <div style={{fontSize:9,color:T.td,marginBottom:4}}>Cumulative fluence profile along the first scan line showing individual pulse Gaussians and their sum. The dashed red line marks the MPE limit. Use the range slider to zoom.</div>
         {res&&res.pulses&&res.pulses.length>0?
           <div ref={spcRef} style={{width:"100%",height:420,borderRadius:6}}/>
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate fluence profile"}</div>}
-      </div>:null}
+      </div>
     </div>
 
     {/* ── Performance Note ── */}

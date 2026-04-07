@@ -7385,7 +7385,11 @@ function ScanTab(p) {
       color: T.td,
       fontFamily: "monospace"
     }
-  }, "Grid: ", res.g.nx, "\u00d7", res.g.ny, " ", "\u00b7", " Pulses: ", res.pulses ? res.pulses.length : res.st.tp || 0) : null), vizTab === "fluence" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "Grid: ", res.g.nx, "\u00d7", res.g.ny, " ", "\u00b7", " Pulses: ", res.pulses ? res.pulses.length : res.st.tp || 0) : null), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: vizTab === "fluence" ? "block" : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: T.td,
@@ -7440,7 +7444,11 @@ function ScanTab(p) {
       color: T.td,
       fontSize: 12
     }
-  }, "Click Calculate to generate fluence map")) : null, vizTab === "timing" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, "Click Calculate to generate fluence map")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: vizTab === "timing" ? "block" : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: T.td,
@@ -7464,7 +7472,11 @@ function ScanTab(p) {
       color: T.td,
       fontSize: 12
     }
-  }, res ? "CW mode \u2014 no discrete pulses" : "Click Calculate to generate timing diagram")) : null, vizTab === "spatial" ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+  }, res ? "CW mode \u2014 no discrete pulses" : "Click Calculate to generate timing diagram")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: vizTab === "spatial" ? "block" : "none"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
       color: T.td,
@@ -7488,7 +7500,7 @@ function ScanTab(p) {
       color: T.td,
       fontSize: 12
     }
-  }, res ? "CW mode \u2014 no discrete pulses" : "Click Calculate to generate fluence profile")) : null), perfNote ? /*#__PURE__*/React.createElement("div", {
+  }, res ? "CW mode \u2014 no discrete pulses" : "Click Calculate to generate fluence profile"))), perfNote ? /*#__PURE__*/React.createElement("div", {
     style: {
       padding: "8px 12px",
       borderRadius: 4,
