@@ -2,7 +2,7 @@
 
 This directory contains JSON data files defining laser skin MPE values for
 different safety standards. The calculation engine (`engine.js` and
-`src/laser_mpe/engine.py`) reads these files at runtime — **no code changes
+`src/laser_mpe/engine.py`) reads these files at runtime. **No code changes
 are needed to switch standards**.
 
 ## Currently included
