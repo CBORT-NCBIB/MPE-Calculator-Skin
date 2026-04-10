@@ -229,7 +229,7 @@ An interactive browser-based calculator is available in [`web/`](web/). Open `we
 - [x] Repetitive-pulse Rules 1 and 2
 - [x] T_max, limiting apertures, large area correction, UV de-rating
 - [x] Unit conversions
-- [x] 329-check test suite
+- [x] Test scripts
 - [x] Interactive web calculator
 - [ ] JOSS paper submission
 
