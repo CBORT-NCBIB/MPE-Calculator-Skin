@@ -20,7 +20,7 @@ var _validationErrors = [];
 // ═══════════════════════════════════════════════════════════════
 // Schema validation — run on load to catch malformed data files
 // ═══════════════════════════════════════════════════════════════
-var VALID_FORMULAS = ["constant","power","linear","ca_constant","ca_power","ca_linear","discrete"];
+var VALID_FORMULAS = ["constant","power","linear","ca_constant","ca_power","ca_linear","discrete","power_offset"];
 
 function _validateStandard(data) {
   var errors = [];
@@ -69,7 +69,8 @@ function _validateStandard(data) {
           if (!r.formula) errors.push("Band '" + band.name + "' region " + ri + ": missing formula");
           else if (VALID_FORMULAS.indexOf(r.formula) === -1) errors.push("Band '" + band.name + "' region " + ri + ": unknown formula '" + r.formula + "'");
           if (r.formula && r.formula !== "discrete" && r.a === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'a'");
-          if (r.formula && (r.formula === "power" || r.formula === "ca_power") && r.b === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'b'");
+          if (r.formula && (r.formula === "power" || r.formula === "ca_power" || r.formula === "power_offset") && r.b === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'b'");
+          if (r.formula && r.formula === "power_offset" && r.c === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula 'power_offset' requires 'c'");
         }
       }
     }
@@ -123,10 +124,12 @@ function CA(wl_nm) {
 
 // ═══════════════════════════════════════════════════════════════
 // UV discrete step lookup — evaluated from JSON data
+// Supports multiple lookup tables via the tableName parameter.
 // ═══════════════════════════════════════════════════════════════
-function uvDiscreteLookup(wl_nm) {
-  if (!_std || !_std.uv_discrete_steps) return NaN;
-  var ds = _std.uv_discrete_steps;
+function uvDiscreteLookup(wl_nm, tableName) {
+  var key = tableName || "uv_discrete_steps";
+  if (!_std || !_std[key]) return NaN;
+  var ds = _std[key];
   var steps = ds.steps;
   for (var i = 0; i < steps.length; i++) {
     if (wl_nm < steps[i].wl_upper_nm) return steps[i].H_J_cm2;
@@ -139,13 +142,14 @@ function uvDiscreteLookup(wl_nm) {
 // ═══════════════════════════════════════════════════════════════
 function evalFormula(region, wl_nm, t) {
   var f = region.formula;
-  if (f === "constant")     return region.a;
-  if (f === "power")        return region.a * Math.pow(t, region.b);
-  if (f === "linear")       return region.a * t;
-  if (f === "ca_constant")  return region.a * CA(wl_nm);
-  if (f === "ca_power")     return region.a * CA(wl_nm) * Math.pow(t, region.b);
-  if (f === "ca_linear")    return region.a * CA(wl_nm) * t;
-  if (f === "discrete")     return uvDiscreteLookup(wl_nm);
+  if (f === "constant")      return region.a;
+  if (f === "power")         return region.a * Math.pow(t, region.b);
+  if (f === "linear")        return region.a * t;
+  if (f === "ca_constant")   return region.a * CA(wl_nm);
+  if (f === "ca_power")      return region.a * CA(wl_nm) * Math.pow(t, region.b);
+  if (f === "ca_linear")     return region.a * CA(wl_nm) * t;
+  if (f === "discrete")      return uvDiscreteLookup(wl_nm, region.lookup);
+  if (f === "power_offset")  return region.a * Math.pow(t, region.b) + region.c;
   return NaN;
 }
 

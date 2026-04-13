@@ -42,7 +42,7 @@ _DEFAULT_STANDARD = os.path.join(
 VALID_FORMULAS = frozenset([
     "constant", "power", "linear",
     "ca_constant", "ca_power", "ca_linear",
-    "discrete"
+    "discrete", "power_offset"
 ])
 
 
@@ -208,9 +208,16 @@ def ca(wl_nm):
 # UV discrete step lookup
 # ═══════════════════════════════════════════════════════════════
 
-def _uv_discrete_lookup(wl_nm):
-    """Look up UV photochemical MPE from the discrete step table."""
-    ds = _std.get("uv_discrete_steps")
+def _uv_discrete_lookup(wl_nm, table_name=None):
+    """Look up UV photochemical MPE from a discrete step table.
+
+    Args:
+        wl_nm: Wavelength in nm.
+        table_name: Key in the standard dict for the lookup table.
+                    Defaults to 'uv_discrete_steps'.
+    """
+    key = table_name or "uv_discrete_steps"
+    ds = _std.get(key)
     if ds is None:
         return float('nan')
     for step in ds["steps"]:
@@ -239,7 +246,9 @@ def _eval_formula(region, wl_nm, t):
     if f == "ca_linear":
         return region["a"] * ca(wl_nm) * t
     if f == "discrete":
-        return _uv_discrete_lookup(wl_nm)
+        return _uv_discrete_lookup(wl_nm, region.get("lookup"))
+    if f == "power_offset":
+        return region["a"] * (t ** region["b"]) + region["c"]
     return float('nan')
 
 
