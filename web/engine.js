@@ -1839,9 +1839,9 @@ function maxPermissiblePower(beam, segments, T_s, ppd) {
 
 // ── End scanning engine ─────────────────────────────────────────
 // ── Environment detection and exports ───────────────────────────
-// Node.js: load JSON and export module. Browser: set window.MPEEngine.
+// Node.js: load JSON and export module. Browser/Worker: set _global.MPEEngine.
 // build.py strips the Node.js block (BUILD_STRIP_START → BUILD_STRIP_END)
-// so the browser build only contains the window.MPEEngine assignment.
+// so the browser build only contains the _global.MPEEngine assignment.
 
 // BUILD_STRIP_START
 if (typeof module !== "undefined" && module.exports && typeof require === "function") {
