@@ -1,6 +1,6 @@
-# API Reference — Skin MPE
+# API Reference for Skin MPE
 
-Complete reference for the `laser_mpe` skin MPE package.
+Reference for the `laser_mpe` skin MPE package.
 
 ---
 
