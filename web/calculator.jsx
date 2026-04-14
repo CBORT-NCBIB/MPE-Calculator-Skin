@@ -400,15 +400,15 @@ function MPETab(p){
         {needsBeamDia?<div style={{padding:"10px 14px",marginBottom:0,borderRadius:"6px 6px 0 0",background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:11,color:"#e65100",lineHeight:1.7}}>
           <strong>{"\u26a0"} Large-area correction required ({STD_NAME}):</strong> One or more wavelength/duration combinations fall within the range where the {STD_NAME} large-area skin correction applies. <strong>Beam diameter input is required</strong> below to compute the correct MPE. The effective MPE may be reduced for large beam cross-sections.
         </div>:null}
-        <button onClick={function(){if(!needsBeamDia)setBeamOpen(!beamOpen);}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"transparent",border:"none",cursor:needsBeamDia?"default":"pointer",color:T.tm,textAlign:"left"}}>
+        <button onClick={function(){if(needsBeamDia){setBeamOpen(true);}else{setBeamOpen(!beamOpen);}}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"transparent",border:"none",cursor:needsBeamDia?"default":"pointer",color:T.tm,textAlign:"left"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontSize:13,fontWeight:600,color:beamOpen?T.ac:T.tm}}>{beamOpen?"\u25BC":"\u25B6"}</span>
+            <span style={{fontSize:13,fontWeight:600,color:(beamOpen||needsBeamDia)?T.ac:T.tm}}>{(beamOpen||needsBeamDia)?"\u25BC":"\u25B6"}</span>
             <span style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:beamOpen?T.ac:T.tm}}>Beam Safety Evaluation</span>
             {!beamOpen?<span style={{fontSize:10,color:T.td,fontWeight:400}}>{"\u2014"} Evaluate max permissible pulse energy for a specific beam diameter</span>:null}
             {!beamOpen?<span style={{fontSize:9,fontFamily:"monospace",color:T.tm,background:T.bgI,padding:"2px 8px",borderRadius:3,border:"1px solid "+T.bd}}>Limiting aperture: {getAperture(lasers[0]?lasers[0].wl:532).toFixed(1)} mm (skin, {STD_NAME} Table 8)</span>:null}
           </div>
         </button>
-        {beamOpen?(
+        {(beamOpen||needsBeamDia)?(
           <div style={{padding:"0 14px 14px"}}>
             {/* Convention warning — reads from standard JSON */}
             {(function(){
