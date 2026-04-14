@@ -33,9 +33,21 @@ else:
     sys.exit(1)
 
 jsx_path = os.path.join(web_dir, "calculator.jsx")
-json_path = os.path.join(web_dir, "standards", "icnirp_2013.json")
 engine_path = os.path.join(web_dir, "engine.js")
 out_path = os.path.join(web_dir, "index.html")
+
+# Read standard path from config.js (allows switching standards without editing build.py)
+config_path = os.path.join(web_dir, "config.js")
+std_rel_path = "./standards/icnirp_2013.json"  # fallback if config.js missing
+if os.path.exists(config_path):
+    import re
+    with open(config_path, "r") as f:
+        config_text = f.read()
+    m = re.search(r'STANDARD_PATH\s*=\s*["\']([^"\']+)["\']', config_text)
+    if m:
+        std_rel_path = m.group(1)
+json_path = os.path.join(web_dir, std_rel_path.lstrip("./"))
+std_filename = os.path.basename(json_path)
 
 # ── Read sources ──
 with open(jsx_path, "r") as f:
@@ -192,7 +204,7 @@ html = f'''<!DOCTYPE html>
 </script>
 
 <script>
-// Standard data (injected from ./standards/icnirp_2013.json)
+// Standard data (injected from {std_rel_path} via config.js)
 var __STD_DATA__ = {std_json};
 // Initialize the engine with the standard data
 if (typeof MPEEngine !== "undefined") MPEEngine.loadStandard(__STD_DATA__);
@@ -225,7 +237,7 @@ with open(out_path, "w") as f:
 
 line_count = html.count("\n") + 1
 print(f"Built {out_path}")
-print(f"  Sources: calculator.jsx ({len(lines)} lines), engine.js ({len(engine_js.splitlines())} lines), icnirp_2013.json")
+print(f"  Sources: calculator.jsx ({len(lines)} lines), engine.js ({len(engine_js.splitlines())} lines), {std_filename}")
 print(f"  Output:  index.html ({line_count} lines)")
 print(f"  JSX mode: {mode_label}")
 print(f"  Transforms: stripped imports, Tooltip→RTooltip, stripped export default")

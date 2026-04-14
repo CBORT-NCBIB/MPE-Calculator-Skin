@@ -36,9 +36,24 @@ var _std = (typeof __STD_DATA__ !== "undefined") ? __STD_DATA__ : {};
 /* Core MPE functions */
 var skinMPE = _E.skinMPE;
 var CA = _E.CA;
+var isInCARange = _E.isInCARange;
+var isIrrPrimary = _E.isIrrPrimary;
+var getLargeAreaCorrection = _E.getLargeAreaCorrection;
+var largeAreaIrradianceLimit = _E.largeAreaIrradianceLimit;
+var skinMPE_area = _E.skinMPE_area;
 function rpCalc(wl,tau,prf,T){
   var r=_E.repPulse(wl,tau,prf,T);
   return{r1:r.rule1,r2:r.rule2,H:r.H,N:r.N,bd:r.binding};
+}
+function rpCalcArea(wl,tau,prf,T,area_cm2){
+  var r=_E.repPulse_area(wl,tau,prf,T,area_cm2);
+  return{r1:r.rule1,r2:r.rule2,H:r.H,N:r.N,bd:r.binding};
+}
+/** Check if a (wl, dur) pair falls in the large-area correction range.
+ *  Reads applicability conditions from the loaded standard JSON. */
+function isInLargeAreaRange(wl,dur){
+  var lac=getLargeAreaCorrection(wl,dur);
+  return lac!==null;
 }
 function bnd(wl){ return _E.bandName(wl); }
 
@@ -93,11 +108,57 @@ function supStr(n){var s=String(n),r="";for(var i=0;i<s.length;i++){r+=SUPS[s[i]
 function numFmt(v,p){if(!isFinite(v))return"\u2014";if(v===0)return"0";var a=Math.abs(v),pr=p||4;if(a>=0.01&&a<1e4)return v.toPrecision(pr);var exp=Math.floor(Math.log10(a));var man=v/Math.pow(10,exp);return man.toFixed(pr-1)+"\u00d710"+supStr(exp);}
 function logTick(v){if(v==null||!isFinite(v)||v<=0)return"";var lg=Math.log10(v);if(Math.abs(lg-Math.round(lg))<0.01){var exp=Math.round(lg);return"10"+supStr(exp);}var exp2=Math.floor(lg);var man=v/Math.pow(10,exp2);return man.toPrecision(2)+"\u00d710"+supStr(exp2);}
 function ft(t){if(t===undefined||t===null||isNaN(t))return"\u2014";if(t<1e-9)return(t*1e12).toPrecision(3)+" ps";if(t<1e-6)return(t*1e9).toPrecision(3)+" ns";if(t<1e-3)return(t*1e6).toPrecision(3)+" \u00b5s";if(t<1)return(t*1e3).toPrecision(3)+" ms";return t.toPrecision(3)+" s";}
-var STD_NAME=_std.standard.name;
-var STD_REF=_std.standard.reference;
-var STD_TABLES=_std.standard.tables_used;
+var STD_NAME="",STD_REF="",STD_TABLES="";
+var WL_PLOT_MIN=180,WL_PLOT_MAX=3000;
+var WLTICKS=[200,400,700,1000,1400,2000,3000];
+var WL_SAMPLE_SPANS=[[180,400,3],[400,700,4],[700,1400,8],[1400,3000,15]];
 
-/* ═══════ UNIT CONVERSION ═══════ */
+/** Recompute all module-level standard-derived variables from current _std.
+ *  Called at load time and when a user uploads a new standard JSON. */
+function _recomputeStdVars(){
+  if(!_std||!_std.standard)return;
+  STD_NAME=_std.standard.name||"";
+  STD_REF=_std.standard.reference||"";
+  STD_TABLES=_std.standard.tables_used||"";
+  // Plot domain
+  WL_PLOT_MIN=(_std.standard.wl_range_nm)?_std.standard.wl_range_nm[0]:180;
+  WL_PLOT_MAX=(function(){
+    if(!_std.display_bands)return 3000;
+    var maxBound=0;
+    for(var i=0;i<_std.display_bands.length;i++){
+      var e2=_std.display_bands[i].wl_end_nm;
+      if(e2<10000&&e2>maxBound)maxBound=e2;
+    }
+    if(maxBound<=0)maxBound=_std.standard.wl_range_nm?_std.standard.wl_range_nm[1]:3000;
+    return Math.min(Math.max(maxBound*2,3000),_std.standard.wl_range_nm?_std.standard.wl_range_nm[1]:3000);
+  })();
+  // Wavelength ticks
+  WLTICKS=(function(){
+    if(!_std.display_bands)return[200,400,700,1000,1400,2000,3000];
+    var tks={};tks[WL_PLOT_MIN]=1;
+    for(var i=0;i<_std.display_bands.length;i++){
+      var bs=_std.display_bands[i].wl_start_nm,be2=_std.display_bands[i].wl_end_nm;
+      if(bs<=WL_PLOT_MAX)tks[bs]=1;if(be2<=WL_PLOT_MAX)tks[be2]=1;
+    }
+    var rt=[200,500,1000,2000,3000,5000,10000];
+    for(var j=0;j<rt.length;j++){if(rt[j]>=WL_PLOT_MIN&&rt[j]<=WL_PLOT_MAX)tks[rt[j]]=1;}
+    return Object.keys(tks).map(Number).sort(function(a,b){return a-b;});
+  })();
+  // Sampling spans
+  WL_SAMPLE_SPANS=(function(){
+    if(!_std.display_bands)return[[180,400,3],[400,700,4],[700,1400,8],[1400,3000,15]];
+    var spans=[];
+    for(var i=0;i<_std.display_bands.length;i++){
+      var b=_std.display_bands[i];
+      var lo=b.wl_start_nm,hi=Math.min(b.wl_end_nm,WL_PLOT_MAX);
+      if(lo>=hi)continue;
+      var step=Math.max(1,Math.round((hi-lo)/100));
+      spans.push([lo,hi,step]);
+    }
+    return spans;
+  })();
+}
+_recomputeStdVars(); // initial computation from build-time standard
 var FLUENCE_UNITS=[
   {id:"mJ/cm\u00b2", label:"mJ/cm\u00b2", mult:1e3},
   {id:"J/cm\u00b2",  label:"J/cm\u00b2",  mult:1},
@@ -159,7 +220,6 @@ var beamEval = _E.beamEval;
 
 var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#B8860B","#000000"];
 var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
-var WLTICKS=[200,400,700,1000,1400,2000,3000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
 
 var TH={
@@ -171,7 +231,7 @@ var uid=1;
 function mkL(wl){return{id:uid++,wl:wl,wlStr:String(wl),wlU:"nm",ds:"10",dur:1e-8,dU:"ns",rp:false,prf:10,prfStr:"10",prfU:"Hz",tT:1,tTStr:"1",tTU:"s",show:true,fU:"mJ/cm\u00b2",eU:"W/cm\u00b2"};}
 function pDur(s){var v=parseFloat(s);return(isFinite(v)&&v>0)?v:null;}
 function uMult(arr,uid2){for(var i=0;i<arr.length;i++){if(arr[i].id===uid2)return arr[i];}return arr[0];}
-function computeR(L){var h=skinMPE(L.wl,L.dur);var rp=L.rp?rpCalc(L.wl,L.dur,L.prf,L.tT):null;var effH=rp?rp.H:h;var irr=isFinite(effH)&&L.dur>0?effH/L.dur:NaN;return{wl:L.wl,dur:L.dur,h:h,rp:rp,effH:effH,irr:irr,ca:CA(L.wl),band:bnd(L.wl),rule:rp?rp.bd:"Rule 1"};}
+function computeR(L,area_cm2){var h=skinMPE(L.wl,L.dur);var h_area=(area_cm2>0)?skinMPE_area(L.wl,L.dur,area_cm2):h;var rp=L.rp?rpCalc(L.wl,L.dur,L.prf,L.tT):null;var rp_area=(L.rp&&area_cm2>0)?rpCalcArea(L.wl,L.dur,L.prf,L.tT,area_cm2):rp;var effH=rp_area?rp_area.H:h_area;var irr=isFinite(effH)&&L.dur>0?effH/L.dur:NaN;var lacApplied=(area_cm2>0&&h_area<h)||(rp_area&&rp&&rp_area.H<rp.H);return{wl:L.wl,dur:L.dur,h:h,h_area:h_area,rp:rp_area||rp,effH:effH,irr:irr,ca:CA(L.wl),band:bnd(L.wl),rule:rp_area?rp_area.bd:(rp?rp.bd:"Rule 1"),lacApplied:!!lacApplied,inLacRange:isInLargeAreaRange(L.wl,L.dur)};}
 
 function dlSVG(ref,fn,sm){try{var svg=ref.current.querySelector("svg");if(!svg)return;var c=svg.cloneNode(true);c.setAttribute("xmlns","http://www.w3.org/2000/svg");c.setAttribute("xmlns:xlink","http://www.w3.org/1999/xlink");var u="data:image/svg+xml;charset=utf-8,"+encodeURIComponent(new XMLSerializer().serializeToString(c));var a=document.createElement("a");a.href=u;a.download=fn;a.style.display="none";ref.current.appendChild(a);a.click();ref.current.removeChild(a);sm("Downloaded!");setTimeout(function(){sm("")},2e3);}catch(e){sm("Failed");}}
 function dlCSV(d,cols,fn,sm){try{var lines=[cols.join(",")];for(var i=0;i<d.length;i++){var row=[];for(var j=0;j<cols.length;j++){var v=d[i][cols[j]];row.push(v===undefined||v===null?"":String(v));}lines.push(row.join(","));}var u="data:text/csv;charset=utf-8,"+encodeURIComponent(lines.join("\n"));var a=document.createElement("a");a.href=u;a.download=fn;a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);sm("CSV downloaded!");setTimeout(function(){sm("")},2e3);}catch(e){sm("Failed");}}
@@ -198,6 +258,7 @@ function MPETab(p){
   var _aau=useState("mm\u00b2"),aDispUnit=_aau[0],setADispUnit=_aau[1];
   var _mfu=useState("mJ/cm\u00b2"),mpeDispUnit=_mfu[0],setMpeDispUnit=_mfu[1];
   var _bopen=useState(false),beamOpen=_bopen[0],setBeamOpen=_bopen[1];
+  useEffect(function(){if(needsBeamDia)setBeamOpen(true);},[needsBeamDia]);
   var _bdr=useState(false),beamDirty=_bdr[0],setBeamDirty=_bdr[1];
   var _bsel=useState(null),beamSel=_bsel[0],setBeamSel=_bsel[1]; /* null = all selected */
   var _sdU=useState("ns"),sumDurU=_sdU[0],setSumDurU=_sdU[1];
@@ -227,25 +288,27 @@ function MPETab(p){
   function rmL(id){if(lasers.length<=1)return;setLasers(lasers.filter(function(L){return L.id!==id}));setDirty(true);}
   function toggleShow(id){setLasers(lasers.map(function(L){if(L.id!==id)return L;var n={id:L.id,wl:L.wl,wlStr:L.wlStr,ds:L.ds,dur:L.dur,rp:L.rp,prf:L.prf,prfStr:L.prfStr,tT:L.tT,tTStr:L.tTStr,show:!L.show,fU:L.fU,eU:L.eU};return n;}));}
   var _pfu=useState("mJ/cm\u00b2"),plotFU=_pfu[0],setPlotFU=_pfu[1];
-  var results=useMemo(function(){return lasers.map(computeR);},[cv,lasers]);
+  var beamArea_cm2=useMemo(function(){if(!isFinite(beamDia)||beamDia<=0)return 0;var r_cm=beamDia/20;return Math.PI*r_cm*r_cm;},[beamDia]);
+  var needsBeamDia=useMemo(function(){for(var i=0;i<lasers.length;i++){if(isInLargeAreaRange(lasers[i].wl,lasers[i].dur))return true;}return false;},[cv,lasers]);
+  var results=useMemo(function(){var area=(needsBeamDia&&beamArea_cm2>0)?beamArea_cm2:0;return lasers.map(function(L){return computeR(L,area);});},[cv,lasers,needsBeamDia,beamArea_cm2]);
   var plotLasers=lasers.filter(function(L){return L.show});
   var pfm=fluMult(plotFU);
-  var wld=useMemo(function(){var durs=[];plotLasers.forEach(function(L){if(durs.indexOf(L.dur)===-1)durs.push(L.dur);});var sp=[[180,400,3],[400,700,4],[700,1400,8],[1400,3000,15]];var pp=[];for(var si2=0;si2<sp.length;si2++)for(var w=sp[si2][0];w<=sp[si2][1];w+=sp[si2][2]){var row={wl:w},any=false;for(var di=0;di<durs.length;di++){var h=skinMPE(w,durs[di]);if(isFinite(h)&&h>0){row["d"+di]=h*pfm;any=true;}}if(any)pp.push(row);}return{d:pp,durs:durs};},[cv,plotLasers,pfm]);
+  var wld=useMemo(function(){var durs=[];plotLasers.forEach(function(L){if(durs.indexOf(L.dur)===-1)durs.push(L.dur);});var sp=WL_SAMPLE_SPANS;var pp=[];for(var si2=0;si2<sp.length;si2++)for(var w=sp[si2][0];w<=sp[si2][1];w+=sp[si2][2]){var row={wl:w},any=false;for(var di=0;di<durs.length;di++){var h=skinMPE(w,durs[di]);if(isFinite(h)&&h>0){row["d"+di]=h*pfm;any=true;}}if(any)pp.push(row);}return{d:pp,durs:durs};},[cv,plotLasers,pfm]);
   var drd=useMemo(function(){var ws=[];plotLasers.forEach(function(L){if(ws.indexOf(L.wl)===-1)ws.push(L.wl);});var a=[];for(var e=-9;e<=4.5;e+=.05){var t=Math.pow(10,e),r={t:t},any=false;for(var j=0;j<ws.length;j++){var h=skinMPE(ws[j],t);if(isFinite(h)&&h>0){r["w"+ws[j]]=h*pfm;any=true;}}if(any)a.push(r);}return{d:a,ws:ws};},[cv,plotLasers,pfm]);
 
-  function doExport(){try{var ths2="background:#f1f5f9;padding:8px 12px;text-align:left;border-bottom:2px solid #d4d4d4;font-size:11px";var tds2="padding:6px 12px;border-bottom:1px solid #e5e5e5;font-size:13px";var rows="";for(var i=0;i<results.length;i++){var r=results[i],L=lasers[i];rows+='<tr><td style="'+tds2+'">'+r.wl+'</td><td style="'+tds2+'">'+durInUnit(r.dur,sumDurU)+'</td><td style="'+tds2+'">'+r.band+'</td><td style="'+tds2+'">'+(r.wl>=400&&r.wl<1400?r.ca.toFixed(3):"\u2014")+'</td><td style="'+tds2+';font-weight:700">'+convFN(r.effH,sumFluU)+'</td><td style="'+tds2+'">'+convEN(r.irr,sumIrrU)+'</td><td style="'+tds2+'">'+(L.rp?L.prf:"\u2014")+'</td><td style="'+tds2+'">'+(r.rp?Math.round(r.rp.N):"1")+'</td><td style="'+tds2+'">'+r.rule+'</td></tr>';}var html='<!DOCTYPE html><html><head><title>MPE Report</title><style>body{font-family:Helvetica,sans-serif;max-width:960px;margin:40px auto;color:#171717;line-height:1.5;padding:0 20px}table{border-collapse:collapse;width:100%;margin:16px 0}th{'+ths2+'}h1{font-size:22px}h2{font-size:14px;color:#525252;margin:24px 0 8px}</style></head><body><h1>Laser Skin MPE Report</h1><p style="color:#737373;font-size:12px">'+STD_NAME+' \u2014 '+new Date().toLocaleString()+'</p><h2>Results</h2><table><thead><tr><th style="'+ths2+'">Wavelength (nm)</th><th style="'+ths2+'">Duration ('+sumDurU+')</th><th style="'+ths2+'">Band</th><th style="'+ths2+'">C<sub>A</sub></th><th style="'+ths2+'">Fluence, H ('+sumFluU+')</th><th style="'+ths2+'">Irradiance, E ('+sumIrrU+')</th><th style="'+ths2+'">Repetition Rate (Hz)</th><th style="'+ths2+'">Pulses</th><th style="'+ths2+'">Rule</th></tr></thead><tbody>'+rows+'</tbody></table><p style="margin-top:32px;font-size:11px;color:#a3a3a3;border-top:1px solid #e5e5e5;padding-top:12px">'+STD_NAME+' \u2014 For research and educational purposes only. Not a certified safety instrument. Skin MPE only \u2014 ocular limits not evaluated. Verify all values against the applicable standard with a qualified Laser Safety Officer.</p></body></html>';var u="data:text/html;charset=utf-8,"+encodeURIComponent(html);var a=document.createElement("a");a.href=u;a.download="mpe-report.html";a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);setMsg("Report downloaded!");setTimeout(function(){setMsg("")},2e3);}catch(e){setMsg("Export failed");}}
+  function doExport(){try{var ths2="background:#f1f5f9;padding:8px 12px;text-align:left;border-bottom:2px solid #d4d4d4;font-size:11px";var tds2="padding:6px 12px;border-bottom:1px solid #e5e5e5;font-size:13px";var rows="";for(var i=0;i<results.length;i++){var r=results[i],L=lasers[i];rows+='<tr><td style="'+tds2+'">'+r.wl+'</td><td style="'+tds2+'">'+durInUnit(r.dur,sumDurU)+'</td><td style="'+tds2+'">'+r.band+'</td><td style="'+tds2+'">'+(isInCARange(r.wl)?r.ca.toFixed(3):"\u2014")+'</td><td style="'+tds2+';font-weight:700">'+convFN(r.effH,sumFluU)+'</td><td style="'+tds2+'">'+convEN(r.irr,sumIrrU)+'</td><td style="'+tds2+'">'+(L.rp?L.prf:"\u2014")+'</td><td style="'+tds2+'">'+(r.rp?Math.round(r.rp.N):"1")+'</td><td style="'+tds2+'">'+r.rule+'</td></tr>';}var html='<!DOCTYPE html><html><head><title>MPE Report</title><style>body{font-family:Helvetica,sans-serif;max-width:960px;margin:40px auto;color:#171717;line-height:1.5;padding:0 20px}table{border-collapse:collapse;width:100%;margin:16px 0}th{'+ths2+'}h1{font-size:22px}h2{font-size:14px;color:#525252;margin:24px 0 8px}</style></head><body><h1>Laser Skin MPE Report</h1><p style="color:#737373;font-size:12px">'+STD_NAME+' \u2014 '+new Date().toLocaleString()+'</p><h2>Results</h2><table><thead><tr><th style="'+ths2+'">Wavelength (nm)</th><th style="'+ths2+'">Duration ('+sumDurU+')</th><th style="'+ths2+'">Band</th><th style="'+ths2+'">C<sub>A</sub></th><th style="'+ths2+'">Fluence, H ('+sumFluU+')</th><th style="'+ths2+'">Irradiance, E ('+sumIrrU+')</th><th style="'+ths2+'">Repetition Rate (Hz)</th><th style="'+ths2+'">Pulses</th><th style="'+ths2+'">Rule</th></tr></thead><tbody>'+rows+'</tbody></table><p style="margin-top:32px;font-size:11px;color:#a3a3a3;border-top:1px solid #e5e5e5;padding-top:12px">'+STD_NAME+' \u2014 For research and educational purposes only. Not a certified safety instrument. Skin MPE only \u2014 ocular limits not evaluated. Verify all values against the applicable standard with a qualified Laser Safety Officer.</p></body></html>';var u="data:text/html;charset=utf-8,"+encodeURIComponent(html);var a=document.createElement("a");a.href=u;a.download="mpe-report.html";a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);setMsg("Report downloaded!");setTimeout(function(){setMsg("")},2e3);}catch(e){setMsg("Export failed");}}
 
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {lasers.map(function(L,idx){var r=results[idx];var col=WC[idx%WC.length];return (
         <div key={L.id} style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",borderBottom:"1px solid "+T.bd,background:T.bg}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:5,background:col,flexShrink:0}}/><span style={{fontSize:14,fontWeight:700}}>{L.wl} nm</span><span style={{fontSize:11,color:T.td}}>{r.band}</span>{r.wl>=400&&r.wl<1400?<span style={{fontSize:10,color:T.td,fontFamily:"monospace"}}>C{"\u2090"} = {r.ca.toFixed(3)}</span>:null}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:5,background:col,flexShrink:0}}/><span style={{fontSize:14,fontWeight:700}}>{L.wl} nm</span><span style={{fontSize:11,color:T.td}}>{r.band}</span>{isInCARange(r.wl)?<span style={{fontSize:10,color:T.td,fontFamily:"monospace"}}>C{"\u2090"} = {r.ca.toFixed(3)}</span>:null}</div>
             {lasers.length>1?<button onClick={function(){rmL(L.id)}} style={{background:"none",border:"none",color:T.td,cursor:"pointer",fontSize:15}}>{"\u00d7"}</button>:null}
           </div>
           <div style={{padding:"12px 14px"}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div><label style={lb}>Wavelength</label><div style={{display:"flex",gap:4}}><input type="text" value={L.wlStr} onChange={function(e){upL(L.id,"wlStr",e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.wlU} onChange={function(e){upL(L.id,"wlU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{L.wl<400?"UV 180\u2013400 nm":L.wl<700?"Visible 400\u2013700 nm":L.wl<1400?"Near-IR 700\u20131400 nm":"Far-IR 1400+ nm"}</div></div>
+              <div><label style={lb}>Wavelength</label><div style={{display:"flex",gap:4}}><input type="text" value={L.wlStr} onChange={function(e){upL(L.id,"wlStr",e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.wlU} onChange={function(e){upL(L.id,"wlU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{(function(){if(!_std||!_std.display_bands)return bnd(L.wl);for(var bi=0;bi<_std.display_bands.length;bi++){var b=_std.display_bands[bi];if(L.wl>=b.wl_start_nm&&L.wl<b.wl_end_nm)return b.name+" "+b.wl_start_nm+"\u2013"+(b.wl_end_nm>=100000?"":b.wl_end_nm+" nm");if(bi===_std.display_bands.length-1&&L.wl>=b.wl_start_nm)return b.name+" "+b.wl_start_nm+"+ nm";}return bnd(L.wl);})()}</div></div>
               <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={L.ds} onChange={function(e){upL(L.id,"ds",e.target.value)}} placeholder="e.g. 10" style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.dU} onChange={function(e){upL(L.id,"dU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>= {ft(L.dur)}</div></div>
             </div>
             <div style={{marginTop:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
@@ -256,9 +319,9 @@ function MPETab(p){
               {/* Task 7: Section 1 — MPE (total exposure limit) */}
               {(function(){
                 // Task 6: determine if irradiance is the primary standard quantity
-                // ICNIRP Table 7: for t ≥ 10s at λ ≥ 400nm, the limit is expressed as irradiance
+                // Irradiance-primary check: reads from supplementary.irradiance_primary in the standard JSON
                 var evalDur=L.rp?L.tT:L.dur;
-                var irrPrimary=(r.wl>=400&&evalDur>=10);
+                var irrPrimary=isIrrPrimary(r.wl,evalDur);
                 var totalH=L.rp?skinMPE(r.wl,L.tT):r.h;
                 var totalE=isFinite(totalH)&&evalDur>0?totalH/evalDur:NaN;
                 var durLabel=L.rp?"T = "+ft(L.tT):"\u03c4 = "+ft(L.dur);
@@ -298,6 +361,8 @@ function MPETab(p){
                       <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Fluence (H)</div>
                     </div>
                     <div style={{fontSize:16,fontWeight:700,fontFamily:"monospace",color:T.ac}}>{convF(r.effH,L.fU)}</div>
+                    {r.lacApplied?<div style={{fontSize:8,color:"#e65100",fontWeight:600,marginTop:1}}>{"\u26a0"} Large-area corrected</div>:null}
+                    {r.inLacRange&&!r.lacApplied?<div style={{fontSize:8,color:"#e65100",marginTop:1}}>Enter beam diameter below</div>:null}
                     <div style={{fontSize:9,color:T.a2,marginTop:1}}>Governing per-pulse limit</div>
                   </div>
                   <div>
@@ -332,7 +397,10 @@ function MPETab(p){
       </div>
       {/* ═══════ BEAM SAFETY EVALUATION (collapsible) ═══════ */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
-        <button onClick={function(){setBeamOpen(!beamOpen)}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"transparent",border:"none",cursor:"pointer",color:T.tm,textAlign:"left"}}>
+        {needsBeamDia?<div style={{padding:"10px 14px",marginBottom:0,borderRadius:"6px 6px 0 0",background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:11,color:"#e65100",lineHeight:1.7}}>
+          <strong>{"\u26a0"} Large-area correction required ({STD_NAME}):</strong> One or more wavelength/duration combinations fall within the range where the {STD_NAME} large-area skin correction applies. <strong>Beam diameter input is required</strong> below to compute the correct MPE. The effective MPE may be reduced for large beam cross-sections.
+        </div>:null}
+        <button onClick={function(){if(!needsBeamDia)setBeamOpen(!beamOpen);}} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"transparent",border:"none",cursor:needsBeamDia?"default":"pointer",color:T.tm,textAlign:"left"}}>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
             <span style={{fontSize:13,fontWeight:600,color:beamOpen?T.ac:T.tm}}>{beamOpen?"\u25BC":"\u25B6"}</span>
             <span style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:beamOpen?T.ac:T.tm}}>Beam Safety Evaluation</span>
@@ -442,24 +510,25 @@ function MPETab(p){
                     var warns=[];
                     for(var wi2=0;wi2<selRows.length;wi2++){
                       var wr=selRows[wi2];if(wr.invalid)continue;
-                      if(wr.r.wl>=1400&&wr.r.dur>=10){
+                      var lac=getLargeAreaCorrection(wr.r.wl,wr.r.dur);
+                      if(lac){
                         var A_beam_cm2=wr.bev.area_cm2;
-                        var A_beam_m2=A_beam_cm2/1e4;
-                        if(A_beam_m2>=0.01){
-                          var irr_limit;
-                          if(A_beam_m2>=0.1)irr_limit=100; // W/m²
-                          else irr_limit=10000/A_beam_m2; // proportional to 1/A, W/m² → between 1000 and 100
-                          warns.push({wl:wr.r.wl, A_m2:A_beam_m2, limit_W_m2:irr_limit, limit_W_cm2:irr_limit/1e4});
+                        if(A_beam_cm2>=lac.threshold_cm2){
+                          var irr_limit_mW;
+                          if(A_beam_cm2>=lac.cap_cm2)irr_limit_mW=lac.cap_mW_cm2;
+                          else irr_limit_mW=lac.threshold_cm2*lac.cap_mW_cm2/A_beam_cm2;
+                          warns.push({wl:wr.r.wl, A_cm2:A_beam_cm2, limit_mW_cm2:irr_limit_mW});
                         }
                       }
                     }
                     if(warns.length===0)return null;
+                    var lacInfo=_std&&_std.supplementary&&_std.supplementary.large_area_correction;
                     return <div style={{padding:"10px 12px",marginBottom:12,borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",lineHeight:1.7}}>
-                      <strong>{"\u26a0"} Large-Area Correction ({STD_NAME} Table 7, note c):</strong>{" "}
-                      For {"\u03bb"} {"\u2265"} 1400 nm, t {"\u2265"} 10 s, and exposed areas {"\u2265"} 0.01 m{"\u00b2"}, the skin exposure limit is reduced.
+                      <strong>{"\u26a0"} Large-area correction ({STD_NAME}):</strong>{" "}
+                      {lacInfo?lacInfo.description:"For large beam cross-sections, the skin exposure limit is reduced."}
                       {warns.map(function(w,wi3){
                         return <div key={wi3} style={{marginTop:4,fontFamily:"monospace"}}>
-                          {w.wl} nm: beam area = {numFmt(w.A_m2,3)} m{"\u00b2"} {"\u2192"} limit = {numFmt(w.limit_W_m2,4)} W/m{"\u00b2"} = {numFmt(w.limit_W_cm2,4)} W/cm{"\u00b2"}
+                          {w.wl} nm: beam area = {numFmt(w.A_cm2,3)} cm{"\u00b2"} {"\u2192"} limit = {numFmt(w.limit_mW_cm2,4)} mW/cm{"\u00b2"}
                         </div>;
                       })}
                     </div>;
@@ -528,8 +597,8 @@ function MPETab(p){
           <td style={{padding:"7px 10px",color:WC[i%WC.length],fontWeight:700,fontSize:12,fontFamily:"monospace"}}>{r.wl}</td>
           <td style={tdSt}>{durInUnit(r.dur,sumDurU)}</td>
           <td style={{padding:"7px 10px",fontSize:12,color:T.tm}}>{r.band}</td>
-          <td style={tdSt}>{r.wl>=400&&r.wl<1400?r.ca.toFixed(3):"\u2014"}</td>
-          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700}}>{convFN(r.effH,sumFluU)}</td>
+          <td style={tdSt}>{isInCARange(r.wl)?r.ca.toFixed(3):"\u2014"}</td>
+          <td style={{padding:"7px 10px",fontSize:12,fontFamily:"monospace",fontWeight:700}}>{convFN(r.effH,sumFluU)}{r.lacApplied?<span style={{fontSize:8,color:"#e65100",marginLeft:4}} title="Large-area correction applied">{"\u26a0"}</span>:null}{r.inLacRange&&!r.lacApplied?<span style={{fontSize:8,color:"#e65100",marginLeft:4}} title="Enter beam diameter for area correction">{"\u2731"}</span>:null}</td>
           <td style={tdSt}>{convEN(r.irr,sumIrrU)}</td>
           <td style={tdSt}>{L.rp?L.prf:"\u2014"}</td>
           <td style={tdSt}>{r.rp?Math.round(r.rp.N):"1"}</td>
@@ -544,14 +613,14 @@ function MPETab(p){
             <select value={plotFU} onChange={function(e){setPlotFU(e.target.value)}} style={{fontSize:10,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
             <div style={{display:"flex"}}><button onClick={function(){setCht("wl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="wl"?T.ac:T.bd),cursor:"pointer",background:cht==="wl"?T.ac:"transparent",color:cht==="wl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>MPE vs. Wavelength</button><button onClick={function(){setCht("t")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="t"?T.ac:T.bd),cursor:"pointer",background:cht==="t"?T.ac:"transparent",color:cht==="t"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>MPE vs. Duration</button></div><button onClick={function(){dlSVG(cht==="wl"?wRef:dRef,cht==="wl"?"mpe_vs_wavelength.svg":"mpe_vs_duration.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} Download SVG</button><button onClick={function(){if(cht==="wl"){var hdr=["wavelength_nm"];for(var di=0;di<wld.durs.length;di++)hdr.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_t"+ft(wld.durs[di]).replace(/ /g,""));var nd=wld.d.map(function(row){var o={wavelength_nm:row.wl};for(var di2=0;di2<wld.durs.length;di2++){o[hdr[di2+1]]=row["d"+di2];}return o;});dlCSV(nd,hdr,"mpe_vs_wavelength.csv",setMsg);}else{var hdr2=["duration_s"];drd.ws.forEach(function(w){hdr2.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm");});var nd2=drd.d.map(function(row){var o2={duration_s:row.t};drd.ws.forEach(function(w){o2["mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm"]=row["w"+w];});return o2;});dlCSV(nd2,hdr2,"mpe_vs_duration.csv",setMsg);}}} style={mkBt(false,T.a2,T)}>{"\u2913"} Download CSV</button></div>
         </div>
-        {cht==="wl"?(<div ref={wRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Wavelength (nm){wld.durs.length===1?" \u2014 t = "+ft(wld.durs[0]):""}</div><ResponsiveContainer width="100%" height={320}><LineChart data={wld.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="wl" type="number" domain={[180,3000]} ticks={WLTICKS} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Wavelength (nm)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?v+" nm":""}} formatter={function(v,n){if(v==null)return["",""];var idx2=parseInt(String(n).replace("d",""),10);var label=wld.durs[idx2]!==undefined?"t="+ft(wld.durs[idx2]):"MPE";return [numFmt(Number(v),4)+" "+plotFU,label]}}/>{wld.durs.map(function(d,di){var ci=0;for(var j=0;j<plotLasers.length;j++){if(plotLasers[j].dur===d){ci=lasers.indexOf(plotLasers[j]);break;}}return <Line key={"wlc"+di} dataKey={"d"+di} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={"t="+ft(d)} connectNulls={true} isAnimationActive={false}/>;})}{wld.durs.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"monospace"}}/>:null}<ReferenceLine x={400} stroke={T.bl} strokeDasharray="4 4"/><ReferenceLine x={700} stroke={T.bl} strokeDasharray="4 4"/><ReferenceLine x={1400} stroke={T.bl} strokeDasharray="4 4"/>{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"wd"+L.id} x={L.wl} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>):(<div ref={dRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Duration</div><ResponsiveContainer width="100%" height={320}><LineChart data={drd.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="t" type="number" scale="log" domain={[1e-9,3e4]} ticks={DTICKS} tickFormatter={dtf} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?ft(Number(v)):""}} formatter={function(v,n){if(v==null)return["",""];return [numFmt(Number(v),4)+" "+plotFU,String(n).replace("w","")+" nm"]}}/>{drd.ws.map(function(w,wi){var ci=0;for(var j=0;j<lasers.length;j++){if(lasers[j].wl===w&&lasers[j].show){ci=j;break;}}return <Line key={"ln"+w} dataKey={"w"+w} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={w+" nm"} connectNulls={true} isAnimationActive={false}/>;})}{drd.ws.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"monospace"}}/>:null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"dd"+L.id} x={L.dur} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>)}
+        {cht==="wl"?(<div ref={wRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Wavelength (nm){wld.durs.length===1?" \u2014 t = "+ft(wld.durs[0]):""}</div><ResponsiveContainer width="100%" height={320}><LineChart data={wld.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="wl" type="number" domain={[WL_PLOT_MIN,WL_PLOT_MAX]} ticks={WLTICKS} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} label={{value:"Wavelength (nm)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?v+" nm":""}} formatter={function(v,n){if(v==null)return["",""];var idx2=parseInt(String(n).replace("d",""),10);var label=wld.durs[idx2]!==undefined?"t="+ft(wld.durs[idx2]):"MPE";return [numFmt(Number(v),4)+" "+plotFU,label]}}/>{wld.durs.map(function(d,di){var ci=0;for(var j=0;j<plotLasers.length;j++){if(plotLasers[j].dur===d){ci=lasers.indexOf(plotLasers[j]);break;}}return <Line key={"wlc"+di} dataKey={"d"+di} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={"t="+ft(d)} connectNulls={true} isAnimationActive={false}/>;})}{wld.durs.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"monospace"}}/>:null}{_std.display_bands?_std.display_bands.map(function(b,bi){return bi<_std.display_bands.length-1?<ReferenceLine key={"bl"+bi} x={b.wl_end_nm} stroke={T.bl} strokeDasharray="4 4"/>:null;}):null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"wd"+L.id} x={L.wl} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>):(<div ref={dRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Duration</div><ResponsiveContainer width="100%" height={320}><LineChart data={drd.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="t" type="number" scale="log" domain={[1e-9,3e4]} ticks={DTICKS} tickFormatter={dtf} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"monospace",color:T.tx}} labelFormatter={function(v){return v!=null?ft(Number(v)):""}} formatter={function(v,n){if(v==null)return["",""];return [numFmt(Number(v),4)+" "+plotFU,String(n).replace("w","")+" nm"]}}/>{drd.ws.map(function(w,wi){var ci=0;for(var j=0;j<lasers.length;j++){if(lasers[j].wl===w&&lasers[j].show){ci=j;break;}}return <Line key={"ln"+w} dataKey={"w"+w} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={w+" nm"} connectNulls={true} isAnimationActive={false}/>;})}{drd.ws.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"monospace"}}/>:null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"dd"+L.id} x={L.dur} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>)}
       </div>
     </div>
   );
 }
 
 /* ═══════ PA TAB ═══════ */
-/* Seven ICNIRP wavelength bands for multi-band fluence chart (cf. Francis et al. Fig. 2a) */
+/* Wavelength bands for multi-band fluence chart (cf. Francis et al. Fig. 2a) */
 var paUid=1;
 function mkPA(wl,tau,T){return{id:paUid++,wl:wl,wlStr:String(wl),wlU:"nm",tau:tau,tauStr:String(tau*1e9),tauU:"ns",T:T,TStr:String(T),TU:"s",show:true,inTable:true};}
 
@@ -979,6 +1048,14 @@ function ScanTab(p){
   var SCAN_WORKER_TIMEOUT_MS = 60000; // 60-second safety timeout
   var _workerTimeout = useRef(null);
 
+  // Clean up Worker and timeout when ScanTab unmounts (e.g., standard change via key={stdVer})
+  useEffect(function(){
+    return function(){
+      if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
+      if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+    };
+  },[]);
+
   function calculate(){
     // ── Input validation (safety-critical) ──
     if(!isFinite(wl)||wl<180||wl>1e6){alert("Wavelength must be 180–1,000,000 nm");return;}
@@ -1041,7 +1118,7 @@ function ScanTab(p){
     // ── Try Web Worker (off main thread) ──
     var worker=getWorker();
     if(worker){
-      var params={std:__STD_DATA__,wl:wl,dia:dia,tau:tau,prf:prf,pw:pw,
+      var params={std:_std,wl:wl,dia:dia,tau:tau,prf:prf,pw:pw,
         pat:pat,lineL:lineL,nLines:nLines,hatch:hatch,vel:vel,dwm:dwm,blk:blk,
         effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
       // Safety timeout: kill Worker if it takes too long
@@ -1986,23 +2063,70 @@ export default function App(){
   var _t=useState("light"),theme=_t[0],setTheme=_t[1];
   var _tab=useState("mpe"),tab=_tab[0],setTab=_tab[1];
   var _mg=useState(""),msg=_mg[0],setMsg=_mg[1];
+  var _sv=useState(0),stdVer=_sv[0],setStdVer=_sv[1];
+  var _se=useState(""),stdErr=_se[0],setStdErr=_se[1];
+  var fileRef=useRef(null);
   var T=TH[theme];
   var tabBt=function(id,label){return{padding:"8px 20px",fontSize:12,fontWeight:tab===id?700:500,border:"none",borderBottom:tab===id?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer",background:"transparent",color:tab===id?T.ac:T.tm,letterSpacing:"0.02em"};};
+
+  function handleStdUpload(ev){
+    var file=ev.target.files&&ev.target.files[0];
+    if(!file)return;
+    setStdErr("");
+    var reader=new FileReader();
+    reader.onload=function(e2){
+      try{
+        var newData=JSON.parse(e2.target.result);
+      }catch(parseErr){
+        setStdErr("Invalid JSON: "+parseErr.message);
+        return;
+      }
+      // Save current standard in case validation fails
+      var oldStd=_std;
+      // Load into engine (runs validation internally)
+      _E.loadStandard(newData);
+      var errs=_E.getValidationErrors();
+      if(errs.length>0){
+        // Revert to old standard
+        _E.loadStandard(oldStd);
+        setStdErr("Validation errors: "+errs.join("; "));
+        return;
+      }
+      // Success — update module-level standard reference and recompute derived values
+      _std=newData;
+      _recomputeStdVars();
+      // Trigger full re-render (key={stdVer} remounts all tabs fresh,
+      // which creates new Workers with the updated standard)
+      setStdVer(function(v){return v+1;});
+      setMsg("Loaded: "+(_std.standard.name||file.name));
+      setTimeout(function(){setMsg("");},3000);
+    };
+    reader.onerror=function(){setStdErr("Failed to read file");};
+    reader.readAsText(file);
+    // Reset the input so the same file can be re-uploaded
+    ev.target.value="";
+  }
 
   return (
     <div style={{minHeight:"100vh",background:T.bg,color:T.tx,fontFamily:"system-ui,-apple-system,sans-serif"}}>
       {/* Header */}
       <div style={{borderBottom:"1px solid "+T.bd,padding:"10px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",background:T.card}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:16,fontWeight:700}}>Laser Skin MPE Calculator</span><span style={{fontSize:9,fontFamily:"monospace",color:T.td,border:"1px solid "+T.bd,borderRadius:3,padding:"2px 6px",fontWeight:600}}>{STD_NAME}</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:16,fontWeight:700}}>Laser Skin MPE Calculator</span>
+          <span style={{fontSize:9,fontFamily:"monospace",color:T.td,border:"1px solid "+T.bd,borderRadius:3,padding:"2px 6px",fontWeight:600}}>{STD_NAME}</span>
+          <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleStdUpload} style={{display:"none"}}/>
+          <button onClick={function(){fileRef.current&&fileRef.current.click();}} style={{fontSize:9,padding:"2px 8px",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",background:"transparent",color:T.tm,fontFamily:"monospace"}} title="Upload a custom standard JSON file">Upload Standard</button>
+        </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>{msg?<span style={{fontSize:11,color:T.a2,fontWeight:600}}>{msg}</span>:null}<button onClick={function(){setTheme(theme==="light"?"dark":"light")}} style={{padding:"3px 8px",fontSize:13,border:"1px solid "+T.bd,cursor:"pointer",background:"transparent",color:T.tm,borderRadius:4}} title="Toggle theme">{theme==="light"?"\u263E":"\u2600"}</button></div>
       </div>
+      {stdErr?<div style={{padding:"8px 24px",background:"#fbe9e7",borderBottom:"1px solid #f4c7c3",fontSize:11,color:"#c62828",fontFamily:"monospace"}}>{"\u26a0"} {stdErr}</div>:null}
       {/* Tab bar */}
       <div role="tablist" aria-label="Calculator sections" style={{borderBottom:"1px solid "+T.bd,padding:"0 24px",background:T.card,display:"flex",gap:4}}>
         <button role="tab" aria-selected={tab==="mpe"} aria-controls="panel-mpe" id="tab-mpe" onClick={function(){setTab("mpe")}} style={tabBt("mpe")}>MPE Calculator</button>
         <button role="tab" aria-selected={tab==="scan"} aria-controls="panel-scan" id="tab-scan" onClick={function(){setTab("scan")}} style={tabBt("scan")}>Scanning Protocols</button>
         <button role="tab" aria-selected={tab==="pa"} aria-controls="panel-pa" id="tab-pa" onClick={function(){setTab("pa")}} style={tabBt("pa")}>Photoacoustic SNR Optimizer</button>
       </div>
-      <div style={{padding:"16px 24px 40px",maxWidth:1100,margin:"0 auto"}}>
+      <div key={stdVer} style={{padding:"16px 24px 40px",maxWidth:1100,margin:"0 auto"}}>
         {tab==="mpe"?<div role="tabpanel" id="panel-mpe" aria-labelledby="tab-mpe"><ErrorBoundary theme={T}><MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
         {tab==="scan"?<div role="tabpanel" id="panel-scan" aria-labelledby="tab-scan"><ErrorBoundary theme={T}><ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
         {tab==="pa"?<div role="tabpanel" id="panel-pa" aria-labelledby="tab-pa"><ErrorBoundary theme={T}><PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}

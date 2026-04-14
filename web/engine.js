@@ -122,6 +122,42 @@ function CA(wl_nm) {
   return def.default_outside_range || 1;
 }
 
+/**
+ * Check if C_A is applicable (i.e., meaningful to display) at a given wavelength.
+ * Returns true if the wavelength falls within any defined C_A region in the standard.
+ */
+function isInCARange(wl_nm) {
+  if (!_std || !_std.correction_factors || !_std.correction_factors.CA) return false;
+  var regions = _std.correction_factors.CA.regions;
+  for (var i = 0; i < regions.length; i++) {
+    var r = regions[i];
+    if (wl_nm >= r.wl_min_nm && wl_nm <= r.wl_max_nm) return true;
+  }
+  return false;
+}
+
+/**
+ * Check if irradiance (W/cm²) is the primary standard quantity at given wl and duration.
+ * Returns true if the standard defines irradiance as primary for these parameters.
+ */
+function isIrrPrimary(wl_nm, t_s) {
+  if (!_std || !_std.supplementary || !_std.supplementary.irradiance_primary) return false;
+  var ip = _std.supplementary.irradiance_primary;
+  return wl_nm >= ip.wl_min_nm && t_s >= ip.t_min_s;
+}
+
+/**
+ * Check if the large-area skin correction is applicable at given wl and duration.
+ * Returns the large_area_correction object if applicable, null otherwise.
+ */
+function getLargeAreaCorrection(wl_nm, t_s) {
+  if (!_std || !_std.supplementary || !_std.supplementary.large_area_correction) return null;
+  var lac = _std.supplementary.large_area_correction;
+  if (lac.wl_min_nm !== undefined && wl_nm < lac.wl_min_nm) return null;
+  if (lac.t_min_s !== undefined && t_s < lac.t_min_s) return null;
+  return lac;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // UV discrete step lookup — evaluated from JSON data
 // Supports multiple lookup tables via the tableName parameter.
@@ -225,6 +261,98 @@ function repPulse(wl_nm, tau, prf, T) {
   }
   var rule1 = skinMPE(wl_nm, tau);
   var htotal = skinMPE(wl_nm, T);
+  var N = prf * T;
+  if (N <= 1) {
+    return { rule1: rule1, rule2: rule1, H: rule1, N: N, binding: "Rule 1" };
+  }
+  var rule2 = htotal / N;
+  var H = Math.min(rule1, rule2);
+  var binding = rule1 <= rule2 ? "Rule 1" : "Rule 2";
+  return { rule1: rule1, rule2: rule2, H: H, N: N, binding: binding };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Large-area skin exposure correction
+// Reads all parameters from the loaded standard's JSON.
+// Nothing is hardcoded — supports any standard with
+// a supplementary.large_area_correction section.
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Compute the large-area irradiance limit (W/cm²) for a given
+ * wavelength, duration, and beam cross-sectional area.
+ *
+ * Returns Infinity if the correction does not apply:
+ *   - wavelength below the standard's wl_min_nm
+ *   - duration below the standard's t_min_s
+ *   - area below the standard's threshold_cm2
+ *   - no large_area_correction in the loaded standard
+ *
+ * @param {number} wl_nm - Wavelength in nm
+ * @param {number} t_s - Exposure duration in seconds
+ * @param {number} area_cm2 - Beam cross-sectional area in cm²
+ * @returns {number} Irradiance limit in W/cm², or Infinity
+ */
+function largeAreaIrradianceLimit(wl_nm, t_s, area_cm2) {
+  var lac = getLargeAreaCorrection(wl_nm, t_s);
+  if (!lac) return Infinity;
+  if (!isFinite(area_cm2) || area_cm2 <= 0) return Infinity;
+  if (area_cm2 < lac.threshold_cm2) return Infinity;
+  // Area at or above cap: use the floor irradiance
+  if (area_cm2 >= lac.cap_cm2) {
+    return lac.cap_mW_cm2 / 1000; // mW/cm² → W/cm²
+  }
+  // Between threshold and cap: inversely proportional to area
+  // Uses the coefficient from JSON: E = coefficient / A_s (mW/cm²)
+  var coeff = lac.coefficient_mW_cm2_x_cm2;
+  if (!coeff) {
+    // Fallback: derive from cap_mW_cm2 × cap_cm2 if coefficient missing
+    coeff = lac.cap_mW_cm2 * lac.cap_cm2;
+  }
+  return (coeff / area_cm2) / 1000; // mW/cm² → W/cm²
+}
+
+/**
+ * Skin MPE with large-area correction applied.
+ * Returns min(standard_MPE, large_area_limit × t).
+ *
+ * For area_cm2 ≤ 0 or undefined, returns the standard MPE unchanged.
+ * The large-area correction is a DUAL LIMIT — the actual MPE is
+ * the lower of the standard table value and the area-corrected value.
+ *
+ * @param {number} wl_nm - Wavelength in nm
+ * @param {number} t - Exposure duration in seconds
+ * @param {number} area_cm2 - Beam cross-sectional area in cm²
+ * @returns {number} MPE in J/cm²
+ */
+function skinMPE_area(wl_nm, t, area_cm2) {
+  var H_standard = skinMPE(wl_nm, t);
+  if (!isFinite(area_cm2) || area_cm2 <= 0) return H_standard;
+  var E_limit = largeAreaIrradianceLimit(wl_nm, t, area_cm2);
+  if (!isFinite(E_limit)) return H_standard;
+  var H_area = E_limit * t; // irradiance limit × duration = fluence limit (J/cm²)
+  return Math.min(H_standard, H_area);
+}
+
+/**
+ * Repetitive-pulse MPE with large-area correction.
+ *
+ * Rule 1: single-pulse MPE — NOT area-corrected (pulse duration τ < t_min_s).
+ * Rule 2: cumulative MPE for time T — area-corrected when T ≥ t_min_s.
+ *
+ * @param {number} wl_nm - Wavelength in nm
+ * @param {number} tau - Single pulse duration in seconds
+ * @param {number} prf - Pulse repetition frequency in Hz
+ * @param {number} T - Total exposure duration in seconds
+ * @param {number} area_cm2 - Beam cross-sectional area in cm²
+ * @returns {Object} { rule1, rule2, H, N, binding }
+ */
+function repPulse_area(wl_nm, tau, prf, T, area_cm2) {
+  if (!isFinite(prf) || prf < 0 || !isFinite(T) || T <= 0) {
+    return { rule1: NaN, rule2: NaN, H: NaN, N: 0, binding: "Invalid" };
+  }
+  var rule1 = skinMPE(wl_nm, tau); // single pulse: no area correction
+  var htotal = skinMPE_area(wl_nm, T, area_cm2); // cumulative: area-corrected
   var N = prf * T;
   if (N <= 1) {
     return { rule1: rule1, rule2: rule1, H: rule1, N: N, binding: "Rule 1" };
@@ -1865,8 +1993,14 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     getStandard: getStandard,
     getValidationErrors: getValidationErrors,
     CA: CA,
+    isInCARange: isInCARange,
+    isIrrPrimary: isIrrPrimary,
+    getLargeAreaCorrection: getLargeAreaCorrection,
+    largeAreaIrradianceLimit: largeAreaIrradianceLimit,
     skinMPE: skinMPE,
+    skinMPE_area: skinMPE_area,
     repPulse: repPulse,
+    repPulse_area: repPulse_area,
     bandName: bandName,
     STANDARD: getSTANDARD(),
     paEffFluence: paEffFluence,
@@ -1916,8 +2050,15 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     loadStandard: loadStandard,
     getStandard: getStandard,
     CA: CA,
+    isInCARange: isInCARange,
+    isIrrPrimary: isIrrPrimary,
+    getLargeAreaCorrection: getLargeAreaCorrection,
+    largeAreaIrradianceLimit: largeAreaIrradianceLimit,
+    getValidationErrors: getValidationErrors,
     skinMPE: skinMPE,
+    skinMPE_area: skinMPE_area,
     repPulse: repPulse,
+    repPulse_area: repPulse_area,
     bandName: bandName,
     get STANDARD() { return getSTANDARD(); },
     paEffFluence: paEffFluence,

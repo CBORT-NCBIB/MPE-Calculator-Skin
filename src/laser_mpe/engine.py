@@ -409,3 +409,113 @@ def rep_pulse(wl_nm, tau, prf, T):
     H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_avg))
 
     return H_pulse, N
+
+# ═══════════════════════════════════════════════════════════════
+# Large-area skin exposure correction
+# ═══════════════════════════════════════════════════════════════
+
+
+def large_area_irradiance_limit(wl_nm, t_s, area_cm2):
+    """Compute the large-area irradiance limit in W/cm².
+
+    Reads all parameters from the loaded standard's JSON.
+    Returns infinity if the correction does not apply.
+
+    Parameters
+    ----------
+    wl_nm : float
+        Wavelength in nm.
+    t_s : float
+        Exposure duration in seconds.
+    area_cm2 : float
+        Beam cross-sectional area in cm².
+
+    Returns
+    -------
+    float
+        Irradiance limit in W/cm², or inf if not applicable.
+    """
+    _ensure_loaded()
+    lac = _std.get("supplementary", {}).get("large_area_correction")
+    if lac is None:
+        return float('inf')
+    if "wl_min_nm" in lac and wl_nm < lac["wl_min_nm"]:
+        return float('inf')
+    if "t_min_s" in lac and t_s < lac["t_min_s"]:
+        return float('inf')
+    if not (area_cm2 > 0 and math.isfinite(area_cm2)):
+        return float('inf')
+    if area_cm2 < lac["threshold_cm2"]:
+        return float('inf')
+    if area_cm2 >= lac["cap_cm2"]:
+        return lac["cap_mW_cm2"] / 1000.0
+    coeff = lac.get("coefficient_mW_cm2_x_cm2",
+                    lac["cap_mW_cm2"] * lac["cap_cm2"])
+    return (coeff / area_cm2) / 1000.0
+
+
+def skin_mpe_area(wl_nm, t, area_cm2):
+    """Skin MPE with large-area correction applied.
+
+    Returns min(standard_MPE, large_area_limit × t).
+
+    Parameters
+    ----------
+    wl_nm : float
+        Wavelength in nm.
+    t : float
+        Exposure duration in seconds.
+    area_cm2 : float
+        Beam cross-sectional area in cm².
+
+    Returns
+    -------
+    float
+        MPE in J/cm².
+    """
+    H_standard = skin_mpe(wl_nm, t)
+    if not (area_cm2 > 0 and math.isfinite(area_cm2)):
+        return H_standard
+    E_limit = large_area_irradiance_limit(wl_nm, t, area_cm2)
+    if not math.isfinite(E_limit):
+        return H_standard
+    H_area = E_limit * t
+    return min(H_standard, H_area)
+
+
+def rep_pulse_area(wl_nm, tau, prf, T, area_cm2):
+    """Per-pulse MPE for repetitive-pulse skin exposure with large-area correction.
+
+    Rule 1: single-pulse MPE (no area correction, tau < t_min_s).
+    Rule 2: cumulative MPE for time T (area-corrected when T >= t_min_s).
+
+    Parameters
+    ----------
+    wl_nm : float
+        Wavelength in nm.
+    tau : float
+        Single pulse duration in seconds.
+    prf : float or array-like
+        Pulse repetition frequency in Hz.
+    T : float
+        Total exposure duration in seconds.
+    area_cm2 : float
+        Beam cross-sectional area in cm².
+
+    Returns
+    -------
+    H_pulse : float or ndarray
+        Per-pulse MPE in J/cm².
+    N : float or ndarray
+        Number of pulses.
+    """
+    H_single = skin_mpe(wl_nm, tau)
+    H_total = skin_mpe_area(wl_nm, T, area_cm2)
+
+    prf = np.asarray(prf, dtype=float)
+    N = prf * T
+
+    H_avg = H_total / np.maximum(N, 1.0)
+    H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_avg))
+
+    return H_pulse, N
