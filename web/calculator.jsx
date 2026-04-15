@@ -898,6 +898,7 @@ function GeneralScanContent(p){
   var _pfU=useState("kHz"),prfU=_pfU[0],setPrfU=_pfU[1];
   var _pw=useState("0.5"),pwS=_pw[0],setPwS=_pw[1]; var _pwn=useState(0.5),pw=_pwn[0],setPw=_pwn[1];
   var _pwMode=useState("power"),pwMode=_pwMode[0],setPwMode=_pwMode[1]; /* "power" or "energy" */
+  var _lcm=useState("pulsed"),laserMode=_lcm[0],setLaserMode=_lcm[1]; /* "pulsed" | "cw" */
   var _epS=useState(""),epS=_epS[0],setEpS=_epS[1];
   var _vs=useState("100"),vS=_vs[0],setVS=_vs[1]; var _vn=useState(100),vel=_vn[0],setVel=_vn[1];
   var _pat=useState("bidi"),pat=_pat[0],setPat=_pat[1];
@@ -1074,8 +1075,10 @@ function GeneralScanContent(p){
     if(!isFinite(dia)||dia<=0){alert("Beam diameter must be > 0");return;}
     if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
     if(!isFinite(pw)||pw<=0){alert(pwMode==="energy"?"Pulse energy must be > 0 (and PRF must be > 0 to compute average power)":"Average power must be > 0");return;}
-    if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
-    if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
+    if(laserMode==="pulsed"){
+      if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
+      if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
+    }
     if(pat!=="linear"){
       if(!isFinite(nLines)||nLines<1){alert("Number of lines must be ≥ 1");return;}
       if(!isFinite(hatch)||hatch<=0){alert("Hatch spacing must be > 0");return;}
@@ -1088,8 +1091,10 @@ function GeneralScanContent(p){
     // ── Performance estimation ──
     // For separable-eligible scans, compute estimates from params directly
     // (avoids OOM from segment construction for micro-beams)
-    var isCWEst=prf===0&&tau===0;
-    var canSep=!isCWEst&&prf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
+    var calcPrf=laserMode==="cw"?0:prf;
+    var calcTau=laserMode==="cw"?0:tau;
+    var isCWEst=laserMode==="cw";
+    var canSep=!isCWEst&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
     var segsEst=canSep?[]:null;
     var estTime,estPulses;
     if(canSep){
@@ -1099,7 +1104,7 @@ function GeneralScanContent(p){
       var hatchEst=pat==="linear"?0:(hatch||dia);
       var flybackEst=pat==="linear"?0:(lineL/jumpVEst+hatchEst/jumpVEst);
       estTime=nLEst*lineDurEst+(nLEst-1)*flybackEst;
-      estPulses=prf*nLEst*lineDurEst;
+      estPulses=calcPrf*nLEst*lineDurEst;
     }else{
       if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,vel,dia);
       else if(pat==="bidi") segsEst=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia,blk);
@@ -1130,7 +1135,7 @@ function GeneralScanContent(p){
     // ── Try Web Worker (off main thread) ──
     var worker=getWorker();
     if(worker){
-      var params={std:_std,wl:wl,dia:dia,tau:tau,prf:prf,pw:pw,
+      var params={std:_std,wl:wl,dia:dia,tau:calcTau,prf:calcPrf,pw:pw,
         pat:pat,lineL:lineL,nLines:nLines,hatch:hatch,vel:vel,dwm:dwm,blk:blk,
         effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
       // Safety timeout: kill Worker if it takes too long
@@ -1147,8 +1152,8 @@ function GeneralScanContent(p){
         /* Reconstruct grid with transferred TypedArrays */
         var g={nx:r.g.nx,ny:r.g.ny,dx:r.g.dx,xn:r.g.xn,yn:r.g.yn,
           flu:r.flu,pc:r.pc,ppH:r.ppH,lvt:r.lvt,mrv:r.mrv};
-        var isCW2=prf===0&&tau===0;
-        var beam2={wl:wl,d:dia,tau:tau,prf:prf,Ep:prf>0?pw/prf:0,P:pw,cw:isCW2};
+        var isCW2=laserMode==="cw";
+        var beam2={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?pw/calcPrf:0,P:pw,cw:isCW2};
         if(r.notes&&r.notes.length>0)setPerfNote(r.notes.join(". ")+".");
         setRes({g:g,st:r.st,sf:r.sf,segs:r.segs,beam:beam2,maxP:r.maxP,minV:r.minVel,
           pulses:r.pulseArr,effPpd:effPpd});
@@ -1170,15 +1175,17 @@ function GeneralScanContent(p){
 
   function calculateMainThread(segs,effPpd,auxPpd,maxBisect,notes){
     try{
-      var Ep=prf>0?pw/prf:0;
-      var isCW=prf===0&&tau===0;
-      var beam={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
+      var calcPrf=laserMode==="cw"?0:prf;
+      var calcTau=laserMode==="cw"?0:tau;
+      var Ep=calcPrf>0?pw/calcPrf:0;
+      var isCW=laserMode==="cw";
+      var beam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
 
       // Build separable params if applicable (same logic as Worker)
-      var canSep=!isCW&&prf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      var canSep=!isCW&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
       function mkSepP(vv,ep){
         if(!canSep)return null;
-        return{d_1e_mm:dia,prf_hz:prf,pulse_energy_J:ep||Ep,v_scan_mm_s:vv,
+        return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,v_scan_mm_s:vv,
           x0:0,y0:0,line_length_mm:lineL,n_lines:pat==="linear"?1:nLines,
           hatch_mm:pat==="linear"?0:hatch,pattern:pat,blanking:blk,is_cw:false};
       }
@@ -1187,14 +1194,14 @@ function GeneralScanContent(p){
       if(cr){
         var minV=isCW?(cr.st.mv||vel):0;
         var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:vel,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
-        var unitBeam={wl:wl,d:dia,tau:tau,prf:prf,Ep:prf>0?1/prf:0,P:1,cw:isCW};
-        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(vel,prf>0?1/prf:0));
+        var unitBeam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?1/calcPrf:0,P:1,cw:isCW};
+        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(vel,calcPrf>0?1/calcPrf:0));
         var maxP=Infinity;
         if(unitCr){
           var upF=0;for(var ui=0;ui<unitCr.g.nx*unitCr.g.ny;ui++)if(unitCr.g.flu[ui]>upF)upF=unitCr.g.flu[ui];
           var mpeT=skinMPE(wl,unitCr.st.tt||cr.st.tt);
           if(upF>0)maxP=mpeT/upF;
-          if(!isCW&&prf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,tau)*prf*Math.PI*w22*w22/(2*100);
+          if(!isCW&&calcPrf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,calcTau)*calcPrf*Math.PI*w22*w22/(2*100);
             if(maxPr1<maxP)maxP=maxPr1;}
         }
         var minVel=0;
@@ -1206,7 +1213,7 @@ function GeneralScanContent(p){
             if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
             else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
             else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
-            var tb={wl:wl,d:dia,tau:tau,prf:prf,Ep:Ep,P:pw,cw:isCW};
+            var tb={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
             var tcr2=scanCompute(tb,ts,auxPpd);
             if(!tcr2)return true;
             var tmv=isCW?(tcr2.st.mv||tv):0;
@@ -1220,9 +1227,9 @@ function GeneralScanContent(p){
 
         // Generate pulse positions and viz segments from scan params (not from segment array)
         var pulseArr=[];
-        if(!isCW&&prf>0){
-          var maxSP2=5000,ps_mm2=vel/prf;
-          var nPL2=Math.max(1,Math.floor((lineL/vel)*prf));
+        if(!isCW&&calcPrf>0){
+          var maxSP2=5000,ps_mm2=vel/calcPrf;
+          var nPL2=Math.max(1,Math.floor((lineL/vel)*calcPrf));
           var nLV=pat==="linear"?1:nLines;
           var totalEst2=nPL2*nLV;
           var pStride2=Math.max(1,Math.ceil(totalEst2/maxSP2));
@@ -1232,7 +1239,7 @@ function GeneralScanContent(p){
             var sDir2=(pat==="bidi"&&li2%2===1)?-1:1;
             var xSt2=sDir2===1?0:lineL;
             for(var ki2=0;ki2<nPL2&&pulseArr.length<maxSP2;ki2+=pStride2){
-              pulseArr.push({t:tAcc2+ki2/prf,x:xSt2+sDir2*ki2*ps_mm2,y:ly2,si:li2});
+              pulseArr.push({t:tAcc2+ki2/calcPrf,x:xSt2+sDir2*ki2*ps_mm2,y:ly2,si:li2});
             }
             tAcc2+=lineL/vel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:hatch)/(vel*5);
           }
@@ -1946,31 +1953,55 @@ function GeneralScanContent(p){
         <div style={secH}>Beam Parameters</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           <div><label htmlFor="scan-wl" style={lb}>Wavelength (nm)</label><input id="scan-wl" type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
-          <div><label htmlFor="scan-dia" style={lb}>Beam 1/e Diameter (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
-          <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
-          <div><label style={lb}>Repetition Rate</label><div style={{display:"flex",gap:4}}><input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
+          <div><label htmlFor="scan-dia" style={lb}>Beam 1/e² Diameter (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
           <div>
-            <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
-              <label style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,margin:0}}>
-                {pwMode==="power"?"Average Power":"Pulse Energy"}
-              </label>
-              <button onClick={function(){
-                if(pwMode==="power"){setPwMode("energy");if(prf>0&&pw>0)setEpS((pw/prf).toExponential(4));}
-                else{setPwMode("power");}setDirty(true);
-              }} style={{fontSize:8,padding:"2px 6px",background:"transparent",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",color:T.ac,fontWeight:600}}>{pwMode==="power"?"\u21C4 Pulse Energy":"\u21C4 Avg Power"}</button>
+            <label style={lb}>Laser Mode</label>
+            <div style={{display:"flex",gap:4}}>
+              {[["pulsed","Pulsed"],["cw","CW"]].map(function(m){
+                return <button key={m[0]} onClick={function(){
+                  setLaserMode(m[0]);
+                  if(m[0]==="cw")setPwMode("power");
+                  setDirty(true);
+                }} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:laserMode===m[0]?700:500,
+                  background:laserMode===m[0]?T.ac:"transparent",
+                  color:laserMode===m[0]?"#fff":T.tm,
+                  border:laserMode===m[0]?"none":"1px solid "+T.bd,
+                  borderRadius:4,cursor:"pointer"}}>{m[1]}</button>;
+              })}
             </div>
+          </div>
+          {laserMode==="pulsed"?<div>
+            <label style={lb}>Pulse Duration</label>
+            <div style={{display:"flex",gap:4}}>
+              <input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            </div>
+          </div>:null}
+          {laserMode==="pulsed"?<div>
+            <label style={lb}>Repetition Rate</label>
+            <div style={{display:"flex",gap:4}}>
+              <input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            </div>
+          </div>:null}
+          <div>
+            <label style={lb}>Power Input</label>
+            <select value={pwMode} onChange={function(e){
+              var m=e.target.value;setPwMode(m);setDirty(true);
+              if(m==="energy"&&prf>0&&pw>0)setEpS((pw/prf).toExponential(4));
+            }} disabled={laserMode==="cw"} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:laserMode==="cw"?"default":"pointer",opacity:laserMode==="cw"?0.6:1,boxSizing:"border-box"}}>
+              <option value="power">Average Power (W)</option>
+              <option value="energy">Pulse Energy (J)</option>
+            </select>
             {pwMode==="power"?
               <div>
                 <input id="scan-pw" type="text" value={pwS} onChange={function(e){upPw(e.target.value)}} style={ip}/>
-                <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"monospace"}}>{prf>0&&pw>0?"Ep = "+(pw/prf).toExponential(3)+" J":""}</div>
+                {laserMode==="pulsed"&&prf>0&&pw>0?<div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"monospace"}}>{"Ep = "+(pw/prf).toExponential(3)+" J"}</div>:null}
               </div>
             :
               <div>
-                <div style={{display:"flex",gap:4}}>
-                  <input type="text" value={epS} onChange={function(e){upEp(e.target.value)}} placeholder="e.g. 50e-6" style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
-                  <span style={{fontSize:11,color:T.td,alignSelf:"center"}}>J</span>
-                </div>
-                <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"monospace"}}>{prf>0&&pw>0?"P\u2090\u1D65\u1D4D = "+pw.toPrecision(3)+" W":""}</div>
+                <input type="text" value={epS} onChange={function(e){upEp(e.target.value)}} placeholder="e.g. 50e-6" style={ip}/>
+                {prf>0&&pw>0?<div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"monospace"}}>{"P_avg = "+pw.toPrecision(3)+" W"}</div>:null}
               </div>
             }
           </div>
