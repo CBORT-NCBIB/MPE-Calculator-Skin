@@ -218,13 +218,13 @@ function paOptPRF(wl,tau,T){ return _E.paOptimalPRF(wl,tau,T); }
 var getAperture = _E.getAperture;
 var beamEval = _E.beamEval;
 
-var WC=["#0072B2","#E69F00","#009E73","#CC79A7","#56B4E9","#D55E00","#B8860B","#000000"];
+var WC=["#1C4E80","#009E73","#CC79A7","#D55E00","#56B4E9","#E69F00","#B8860B","#000000"];
 var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
 
 var TH={
-  light:{bg:"#f0f2f5",card:"#f8f9fb",bgI:"#eaecf0",bd:"#d4d8de",bl:"#a0a4aa",tx:"#1a1d22",tm:"#525960",td:"#737880",ac:"#0072B2",a2:"#E69F00",ok:"#0072B2",no:"#D55E00",gr:"#e4e7eb",tp:"#f8f9fb"},
-  dark:{bg:"#28282e",card:"#333338",bgI:"#2c2c32",bd:"#48484f",bl:"#58585f",tx:"#d8d8e0",tm:"#a0a0a8",td:"#808088",ac:"#56B4E9",a2:"#E69F00",ok:"#56B4E9",no:"#E69F00",gr:"#38383e",tp:"#333338"}
+  light:{bg:"#f0f2f5",card:"#f8f9fb",bgI:"#eaecf0",bd:"#d4d8de",bl:"#a0a4aa",tx:"#1a1d22",tm:"#525960",td:"#737880",ac:"#1C4E80",a2:"#4A6FA5",ok:"#2E7D32",no:"#C62828",gr:"#e4e7eb",tp:"#f8f9fb"},
+  dark:{bg:"#28282e",card:"#333338",bgI:"#2c2c32",bd:"#48484f",bl:"#58585f",tx:"#d8d8e0",tm:"#a0a0a8",td:"#808088",ac:"#5B9BD5",a2:"#7BAFD4",ok:"#66BB6A",no:"#EF5350",gr:"#38383e",tp:"#333338"}
 };
 
 var uid=1;
@@ -888,7 +888,7 @@ function PATab(p){
 }
 
 /* ═══════ SCAN TAB ═══════ */
-function ScanTab(p){
+function GeneralScanContent(p){
   var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
   var _wl=useState("532"),wlS=_wl[0],setWlS=_wl[1]; var _wn=useState(532),wl=_wn[0],setWl=_wn[1];
   var _d=useState("1"),dS=_d[0],setDS=_d[1]; var _dn=useState(1),dia=_dn[0],setDia=_dn[1];
@@ -897,6 +897,8 @@ function ScanTab(p){
   var _prf=useState("10"),prfS=_prf[0],setPrfS=_prf[1]; var _pn=useState(10000),prf=_pn[0],setPrf=_pn[1];
   var _pfU=useState("kHz"),prfU=_pfU[0],setPrfU=_pfU[1];
   var _pw=useState("0.5"),pwS=_pw[0],setPwS=_pw[1]; var _pwn=useState(0.5),pw=_pwn[0],setPw=_pwn[1];
+  var _pwMode=useState("power"),pwMode=_pwMode[0],setPwMode=_pwMode[1]; /* "power" or "energy" */
+  var _epS=useState(""),epS=_epS[0],setEpS=_epS[1];
   var _vs=useState("100"),vS=_vs[0],setVS=_vs[1]; var _vn=useState(100),vel=_vn[0],setVel=_vn[1];
   var _pat=useState("bidi"),pat=_pat[0],setPat=_pat[1];
   var _lL=useState("20"),lLS=_lL[0],setLLS=_lL[1]; var _lLn=useState(20),lineL=_lLn[0],setLineL=_lLn[1];
@@ -918,6 +920,16 @@ function ScanTab(p){
   function upN(setS,setN,s){setS(s);var v=Number(s);if(isFinite(v))setN(v);setDirty(true);}
   function upTau(s){setTauS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<DUR_UNITS.length;i++){if(DUR_UNITS[i].id===tauU)m=DUR_UNITS[i].toS;}setTau(v*m);}setDirty(true);}
   function upPrf(s){setPrfS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<FREQ_UNITS.length;i++){if(FREQ_UNITS[i].id===prfU)m=FREQ_UNITS[i].toHz;}setPrf(v*m);}setDirty(true);}
+  /* Power/energy toggle helpers */
+  function upPw(s){setPwS(s);var v=Number(s);if(isFinite(v)&&v>0){setPw(v);if(prf>0)setEpS((v/prf).toExponential(4));}setDirty(true);}
+  function upEp(s){setEpS(s);var v=Number(s);if(isFinite(v)&&v>0&&prf>0){var P=v*prf;setPw(P);setPwS(P.toPrecision(4));}setDirty(true);}
+  /* When PRF changes and mode is energy, recompute power */
+  useEffect(function(){if(pwMode==="energy"&&prf>0){var v=Number(epS);if(isFinite(v)&&v>0){setPw(v*prf);setPwS((v*prf).toPrecision(4));}}},[prf,pwMode,epS]);
+  /* When PRF changes and mode is power, update displayed Ep */
+  useEffect(function(){if(pwMode==="power"&&prf>0&&pw>0){setEpS((pw/prf).toExponential(4));}},[prf,pw,pwMode]);
+
+  /* Selected point for timing diagram (null = worst-case) */
+  var _selPt=useState(null),selPt=_selPt[0],setSelPt=_selPt[1];
 
   var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
   var _workerRef=useRef(null);
@@ -1061,7 +1073,7 @@ function ScanTab(p){
     if(!isFinite(wl)||wl<180||wl>1e6){alert("Wavelength must be 180–1,000,000 nm");return;}
     if(!isFinite(dia)||dia<=0){alert("Beam diameter must be > 0");return;}
     if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
-    if(!isFinite(pw)||pw<=0){alert("Average power must be > 0");return;}
+    if(!isFinite(pw)||pw<=0){alert(pwMode==="energy"?"Pulse energy must be > 0 (and PRF must be > 0 to compute average power)":"Average power must be > 0");return;}
     if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
     if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
     if(pat!=="linear"){
@@ -1259,7 +1271,7 @@ function ScanTab(p){
   var plotBg=theme==="dark"?"#333338":"#ffffff";
   var plotGrid=theme==="dark"?"#48484f":"#e4e7eb";
   var plotText=theme==="dark"?"#a0a0a8":"#737880";
-  var plotLine=theme==="dark"?"#56B4E9":"#0072B2";
+  var plotLine=theme==="dark"?"#5B9BD5":"#1C4E80";
 
   useEffect(function(){
     if(!res||!fluMapRef.current||typeof Plotly==="undefined")return;
@@ -1431,6 +1443,19 @@ function ScanTab(p){
       shapes:shapes,annotations:annots
     },{responsive:true,displayModeBar:false});
 
+    /* Attach click handler for point selection (must be after Plotly.react) */
+    var scanH2=(pat==="linear"?0:(nLines-1)*hatch);
+    fRef.removeAllListeners("plotly_click");
+    fRef.on("plotly_click",function(data){
+      if(!data||!data.points||!data.points.length)return;
+      var pt=data.points[0];
+      if(isFinite(pt.x)&&isFinite(pt.y)){
+        var cx=Math.max(0,Math.min(lineL,pt.x));
+        var cy=Math.max(0,Math.min(scanH2,pt.y));
+        setSelPt({x:cx,y:cy});setVizTab("ptTiming");
+      }
+    });
+
     // ── 2. Cross-scan fluence profile (fluence vs y at x=lineL/2) ──
     if(cRef&&prf>0){
       // Along-line sum at center (reusable constant)
@@ -1499,7 +1524,7 @@ function ScanTab(p){
   },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines]);
 
   var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
-  var timRef=useRef(null),spcRef=useRef(null);
+  var timRef=useRef(null),spcRef=useRef(null),ptTimRef=useRef(null);
 
   // Render Plotly pulse timing diagram — representative windows at transitions
   // Shows 2-3 windows at scan line boundaries to reveal flyback gaps and
@@ -1772,6 +1797,148 @@ function ScanTab(p){
     Plotly.react(spcRef.current,traces,layout,config);
   },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines]);
 
+  /* ── Click handler on fluence map to select observation point ── */
+  /* Reset selPt when new results arrive */
+  useEffect(function(){setSelPt(null);},[res]);
+
+  /* ── Point Timing Diagram: pulse arrivals + cumulative fluence at a point ── */
+  useEffect(function(){
+    if(vizTab!=="ptTiming"||!res||!ptTimRef.current||typeof Plotly==="undefined")return;
+    if(prf<=0||pw<=0)return;
+
+    var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
+    var Ep=pw/prf;
+    var H0=2*Ep/(Math.PI*w2)*100; // J/cm²
+    var ps=vel/prf; // pulse spacing mm
+    var trunc=3*sigma;
+    var trunc2=trunc*trunc;
+    var nPL=Math.max(1,Math.floor((lineL/vel)*prf));
+    var lineDur=lineL/vel;
+    var nL=pat==="linear"?1:nLines;
+    var hh=pat==="linear"?0:hatch;
+    var jumpV=vel*5;
+    var flybackTime=(pat==="linear"||nL<=1)?0:(pat==="bidi"?(hh/jumpV):(lineL/jumpV+hh/jumpV));
+
+    // Determine observation point
+    var obsX,obsY;
+    if(selPt){obsX=selPt.x;obsY=selPt.y;}
+    else{
+      // Find worst-case point from grid
+      var g=res.g,maxF=0,maxIdx=0;
+      for(var gi=0;gi<g.nx*g.ny;gi++){if(g.flu[gi]>maxF){maxF=g.flu[gi];maxIdx=gi;}}
+      var giy=Math.floor(maxIdx/g.nx),gix=maxIdx-giy*g.nx;
+      obsX=g.xn+gix*g.dx;obsY=g.yn+giy*g.dx;
+    }
+
+    // Collect pulse contributions at the observation point
+    var events=[]; // {t, H}
+    var tLineStart=0;
+    for(var li=0;li<nL;li++){
+      var yLine=li*hh;
+      var dy=obsY-yLine;
+      var dy2=dy*dy;
+      if(dy2>trunc2){tLineStart+=lineDur+(li<nL-1?flybackTime:0);continue;}
+      var crossAtt=Math.exp(-2*dy2/w2);
+
+      var scanDir=(pat==="bidi"&&li%2===1)?-1:1;
+      var xStart=scanDir===1?0:lineL;
+
+      // Find pulse range that contributes
+      // x_pulse = xStart + scanDir * k * ps
+      // obsX - x_pulse within ±trunc → k range
+      var kCenter=(obsX-xStart)/(scanDir*ps);
+      var kRange=trunc/ps;
+      var kMin=Math.max(0,Math.ceil(kCenter-kRange));
+      var kMax=Math.min(nPL-1,Math.floor(kCenter+kRange));
+
+      for(var k=kMin;k<=kMax;k++){
+        var xPulse=xStart+scanDir*k*ps;
+        var dx=obsX-xPulse;
+        var dx2=dx*dx;
+        if(dx2>trunc2)continue;
+        var alongAtt=Math.exp(-2*dx2/w2);
+        var Hdep=H0*alongAtt*crossAtt;
+        if(Hdep<H0*1e-6)continue;
+        var tPulse=tLineStart+k/prf;
+        events.push({t:tPulse,H:Hdep});
+      }
+      tLineStart+=lineDur+(li<nL-1?flybackTime:0);
+    }
+
+    // Sort by time and compute cumulative
+    events.sort(function(a,b){return a.t-b.t;});
+    var totalTime=res.st.tt;
+    var mpeVal=skinMPE(wl,totalTime);
+
+    // Build traces
+    var tArr=[],cumArr=[],impulseT=[],impulseH=[];
+    var cumH=0;
+    // Start at t=0 with H=0
+    tArr.push(0);cumArr.push(0);
+    for(var ei=0;ei<events.length;ei++){
+      var ev=events[ei];
+      // Step: horizontal at previous cumH up to this pulse time
+      tArr.push(ev.t);cumArr.push(cumH);
+      // Step: vertical jump at this pulse time
+      cumH+=ev.H;
+      tArr.push(ev.t);cumArr.push(cumH);
+      // Impulse bar
+      impulseT.push(ev.t);impulseH.push(ev.H);
+    }
+    // Extend to end of scan
+    tArr.push(totalTime);cumArr.push(cumH);
+
+    // Scale time to ms for readability
+    var tScale=1,tUnit="s";
+    if(totalTime<0.01){tScale=1e6;tUnit="\u00b5s";}
+    else if(totalTime<10){tScale=1e3;tUnit="ms";}
+
+    var plotText=theme==="dark"?"#e5e5e5":"#404040";
+    var plotBg=theme==="dark"?"#1a1a1a":"#fafafa";
+    var plotGrid=theme==="dark"?"#333":"#e5e5e5";
+
+    var traces2=[
+      // Pulse impulses (thin bars)
+      {x:impulseT.map(function(t){return t*tScale}),y:impulseH,
+       type:"bar",marker:{color:"rgba(33,150,243,0.5)"},width:totalTime*tScale*0.003,
+       name:"Per-pulse fluence",yaxis:"y2",hovertemplate:"t = %{x:.4f} "+tUnit+"<br>H = %{y:.4e} J/cm\u00b2<extra>Pulse</extra>"},
+      // Cumulative fluence (step function)
+      {x:tArr.map(function(t){return t*tScale}),y:cumArr,
+       type:"scatter",mode:"lines",line:{color:"#E65100",width:2},
+       name:"Cumulative fluence",hovertemplate:"t = %{x:.4f} "+tUnit+"<br>\u03a3H = %{y:.4e} J/cm\u00b2<extra>Cumulative</extra>"},
+      // MPE reference line
+      {x:[0,totalTime*tScale],y:[mpeVal,mpeVal],
+       type:"scatter",mode:"lines",line:{color:"#2e7d32",width:1.5,dash:"dash"},
+       name:"MPE(T="+totalTime.toPrecision(3)+"s) = "+mpeVal.toPrecision(3)+" J/cm\u00b2",
+       hoverinfo:"skip"}
+    ];
+
+    var safetyRatio=cumH/mpeVal;
+    var layout2={
+      plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
+      margin:{l:65,r:16,t:30,b:50},
+      title:{text:"Point Timing: ("+(obsX).toFixed(2)+", "+(obsY).toFixed(2)+") mm \u2014 "+events.length+" pulses \u2014 "+(safetyRatio<=1?"SAFE (":"EXCEEDS MPE (")+numFmt(safetyRatio*100,1)+"%)",
+        font:{size:11,family:"monospace",color:safetyRatio<=1?"#2e7d32":"#bf360c"}},
+      xaxis:{title:{text:"Time ("+tUnit+")",font:{size:10,family:"monospace",color:plotText}},
+        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
+        tickfont:{size:9,family:"monospace",color:plotText}},
+      yaxis:{title:{text:"Cumulative fluence (J/cm\u00b2)",font:{size:10,family:"monospace",color:plotText}},
+        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
+        tickfont:{size:9,family:"monospace",color:plotText},
+        rangemode:"tozero"},
+      yaxis2:{overlaying:"y",side:"right",showgrid:false,
+        title:{text:"Per-pulse (J/cm\u00b2)",font:{size:9,family:"monospace",color:"rgba(33,150,243,0.7)"}},
+        tickfont:{size:8,family:"monospace",color:"rgba(33,150,243,0.7)"},
+        rangemode:"tozero"},
+      showlegend:true,legend:{x:0.01,y:0.99,bgcolor:"rgba(0,0,0,0)",
+        font:{size:9,family:"monospace",color:plotText}},
+      barmode:"overlay"
+    };
+
+    Plotly.react(ptTimRef.current,traces2,layout2,{responsive:true,displayModeBar:true,
+      modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false});
+  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines,selPt]);
+
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* ── Inputs: full width, 3-column ── */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
@@ -1782,7 +1949,31 @@ function ScanTab(p){
           <div><label htmlFor="scan-dia" style={lb}>Beam 1/e Diameter (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
           <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
           <div><label style={lb}>Repetition Rate</label><div style={{display:"flex",gap:4}}><input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div>
-          <div><label htmlFor="scan-pw" style={lb}>Average Power (W)</label><input id="scan-pw" type="text" value={pwS} onChange={function(e){upN(setPwS,setPw,e.target.value)}} style={ip}/></div>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:4}}>
+              <label style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,margin:0}}>
+                {pwMode==="power"?"Average Power":"Pulse Energy"}
+              </label>
+              <button onClick={function(){
+                if(pwMode==="power"){setPwMode("energy");if(prf>0&&pw>0)setEpS((pw/prf).toExponential(4));}
+                else{setPwMode("power");}setDirty(true);
+              }} style={{fontSize:8,padding:"2px 6px",background:"transparent",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",color:T.ac,fontWeight:600}}>{pwMode==="power"?"\u21C4 Pulse Energy":"\u21C4 Avg Power"}</button>
+            </div>
+            {pwMode==="power"?
+              <div>
+                <input id="scan-pw" type="text" value={pwS} onChange={function(e){upPw(e.target.value)}} style={ip}/>
+                <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"monospace"}}>{prf>0&&pw>0?"Ep = "+(pw/prf).toExponential(3)+" J":""}</div>
+              </div>
+            :
+              <div>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="text" value={epS} onChange={function(e){upEp(e.target.value)}} placeholder="e.g. 50e-6" style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <span style={{fontSize:11,color:T.td,alignSelf:"center"}}>J</span>
+                </div>
+                <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"monospace"}}>{prf>0&&pw>0?"P\u2090\u1D65\u1D4D = "+pw.toPrecision(3)+" W":""}</div>
+              </div>
+            }
+          </div>
         </div>
       </div>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
@@ -1839,7 +2030,7 @@ function ScanTab(p){
     <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
         <div style={{display:"flex",gap:4}}>
-          {[["fluence","Cumulative Fluence Map"],["timing","Pulse Timing Diagram"],["spatial","Fluence Cross-Section"]].map(function(vt){
+          {[["fluence","Cumulative Fluence Map"],["timing","Pulse Timing Diagram"],["spatial","Fluence Cross-Section"],["ptTiming","Point Timing"]].map(function(vt){
             return <button key={vt[0]} onClick={function(){setVizTab(vt[0])}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(vizTab===vt[0]?T.ac:T.bd),cursor:"pointer",background:vizTab===vt[0]?T.ac:"transparent",color:vizTab===vt[0]?"#fff":T.tm,borderRadius:4}}>{vt[1]}</button>;
           })}
         </div>
@@ -1907,6 +2098,20 @@ function ScanTab(p){
           </div>
         </div>
           :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate fluence profile"}</div>}
+      </div>
+
+      {/* Point Timing: pulse arrivals and cumulative fluence at a single point */}
+      <div style={{display:vizTab==="ptTiming"?"block":"none"}}>
+        <div style={{fontSize:9,color:T.td,marginBottom:4}}>
+          Pulse arrival times and cumulative fluence buildup at a single observation point.
+          {selPt?" Observing ("+selPt.x.toFixed(2)+", "+selPt.y.toFixed(2)+") mm. ":" Showing worst-case point. "}
+          Click the Cumulative Fluence Map to select a different point.
+          {selPt?<button onClick={function(){setSelPt(null)}} style={{marginLeft:8,fontSize:8,padding:"2px 6px",background:"transparent",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",color:T.ac}}>Reset to worst-case</button>:null}
+        </div>
+        {res&&prf>0?<div>
+          <div ref={ptTimRef} style={{width:"100%",height:400,borderRadius:6}}/>
+        </div>
+          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
       </div>
     </div>
 
@@ -2038,6 +2243,75 @@ function ScanTab(p){
   </div>);
 }
 
+/* ═══════ OCT SCANNING (placeholder) ═══════ */
+function OCTScanContent(p){
+  var T=p.T;
+  return (
+    <div style={{padding:40,textAlign:"center"}}>
+      <div style={{fontSize:14,fontWeight:600,color:T.tm,marginBottom:8}}>OCT Scanning</div>
+      <div style={{fontSize:11,color:T.td,lineHeight:1.7,maxWidth:500,margin:"0 auto"}}>
+        This tab will contain language and parameters specific to Optical Coherence Tomography (OCT) as an imaging modality. Content is under development.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ PHOTOACOUSTICS SCANNING (placeholder) ═══════ */
+function PAScanContent(p){
+  var T=p.T;
+  return (
+    <div style={{padding:40,textAlign:"center"}}>
+      <div style={{fontSize:14,fontWeight:600,color:T.tm,marginBottom:8}}>Photoacoustics Scanning</div>
+      <div style={{fontSize:11,color:T.td,lineHeight:1.7,maxWidth:500,margin:"0 auto"}}>
+        This tab will contain language and parameters specific to Photoacoustic imaging. Content is under development.
+      </div>
+    </div>
+  );
+}
+
+/* ═══════ SCANNING PROTOCOLS (sub-tab router) ═══════ */
+function ScanTab(p){
+  var T=p.T;
+  var _sub=useState("general"),scanSub=_sub[0],setScanSub=_sub[1];
+
+  var subTabs=[
+    {id:"general", label:"General Scanning"},
+    {id:"oct",     label:"OCT Scanning"},
+    {id:"pa",      label:"Photoacoustics Scanning"}
+  ];
+
+  var tabBtStyle=function(active){
+    return {
+      padding:"8px 16px",fontSize:11,fontWeight:active?700:500,
+      background:active?T.ac:"transparent",
+      color:active?"#fff":T.tm,
+      border:active?"none":"1px solid "+T.bd,
+      borderRadius:4,cursor:"pointer",
+      transition:"background 0.15s, color 0.15s"
+    };
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      {/* Sub-tab navigation */}
+      <div style={{display:"flex",gap:6,borderBottom:"1px solid "+T.bd,paddingBottom:10}}>
+        {subTabs.map(function(st){
+          return <button key={st.id}
+            role="tab"
+            aria-selected={scanSub===st.id}
+            onClick={function(){setScanSub(st.id);}}
+            style={tabBtStyle(scanSub===st.id)}>{st.label}</button>;
+        })}
+      </div>
+
+      {/* Sub-tab content */}
+      {scanSub==="general"?<GeneralScanContent T={T} theme={p.theme} msg={p.msg} setMsg={p.setMsg}/>:null}
+      {scanSub==="oct"?<OCTScanContent T={T} theme={p.theme} msg={p.msg} setMsg={p.setMsg}/>:null}
+      {scanSub==="pa"?<PAScanContent T={T} theme={p.theme} msg={p.msg} setMsg={p.setMsg}/>:null}
+    </div>
+  );
+}
+
 /* ═══════ APP (TAB ROUTER) ═══════ */
 /* ═══════ ERROR BOUNDARY ═══════ */
 /* Prevents a crash in one tab from blanking the entire application (Audit finding: dim 3) */
@@ -2113,9 +2387,9 @@ export default function App(){
       <div style={{borderBottom:"1px solid "+T.bd,padding:"10px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",background:T.card}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:16,fontWeight:700}}>Laser Skin MPE Calculator</span>
-          <span style={{fontSize:9,fontFamily:"monospace",color:T.td,border:"1px solid "+T.bd,borderRadius:3,padding:"2px 6px",fontWeight:600}}>{STD_NAME}</span>
+          <span style={{fontSize:12,fontWeight:500,fontFamily:"monospace",color:"#0C447C",background:"#E6F1FB",border:"1px solid #B5D4F4",borderRadius:5,padding:"4px 12px"}}>{STD_NAME}</span>
           <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleStdUpload} style={{display:"none"}}/>
-          <button onClick={function(){fileRef.current&&fileRef.current.click();}} style={{fontSize:9,padding:"2px 8px",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",background:"transparent",color:T.tm,fontFamily:"monospace"}} title="Upload a custom standard JSON file">Upload Standard</button>
+          <button onClick={function(){fileRef.current&&fileRef.current.click();}} style={{fontSize:11,padding:"4px 10px",border:"1px solid #B5D4F4",borderRadius:5,cursor:"pointer",background:"transparent",color:"#185FA5",fontWeight:500,display:"inline-flex",alignItems:"center",gap:4}} title="Upload a custom standard JSON file">{"\u21C5"} Load standard</button>
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center"}}>{msg?<span style={{fontSize:11,color:T.a2,fontWeight:600}}>{msg}</span>:null}<button onClick={function(){setTheme(theme==="light"?"dark":"light")}} style={{padding:"3px 8px",fontSize:13,border:"1px solid "+T.bd,cursor:"pointer",background:"transparent",color:T.tm,borderRadius:4}} title="Toggle theme">{theme==="light"?"\u263E":"\u2600"}</button></div>
       </div>
