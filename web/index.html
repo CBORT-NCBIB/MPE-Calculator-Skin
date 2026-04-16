@@ -3403,10 +3403,16 @@ function GeneralScanContent(p){
   var _lcm=useState("pulsed"),laserMode=_lcm[0],setLaserMode=_lcm[1]; /* "pulsed" | "cw" */
   var _epS=useState(""),epS=_epS[0],setEpS=_epS[1];
   var _vs=useState("100"),vS=_vs[0],setVS=_vs[1]; var _vn=useState(100),vel=_vn[0],setVel=_vn[1];
-  var _pat=useState("bidi"),pat=_pat[0],setPat=_pat[1];
-  var _lL=useState("20"),lLS=_lL[0],setLLS=_lL[1]; var _lLn=useState(20),lineL=_lLn[0],setLineL=_lLn[1];
-  var _nL=useState("8"),nLS=_nL[0],setNLS=_nL[1]; var _nLn=useState(8),nLines=_nLn[0],setNLines=_nLn[1];
-  var _ht=useState("0.5"),htS=_ht[0],setHtS=_ht[1]; var _htn=useState(0.5),hatch=_htn[0],setHatch=_htn[1];
+  var _vMode=useState("velocity"),velMode=_vMode[0],setVelMode=_vMode[1]; /* "velocity"|"dwell"|"scanrate"|"framerate" */
+  var _dw=useState("10"),dwellS=_dw[0],setDwellS=_dw[1]; var _dwN=useState(10),dwellN=_dwN[0],setDwellN=_dwN[1]; /* µs per spot */
+  var _sr=useState("5"),srateS=_sr[0],setSrateS=_sr[1]; var _srN=useState(5),srateN=_srN[0],setSrateN=_srN[1]; /* lines/s */
+  var _fr=useState("1"),frateS=_fr[0],setFrateS=_fr[1]; var _frN=useState(1),frateN=_frN[0],setFrateN=_frN[1]; /* fps */
+  var _pat=useState("raster"),pat=_pat[0],setPat=_pat[1];
+  var _lL=useState("20"),lLS=_lL[0],setLLS=_lL[1]; var _lLn=useState(20),lineL=_lLn[0],setLineL=_lLn[1]; /* scan width = line length */
+  var _sH=useState("10"),scanHS=_sH[0],setScanHS=_sH[1]; var _sHn=useState(10),scanHN=_sHn[0],setScanHN=_sHn[1]; /* scan area height (raster) */
+  var _nL=useState("8"),nLS=_nL[0],setNLS=_nL[1]; var _nLn=useState(8),nLines=_nLn[0],setNLines=_nLn[1]; /* scan line count */
+  var _htn=useState(10/7),hatch=_htn[0],setHatch=_htn[1]; /* derived: scanHN/(nLines-1); never directly entered */
+
   var _ppd=useState(8),ppd=_ppd[0],setPpd=_ppd[1];
   var _dwm=useState("gaussian"),dwm=_dwm[0],setDwm=_dwm[1];
   var _blk=useState(false),blk=_blk[0],setBlk=_blk[1];
@@ -3430,6 +3436,18 @@ function GeneralScanContent(p){
   useEffect(function(){if(pwMode==="energy"&&prf>0){var v=Number(epS);if(isFinite(v)&&v>0){setPw(v*prf);setPwS((v*prf).toPrecision(4));}}},[prf,pwMode,epS]);
   /* When PRF changes and mode is power, update displayed Ep */
   useEffect(function(){if(pwMode==="power"&&prf>0&&pw>0){setEpS((pw/prf).toExponential(4));}},[prf,pw,pwMode]);
+  /* Keep hatch in sync with scan height and scan line count */
+  useEffect(function(){
+    if(pat==="raster"&&scanHN>0&&nLines>=1)setHatch(nLines>1?scanHN/(nLines-1):scanHN);
+  },[pat,scanHN,nLines]);
+  /* Keep vel in sync for all derived velocity input modes */
+  useEffect(function(){
+    var v=0;
+    if(velMode==="dwell"&&dwellN>0&&dia>0) v=dia/(dwellN*1e-6);
+    else if(velMode==="scanrate"&&srateN>0&&lineL>0) v=srateN*lineL;
+    else if(velMode==="framerate"&&frateN>0&&lineL>0) v=lineL*(pat==="linear"?1:nLines)*frateN;
+    if(v>0&&isFinite(v)){setVel(v);setVS(v.toPrecision(4));}
+  },[velMode,dwellN,srateN,frateN,lineL,nLines,dia,pat]);
 
   /* Selected point for timing diagram (null = worst-case) */
   var _selPt=useState(null),selPt=_selPt[0],setSelPt=_selPt[1];
@@ -3451,14 +3469,13 @@ function GeneralScanContent(p){
       "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
       "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
       "  /* Separable fast-path: bypass segment construction entirely */",
-      "  var sepP=(!isCW&&p.prf>0&&(p.pat==='linear'||p.pat==='raster'||p.pat==='bidi'))?",
+      "  var sepP=(!isCW&&p.prf>0&&(p.pat==='linear'||p.pat==='raster'))?",
       "    {d_1e_mm:p.dia,prf_hz:p.prf,pulse_energy_J:Ep,v_scan_mm_s:p.vel,",
       "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
       "     pattern:p.pat,blanking:p.blk,is_cw:false}:null;",
       "  /* Only build segments if separable path not available */",
       "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d,bl){",
       "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);",
-      "    if(pat==='bidi')return E.buildBidiRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);",
       "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);}",
       "  var segs=sepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia,p.blk);",
       "  var cr=E.computeScanFluence(beam,segs,p.effPpd,sepP);",
@@ -3507,7 +3524,7 @@ function GeneralScanContent(p){
       "    var nL=p.nLines||1,hh=p.hatch||0,tAcc=0;",
       "    for(var li=0;li<nL&&pulseArr.length<maxSP;li++){",
       "      var ly=li*hh;",
-      "      var scanDir=(p.pat==='bidi'&&li%2===1)?-1:1;",
+      "      var scanDir=1; /* raster scans are unidirectional */",
       "      var xStart=scanDir===1?0:p.lineL;",
       "      for(var ki=0;ki<nPulsesLine&&pulseArr.length<maxSP;ki+=pStride){",
       "        var px=xStart+scanDir*ki*ps_mm;",
@@ -3528,7 +3545,7 @@ function GeneralScanContent(p){
       "  var vizStep=Math.max(1,Math.ceil(ptsPerLine/Math.min(200,Math.floor(MAX_VIZ_SEGS/Math.ceil(nL2/lineStride)))));",
       "  for(var vli=0;vli<nL2&&vizSegs.length<MAX_VIZ_SEGS;vli+=lineStride){",
       "    var vly=vli*(p.hatch||0);",
-      "    var vDir=(p.pat==='bidi'&&vli%2===1)?-1:1;",
+      "    var vDir=1; /* raster is unidirectional */",
       "    var vx0=vDir===1?0:p.lineL;",
       "    var nVizPts=Math.ceil(ptsPerLine/vizStep);",
       "    for(var vsi=0;vsi<=nVizPts&&vizSegs.length<MAX_VIZ_SEGS;vsi++){",
@@ -3575,18 +3592,37 @@ function GeneralScanContent(p){
     // ── Input validation (safety-critical) ──
     if(!isFinite(wl)||wl<180||wl>1e6){alert("Wavelength must be 180–1,000,000 nm");return;}
     if(!isFinite(dia)||dia<=0){alert("Beam diameter must be > 0");return;}
-    if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
     if(!isFinite(pw)||pw<=0){alert(pwMode==="energy"?"Pulse energy must be > 0 (and PRF must be > 0 to compute average power)":"Average power must be > 0");return;}
     if(laserMode==="pulsed"){
       if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
       if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
     }
-    if(pat!=="linear"){
-      if(!isFinite(nLines)||nLines<1){alert("Number of lines must be ≥ 1");return;}
-      if(!isFinite(hatch)||hatch<=0){alert("Hatch spacing must be > 0");return;}
-      if(!isFinite(lineL)||lineL<=0){alert("Line length must be > 0");return;}
+    // Scan area
+    if(!isFinite(lineL)||lineL<=0){alert(pat==="raster"?"Scan width must be > 0":"Scan length must be > 0");return;}
+    if(pat==="raster"){
+      if(!isFinite(scanHN)||scanHN<=0){alert("Scan height must be > 0");return;}
+      if(!isFinite(nLines)||nLines<1){alert("Number of scan lines must be ≥ 1");return;}
+    }
+    // Effective scan parameters (nLines and hatch are kept in sync via useEffect)
+    var effNLines=pat==="raster"?Math.max(1,nLines):1;
+    var effHatch=pat==="raster"&&nLines>1?scanHN/(nLines-1):scanHN;
+    // Effective scan velocity from selected input mode
+    var effVel;
+    if(velMode==="velocity"){
+      if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
+      effVel=vel;
+    }else if(velMode==="dwell"){
+      if(!isFinite(dwellN)||dwellN<=0){alert("Dwell time must be > 0");return;}
+      effVel=dia/(dwellN*1e-6);
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid dwell time — check beam diameter");return;}
+    }else if(velMode==="scanrate"){
+      if(!isFinite(srateN)||srateN<=0){alert("Line scan rate must be > 0");return;}
+      effVel=srateN*lineL;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid line scan rate or scan width");return;}
     }else{
-      if(!isFinite(lineL)||lineL<=0){alert("Line length must be > 0");return;}
+      if(!isFinite(frateN)||frateN<=0){alert("Frame rate must be > 0");return;}
+      effVel=lineL*(pat==="linear"?1:nLines)*frateN;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid frame rate or scan parameters");return;}
     }
     setCmp(true);setDirty(false);setPerfNote("");
 
@@ -3596,23 +3632,22 @@ function GeneralScanContent(p){
     var calcPrf=laserMode==="cw"?0:prf;
     var calcTau=laserMode==="cw"?0:tau;
     var isCWEst=laserMode==="cw";
-    var canSep=!isCWEst&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
+    var canSep=!isCWEst&&calcPrf>0&&(pat==="linear"||pat==="raster");
     var segsEst=canSep?[]:null;
     var estTime,estPulses;
     if(canSep){
-      var lineDurEst=lineL/vel;
-      var nLEst=pat==="linear"?1:nLines;
-      var jumpVEst=vel*5;
-      var hatchEst=pat==="linear"?0:(hatch||dia);
+      var lineDurEst=lineL/effVel;
+      var nLEst=pat==="linear"?1:effNLines;
+      var jumpVEst=effVel*5;
+      var hatchEst=pat==="linear"?0:(effHatch||dia);
       var flybackEst=pat==="linear"?0:(lineL/jumpVEst+hatchEst/jumpVEst);
       estTime=nLEst*lineDurEst+(nLEst-1)*flybackEst;
       estPulses=calcPrf*nLEst*lineDurEst;
     }else{
-      if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,vel,dia);
-      else if(pat==="bidi") segsEst=scanBuildBidi(0,0,lineL,nLines,hatch,vel,vel*5,dia,blk);
-      else segsEst=scanBuildRaster(0,0,lineL,nLines,hatch,vel,vel*5,dia,blk);
+      if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,effVel,dia);
+      else segsEst=scanBuildRaster(0,0,lineL,effNLines,effHatch,effVel,effVel*5,dia,blk);
       estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
-      estPulses=prf*estTime;
+      estPulses=calcPrf*estTime;
     }
     var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
     var trunc=Math.ceil(3*sigma/estDx);
@@ -3638,7 +3673,7 @@ function GeneralScanContent(p){
     var worker=getWorker();
     if(worker){
       var params={std:_std,wl:wl,dia:dia,tau:calcTau,prf:calcPrf,pw:pw,
-        pat:pat,lineL:lineL,nLines:nLines,hatch:hatch,vel:vel,dwm:dwm,blk:blk,
+        pat:pat,lineL:lineL,nLines:effNLines,hatch:effHatch,vel:effVel,dwm:dwm,blk:blk,
         effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
       // Safety timeout: kill Worker if it takes too long
       if(_workerTimeout.current)clearTimeout(_workerTimeout.current);
@@ -3658,7 +3693,7 @@ function GeneralScanContent(p){
         var beam2={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?pw/calcPrf:0,P:pw,cw:isCW2};
         if(r.notes&&r.notes.length>0)setPerfNote(r.notes.join(". ")+".");
         setRes({g:g,st:r.st,sf:r.sf,segs:r.segs,beam:beam2,maxP:r.maxP,minV:r.minVel,
-          pulses:r.pulseArr,effPpd:effPpd});
+          pulses:r.pulseArr,effPpd:effPpd,effNLines:effNLines,effHatch:effHatch,effVel:effVel});
         setCmp(false);
       };
       worker.onerror=function(err){
@@ -3683,21 +3718,26 @@ function GeneralScanContent(p){
       var isCW=laserMode==="cw";
       var beam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
 
+      // Derive effective scan params (same logic as calculate())
+      var effNLines=pat==="raster"?Math.max(1,nLines):1;
+      var effHatch=pat==="raster"&&nLines>1?scanHN/(nLines-1):scanHN;
+      var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
+
       // Build separable params if applicable (same logic as Worker)
-      var canSep=!isCW&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      var canSep=!isCW&&calcPrf>0&&(pat==="linear"||pat==="raster");
       function mkSepP(vv,ep){
         if(!canSep)return null;
         return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,v_scan_mm_s:vv,
-          x0:0,y0:0,line_length_mm:lineL,n_lines:pat==="linear"?1:nLines,
-          hatch_mm:pat==="linear"?0:hatch,pattern:pat,blanking:blk,is_cw:false};
+          x0:0,y0:0,line_length_mm:lineL,n_lines:pat==="linear"?1:effNLines,
+          hatch_mm:pat==="linear"?0:effHatch,pattern:pat,blanking:blk,is_cw:false};
       }
 
-      var cr=scanCompute(beam,canSep?[]:segs,effPpd,mkSepP(vel));
+      var cr=scanCompute(beam,canSep?[]:segs,effPpd,mkSepP(effVel));
       if(cr){
-        var minV=isCW?(cr.st.mv||vel):0;
-        var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:vel,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
+        var minV=isCW?(cr.st.mv||effVel):0;
+        var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:effVel,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
         var unitBeam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?1/calcPrf:0,P:1,cw:isCW};
-        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(vel,calcPrf>0?1/calcPrf:0));
+        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(effVel,calcPrf>0?1/calcPrf:0));
         var maxP=Infinity;
         if(unitCr){
           var upF=0;for(var ui=0;ui<unitCr.g.nx*unitCr.g.ny;ui++)if(unitCr.g.flu[ui]>upF)upF=unitCr.g.flu[ui];
@@ -3713,13 +3753,12 @@ function GeneralScanContent(p){
           function testV(tv){
             var ts;
             if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
-            else if(pat==="bidi")ts=scanBuildBidi(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
-            else ts=scanBuildRaster(0,0,lineL,nLines,hatch,tv,tv*5,dia,blk);
+            else ts=scanBuildRaster(0,0,lineL,effNLines,effHatch,tv,tv*5,dia,blk);
             var tb={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
             var tcr2=scanCompute(tb,ts,auxPpd);
             if(!tcr2)return true;
             var tmv=isCW?(tcr2.st.mv||tv):0;
-            var tsf2=scanSafety(tcr2.g,tb,tcr2.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:hatch,n_lines:pat==="linear"?1:nLines});
+            var tsf2=scanSafety(tcr2.g,tb,tcr2.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
             return tsf2.safe;
           }
           if(testV(1e6)){var vLo=0.01,vHi=1e6;
@@ -3730,40 +3769,37 @@ function GeneralScanContent(p){
         // Generate pulse positions and viz segments from scan params (not from segment array)
         var pulseArr=[];
         if(!isCW&&calcPrf>0){
-          var maxSP2=5000,ps_mm2=vel/calcPrf;
-          var nPL2=Math.max(1,Math.floor((lineL/vel)*calcPrf));
-          var nLV=pat==="linear"?1:nLines;
+          var maxSP2=5000,ps_mm2=effVel/calcPrf;
+          var nPL2=Math.max(1,Math.floor((lineL/effVel)*calcPrf));
+          var nLV=pat==="linear"?1:effNLines;
           var totalEst2=nPL2*nLV;
           var pStride2=Math.max(1,Math.ceil(totalEst2/maxSP2));
           var tAcc2=0;
           for(var li2=0;li2<nLV&&pulseArr.length<maxSP2;li2++){
-            var ly2=li2*(pat==="linear"?0:hatch);
-            var sDir2=(pat==="bidi"&&li2%2===1)?-1:1;
-            var xSt2=sDir2===1?0:lineL;
+            var ly2=li2*(pat==="linear"?0:effHatch);
             for(var ki2=0;ki2<nPL2&&pulseArr.length<maxSP2;ki2+=pStride2){
-              pulseArr.push({t:tAcc2+ki2/calcPrf,x:xSt2+sDir2*ki2*ps_mm2,y:ly2,si:li2});
+              pulseArr.push({t:tAcc2+ki2/calcPrf,x:ki2*ps_mm2,y:ly2,si:li2});
             }
-            tAcc2+=lineL/vel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:hatch)/(vel*5);
+            tAcc2+=lineL/effVel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:effHatch)/(effVel*5);
           }
         }
         // Capped viz segments
         var vizSegs2=[];
-        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:nLines;
+        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:effNLines;
         var ppl2=Math.ceil(lineL/dia);
         var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
         var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
         for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
-          var vly2=vl2*(pat==="linear"?0:hatch);
-          var vDir2=(pat==="bidi"&&vl2%2===1)?-1:1;
-          var vx02=vDir2===1?0:lineL;
+          var vly2=vl2*(pat==="linear"?0:effHatch);
           var nVP2=Math.ceil(ppl2/vStp2);
           for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
-            vizSegs2.push({x:vx02+vDir2*vs2*vStp2*dia,y:vly2,a:vDir2===1?0:Math.PI,v:vel});
+            vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
           }
         }
 
         if(notes.length>0)setPerfNote(notes.join(". ")+".");
-        setRes({g:cr.g,st:cr.st,sf:sf,segs:vizSegs2,beam:beam,maxP:maxP,minV:minVel,pulses:pulseArr,effPpd:effPpd});
+        setRes({g:cr.g,st:cr.st,sf:sf,segs:vizSegs2,beam:beam,maxP:maxP,minV:minVel,
+          pulses:pulseArr,effPpd:effPpd,effNLines:effNLines,effHatch:effHatch,effVel:effVel});
       }
     }catch(err){if(typeof console!=="undefined")console.error("Calculation error:",err);}
     setCmp(false);
@@ -3788,15 +3824,16 @@ function GeneralScanContent(p){
     requestAnimationFrame(function(){
 
     // ── 1. Scan pattern schematic with Gaussian overlap profiles ──
-    var nL=pat==="linear"?1:nLines;
-    var hh=pat==="linear"?0:hatch;
+    var nL=pat==="linear"?1:(res.effNLines||1);
+    var hh=pat==="linear"?0:(res.effHatch||hatch);
+    var velEff=res.effVel||vel;
     var scanH=(nL-1)*hh;
     var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
     var Ep=prf>0?pw/prf:0;
     var H0=prf>0?2*Ep/(Math.PI*w2)*100:0;
-    var ps=prf>0?vel/prf:0;
+    var ps=prf>0?velEff/prf:0;
     var trunc=3*sigma;
-    var nPL=prf>0?Math.max(1,Math.floor((lineL/vel)*prf)):0;
+    var nPL=prf>0?Math.max(1,Math.floor((lineL/velEff)*prf)):0;
 
     // Cap displayed lines for readability (show up to 12, stride if more)
     var maxShowLines=12;
@@ -3817,7 +3854,7 @@ function GeneralScanContent(p){
     for(var si2=0;si2<nShow;si2++){
       var li=showLines[si2];
       var ly=li*hh;
-      var isRev=pat==="bidi"&&li%2===1;
+      var isRev=false; /* raster scans are unidirectional */
       var col=lineColors[si2%lineColors.length];
 
       // Scan line arrow
@@ -3838,11 +3875,7 @@ function GeneralScanContent(p){
       if(si2<nShow-1){
         var nextLi=showLines[si2+1];
         var nextLy=nextLi*hh;
-        if(pat==="bidi"){
-          var jx=isRev?0:lineL;
-          traces.push({x:[jx,jx],y:[ly,nextLy],type:"scatter",mode:"lines",
-            line:{color:col,width:0.8,dash:"dot"},showlegend:false,hoverinfo:"skip"});
-        }else if(pat==="raster"){
+        if(pat==="raster"){
           // Return arc on the right side
           var arcPts=20,arcX=[],arcY=[];
           for(var ai=0;ai<=arcPts;ai++){
@@ -3933,7 +3966,7 @@ function GeneralScanContent(p){
     }
 
     // Pattern title annotation
-    var patNames={linear:"Linear scan",raster:"Unidirectional raster",bidi:"Bidirectional raster"};
+    var patNames={linear:"Linear scan",raster:"Unidirectional raster"};
     annots.push({x:0,y:nL>1?-dia*4:-dia*3.5,xref:"x",yref:"y",
       text:patNames[pat]||pat,showarrow:false,xanchor:"left",
       font:{size:11,family:"monospace",color:plotText,weight:"bold"}});
@@ -3953,7 +3986,7 @@ function GeneralScanContent(p){
     },{responsive:true,displayModeBar:false});
 
     /* Attach click handler for point selection (must be after Plotly.react) */
-    var scanH2=(pat==="linear"?0:(nLines-1)*hatch);
+    var scanH2=(pat==="linear"?0:((res.effNLines||1)-1)*(res.effHatch||hatch));
     fRef.removeAllListeners("plotly_click");
     fRef.on("plotly_click",function(data){
       if(!data||!data.points||!data.points.length)return;
@@ -4030,7 +4063,7 @@ function GeneralScanContent(p){
       },{responsive:true,displayModeBar:false});
     }
     }); // end requestAnimationFrame
-  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines]);
+  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN]);
 
   var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
   var timRef=useRef(null),spcRef=useRef(null),ptTimRef=useRef(null);
@@ -4046,9 +4079,9 @@ function GeneralScanContent(p){
     var lineDur=lineL/vel;
     var nPL=Math.max(1,Math.floor(lineDur*prf));
     var jumpV=vel*5;
-    var nL=pat==="linear"?1:nLines;
-    var hh=pat==="linear"?0:hatch;
-    var flybackDur=pat==="bidi"?hh/jumpV:(lineL/jumpV+hh/jumpV);
+    var nL=pat==="linear"?1:(res.effNLines||1);
+    var hh=pat==="linear"?0:(res.effHatch||hatch);
+    var flybackDur=lineL/jumpV+hh/jumpV;
     if(pat==="linear")flybackDur=0;
     var totalPulses=nPL*nL;
     var totalTime=nL*lineDur+(nL-1)*flybackDur;
@@ -4070,7 +4103,7 @@ function GeneralScanContent(p){
       var postCount=Math.min(8,nPL);
       var tWinStart=(nPL-preCount)*pulsePeriod;
       windowDefs.push({
-        label:"Line 1\u21922 Transition"+(pat==="bidi"?" (bidi)":" (flyback: "+ft(flybackDur)+")"),
+        label:"Line 1\u21922 Transition (flyback: "+ft(flybackDur)+")",
         tStart:tWinStart,showPulses:preCount,
         lineIdx:0,
         transition:{t1End:t1End,t2Start:t2Start,postPulses:postCount,line2Idx:1}
@@ -4186,7 +4219,7 @@ function GeneralScanContent(p){
     var config={responsive:true,displayModeBar:true,
       modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false};
     Plotly.react(timRef.current,traces,layout,config);
-  },[res,vizTab,theme,prf,vel,lineL,pat,hatch,nLines]);
+  },[res,vizTab,theme,prf,vel,lineL,pat,hatch,scanHN]);
 
   // Render Plotly fluence cross-section — zoomed pulse overlap structure
   // Shows ±3 beam diameters centered on peak, individual pulse Gaussians,
@@ -4205,8 +4238,9 @@ function GeneralScanContent(p){
 
     // Cross-line sum at y=0 (on the scan line)
     var crossSum=1.0;
-    if(pat!=="linear"&&hatch>0&&nLines>1){
-      for(var m=1;m<=nLines;m++){var yy=m*hatch;var cy=Math.exp(-2*yy*yy/w2);if(cy<1e-12)break;crossSum+=2*cy;}
+    var cNL=res.effNLines||1;
+    if(pat!=="linear"&&hatch>0&&cNL>1){
+      for(var m=1;m<=cNL;m++){var yy=m*hatch;var cy=Math.exp(-2*yy*yy/w2);if(cy<1e-12)break;crossSum+=2*cy;}
     }
 
     // ── Zoomed view: ±3 beam diameters around center ──
@@ -4304,7 +4338,7 @@ function GeneralScanContent(p){
     var config={responsive:true,scrollZoom:true,displayModeBar:true,
       modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false};
     Plotly.react(spcRef.current,traces,layout,config);
-  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines]);
+  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN]);
 
   /* ── Click handler on fluence map to select observation point ── */
   /* Reset selPt when new results arrive */
@@ -4323,10 +4357,10 @@ function GeneralScanContent(p){
     var trunc2=trunc*trunc;
     var nPL=Math.max(1,Math.floor((lineL/vel)*prf));
     var lineDur=lineL/vel;
-    var nL=pat==="linear"?1:nLines;
-    var hh=pat==="linear"?0:hatch;
+    var nL=pat==="linear"?1:(res.effNLines||1);
+    var hh=pat==="linear"?0:(res.effHatch||hatch);
     var jumpV=vel*5;
-    var flybackTime=(pat==="linear"||nL<=1)?0:(pat==="bidi"?(hh/jumpV):(lineL/jumpV+hh/jumpV));
+    var flybackTime=(pat==="linear"||nL<=1)?0:(lineL/jumpV+hh/jumpV);
 
     // Determine observation point
     var obsX,obsY;
@@ -4349,7 +4383,7 @@ function GeneralScanContent(p){
       if(dy2>trunc2){tLineStart+=lineDur+(li<nL-1?flybackTime:0);continue;}
       var crossAtt=Math.exp(-2*dy2/w2);
 
-      var scanDir=(pat==="bidi"&&li%2===1)?-1:1;
+      var scanDir=1; /* raster is unidirectional */
       var xStart=scanDir===1?0:lineL;
 
       // Find pulse range that contributes
@@ -4446,7 +4480,7 @@ function GeneralScanContent(p){
 
     Plotly.react(ptTimRef.current,traces2,layout2,{responsive:true,displayModeBar:true,
       modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false});
-  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,nLines,selPt]);
+  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN,selPt]);
 
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* ── Inputs: full width, 3-column ── */}
@@ -4511,20 +4545,57 @@ function GeneralScanContent(p){
       </div>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Scan Pattern</div>
-        <div style={{display:"flex",gap:6,marginBottom:10}}>
-          {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
-            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true)}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{pt[1]}</button>;
+        <div style={{display:"flex",gap:4,marginBottom:10}}>
+          {[["linear","Linear"],["raster","Raster"]].map(function(pt){
+            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{pt[1]}</button>;
           })}
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <div><label htmlFor="scan-vel" style={lb}>Scan Velocity (mm/s)</label><input id="scan-vel" type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value)}} style={ip}/></div>
-            <div><label htmlFor="scan-ll" style={lb}>Line Length (mm)</label><input id="scan-ll" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value)}} style={ip}/></div>
+          {/* Scan area dimensions */}
+          <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr":"1fr 1fr",gap:8}}>
+            <div>
+              <label htmlFor="scan-sw" style={lb}>{pat==="linear"?"Scan Length (mm)":"Scan Width (mm)"}</label>
+              <input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/>
+            </div>
+            {pat==="raster"?<div>
+              <label htmlFor="scan-sh" style={lb}>Scan Height (mm)</label>
+              <input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/>
+            </div>:null}
           </div>
-          {pat!=="linear"?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-            <div><label htmlFor="scan-nl" style={lb}>Number of Lines</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){upN(setNLS,setNLines,e.target.value)}} style={ip}/></div>
-            <div><label htmlFor="scan-ht" style={lb}>Hatch Spacing (mm)</label><input id="scan-ht" type="text" value={htS} onChange={function(e){upN(setHtS,setHatch,e.target.value)}} style={ip}/></div>
+          {/* Scan lines (raster only) */}
+          {pat==="raster"?<div>
+            <label htmlFor="scan-nl" style={lb}>Scan Lines</label>
+            <input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/>
+            {nLines>1&&scanHN>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"Line spacing: "+(scanHN/(nLines-1)).toFixed(4)+" mm"}</div>:null}
           </div>:null}
+          {/* Velocity input */}
+          <div>
+            <label style={lb}>Scan Speed</label>
+            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}>
+              <option value="velocity">Scan velocity (mm/s)</option>
+              <option value="dwell">Pixel dwell time (µs)</option>
+              <option value="scanrate">Line scan rate (lines/s)</option>
+              <option value="framerate">Frame rate (fps)</option>
+            </select>
+            {velMode==="velocity"?
+              <input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>
+            :velMode==="dwell"?
+              <div>
+                <input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>
+                {dwellN>0&&dia>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}
+              </div>
+            :velMode==="scanrate"?
+              <div>
+                <input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>
+                {srateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}
+              </div>
+            :
+              <div>
+                <input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>
+                {frateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"+(pat==="raster"?" ("+lineL+" \u00d7 "+nLines+" lines \u00d7 "+frateN+" fps)":"")}</div>:null}
+              </div>
+            }
+          </div>
         </div>
       </div>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
@@ -4592,9 +4663,9 @@ function GeneralScanContent(p){
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:6,marginTop:10}}>
             {[["Peak fluence",numFmt(res.sf.pF,4)+" J/cm\u00b2"],
-              ["Scan area",lineL+"\u00d7"+((pat==="linear"?0:(nLines-1)*hatch).toFixed(3))+" mm"],
+              ["Scan area",lineL+"\u00d7"+((pat==="linear"?0:((res.effNLines||1)-1)*(res.effHatch||hatch)).toFixed(3))+" mm"],
               ["Hatch/beam",(pat==="linear"?"\u2014":((hatch/dia).toFixed(1)+"\u00d7"))],
-              ["Lines at peak",(pat==="linear"?"1":(function(){var w2p=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),ct=0,yc=(nLines-1)*hatch/2;for(var mp=0;mp<nLines;mp++){if(Math.exp(-2*(yc-mp*hatch)*(yc-mp*hatch)/w2p)>0.01)ct++;}return ct;})())]
+              ["Lines at peak",(function(){if(pat==="linear")return "1";var rNL=res.effNLines||1,rHH=res.effHatch||hatch;var w2p=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),ct=0,yc=(rNL-1)*rHH/2;for(var mp=0;mp<rNL;mp++){if(Math.exp(-2*(yc-mp*rHH)*(yc-mp*rHH)/w2p)>0.01)ct++;}return ct;})()]
             ].map(function(item,i){return <div key={i} style={{background:T.bgI,borderRadius:4,padding:"4px 6px",border:"1px solid "+T.bd}}><div style={{fontSize:7,color:T.td,marginBottom:1}}>{item[0]}</div><div style={{fontSize:9,fontWeight:700,fontFamily:"monospace",color:T.tx}}>{item[1]}</div></div>;})}
           </div>
         </div>:<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
@@ -4605,8 +4676,8 @@ function GeneralScanContent(p){
         {res&&prf>0?<div>
           <div ref={timRef} style={{width:"100%",height:400,borderRadius:6}}/>
           <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",gap:6,marginTop:8}}>
-            {(function(){var pd=1/prf,ld=lineL/vel,jv=vel*5,nPl=Math.floor(ld*prf),nL2=pat==="linear"?1:nLines,hh=pat==="linear"?0:hatch;
-              var fb=pat==="bidi"?hh/jv:(pat==="linear"?0:lineL/jv+hh/jv);
+            {(function(){var pd=1/prf,ld=lineL/vel,jv=vel*5,nPl=Math.floor(ld*prf),nL2=pat==="linear"?1:(res.effNLines||1),hh=pat==="linear"?0:(res.effHatch||hatch);
+              var fb=pat==="linear"?0:(lineL/jv+hh/jv);
               var tt=nL2*ld+(nL2-1)*fb;
               return [["PRF",(prf/1000).toFixed(0)+" kHz"],["Pulse period",ft(pd)],["Pulses/line",nPl.toLocaleString()],
                 ["Flyback gap",pat==="linear"?"\u2014":ft(fb)],["Total",(nPl*nL2).toLocaleString()+" in "+ft(tt)]
@@ -4626,7 +4697,7 @@ function GeneralScanContent(p){
               ["Pulse spacing",(vel/prf*1000).toFixed(2)+" \u00b5m"],
               ["Pulses/line",Math.floor((lineL/vel)*prf).toLocaleString()],
               ["Overlap factor",((function(){var w2=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),ps2=vel/prf,tr=3*dia/(2*Math.sqrt(2)),s=0;for(var k=-Math.ceil(tr/ps2);k<=Math.ceil(tr/ps2);k++){s+=Math.exp(-2*(k*ps2)*(k*ps2)/w2);}return s;})()).toFixed(1)+"\u00d7"],
-              ["Cross-line sum",(pat!=="linear"&&hatch>0&&nLines>1?(function(){var w2=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),cs=1;for(var m2=1;m2<=nLines;m2++){var c2=Math.exp(-2*(m2*hatch)*(m2*hatch)/w2);if(c2<1e-12)break;cs+=2*c2;}return cs;})():1).toFixed(2)+"\u00d7"]
+              ["Cross-line sum",(function(){var rNL=res.effNLines||1;if(pat==="linear"||hatch<=0||rNL<=1)return 1;var rHH=res.effHatch||hatch,w2=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),cs=1;for(var m2=1;m2<=rNL;m2++){var c2=Math.exp(-2*(m2*rHH)*(m2*rHH)/w2);if(c2<1e-12)break;cs+=2*c2;}return cs;})().toFixed(2)+"\u00d7"]
             ].map(function(item,i){return <div key={i} style={{background:T.bgI,borderRadius:4,padding:"4px 6px",border:"1px solid "+T.bd}}><div style={{fontSize:7,color:T.td,marginBottom:1}}>{item[0]}</div><div style={{fontSize:9,fontWeight:700,fontFamily:"monospace",color:T.tx}}>{item[1]}</div></div>;})}
           </div>
         </div>
@@ -4690,7 +4761,7 @@ function GeneralScanContent(p){
           <td style={{padding:"4px 8px",fontSize:11,fontFamily:"monospace",fontWeight:600}}>{row[1]}</td>
         </tr>;})}</tbody></table>
         <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
-          ["Pattern",pat==="bidi"?"Bidirectional raster":pat==="raster"?"Unidirectional raster":"Linear"],
+          ["Pattern",pat==="raster"?"Unidirectional raster":"Linear"],
           ["Flyback blanking",pat==="linear"?"N/A":(blk?"Yes (laser off during jumps)":"No (conservative)")],
           ["Total segments",String(res.segs.length)],
           ["Total scan time",numFmt(res.st.tt,4)+" s"],
