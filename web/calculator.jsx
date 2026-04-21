@@ -1303,553 +1303,48 @@ function GeneralScanContent(p){
     setCmp(false);
   }
 
-  var _hover=useState(null),hover=_hover[0],setHover=_hover[1];
-
-  // ── Cumulative fluence map: scan schematic + cross-scan profile + edge profile ──
-  var fluMapRef=useRef(null);
-  var crossRef=useRef(null);
-  var edgeRef=useRef(null);
-
-  // Plotly theme colors (shared by all three Plotly charts)
-  var plotBg=theme==="dark"?"#333338":"#ffffff";
-  var plotGrid=theme==="dark"?"#48484f":"#e4e7eb";
-  var plotText=theme==="dark"?"#a0a0a8":"#737880";
-  var plotLine=theme==="dark"?"#5B9BD5":"#1C4E80";
-
-  useEffect(function(){
-    if(!res||!fluMapRef.current||typeof Plotly==="undefined")return;
-    var fRef=fluMapRef.current,cRef=crossRef.current,eRef=edgeRef.current;
-    requestAnimationFrame(function(){
-
-    // ── 1. Scan pattern schematic with Gaussian overlap profiles ──
-    var nL=pat==="linear"?1:(res.effNLines||1);
-    var hh=pat==="linear"?0:(res.effHatch||hatch);
-    var velEff=res.effVel||vel;
-    var scanH=(nL-1)*hh;
-    var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
-    var Ep=prf>0?pw/prf:0;
-    var H0=prf>0?2*Ep/(Math.PI*w2)*100:0;
-    var ps=prf>0?velEff/prf:0;
-    var trunc=3*sigma;
-    var nPL=prf>0?Math.max(1,Math.floor((lineL/velEff)*prf)):0;
-
-    // Cap displayed lines for readability (show up to 12, stride if more)
-    var maxShowLines=12;
-    var lineStride=nL>maxShowLines?Math.ceil(nL/maxShowLines):1;
-    var showLines=[];
-    for(var sli=0;sli<nL;sli+=lineStride)showLines.push(sli);
-    if(showLines[showLines.length-1]!==nL-1&&nL>1)showLines.push(nL-1);
-    var nShow=showLines.length;
-
-    // Layout: scan lines on left, Gaussian profiles on right
-    // X: 0 to lineL for scan lines, profile curves at x > lineL
-    var profOffset=lineL*1.15; // where profiles start
-    var profWidth=lineL*0.3;   // width for profile curves
-
-    var traces=[],shapes=[],annots=[];
-    var lineColors=["#185FA5","#0F6E56","#854F0B","#993556","#534AB7","#993C1D"];
-
-    for(var si2=0;si2<nShow;si2++){
-      var li=showLines[si2];
-      var ly=li*hh;
-      var isRev=false; /* raster scans are unidirectional */
-      var col=lineColors[si2%lineColors.length];
-
-      // Scan line arrow
-      var lx1=isRev?lineL:0, lx2=isRev?0:lineL;
-      traces.push({x:[lx1,lx2],y:[ly,ly],type:"scatter",mode:"lines",
-        line:{color:col,width:2},showlegend:false,hoverinfo:"skip"});
-      // Arrowhead annotation at line end
-      annots.push({x:lx2,y:ly,ax:isRev?lx2+lineL*0.04:lx2-lineL*0.04,ay:ly,
-        xref:"x",yref:"y",axref:"x",ayref:"y",
-        arrowhead:2,arrowsize:1.2,arrowwidth:2,arrowcolor:col,showarrow:true,text:""});
-
-      // Line number label
-      annots.push({x:isRev?lineL+lineL*0.03:-lineL*0.03,y:ly,
-        xref:"x",yref:"y",text:""+(li+1),showarrow:false,
-        font:{size:9,family:"monospace",color:plotText},xanchor:isRev?"left":"right"});
-
-      // Flyback/return (dashed) to next shown line
-      if(si2<nShow-1){
-        var nextLi=showLines[si2+1];
-        var nextLy=nextLi*hh;
-        if(pat==="raster"){
-          // Return arc on the right side
-          var arcPts=20,arcX=[],arcY=[];
-          for(var ai=0;ai<=arcPts;ai++){
-            var af=ai/arcPts;
-            arcX.push(lineL+lineL*0.02*Math.sin(af*Math.PI));
-            arcY.push(ly+af*(nextLy-ly));
-          }
-          traces.push({x:arcX,y:arcY,type:"scatter",mode:"lines",
-            line:{color:plotText,width:0.7,dash:"dot"},opacity:0.35,showlegend:false,hoverinfo:"skip"});
-        }
-        // Ellipsis if lines were skipped
-        if(nextLi-li>1){
-          var midY=(ly+nextLy)/2;
-          annots.push({x:lineL/2,y:midY,xref:"x",yref:"y",
-            text:"\u22ee "+(nextLi-li-1)+" lines",showarrow:false,
-            font:{size:8,family:"monospace",color:plotText},opacity:0.5});
-        }
-      }
-
-      // Beam footprint circle at a representative position along the line
-      var bfx=lineL*(0.2+0.6*si2/Math.max(1,nShow-1));
-      shapes.push({type:"circle",xref:"x",yref:"y",
-        x0:bfx-dia/2,y0:ly-dia/2,x1:bfx+dia/2,y1:ly+dia/2,
-        line:{color:col,width:1,dash:"dot"},fillcolor:col,opacity:0.1});
-
-      // Gaussian envelope profile on right side
-      var profPts=80,profX=[],profY=[];
-      var yRange=dia*3;
-      for(var pi=0;pi<=profPts;pi++){
-        var dy=-yRange+2*yRange*pi/profPts;
-        var gv=Math.exp(-2*dy*dy/w2);
-        profX.push(profOffset+gv*profWidth);
-        profY.push(ly+dy);
-      }
-      traces.push({x:profX,y:profY,type:"scatter",mode:"lines",
-        line:{color:col,width:1.2},opacity:0.5,showlegend:false,hoverinfo:"skip"});
-    }
-
-    // Cumulative overlap curve (sum of all Gaussian contributions from all lines)
-    if(nL>1){
-      var cumPts=120,cumX=[],cumY=[],cumMax=0;
-      var cumYmin=-dia*3,cumYmax=scanH+dia*3;
-      for(var ci=0;ci<=cumPts;ci++){
-        var yp=cumYmin+ci*(cumYmax-cumYmin)/cumPts;
-        var csum=0;
-        for(var cm=0;cm<nL;cm++){var dym=yp-cm*hh;csum+=Math.exp(-2*dym*dym/w2);}
-        if(csum>cumMax)cumMax=csum;
-        cumX.push(csum);cumY.push(yp);
-      }
-      // Normalize to fit in profWidth
-      var cumScale=cumMax>0?profWidth/cumMax:1;
-      var cumXn=cumX.map(function(v){return profOffset+v*cumScale;});
-      traces.push({x:cumXn,y:cumY,type:"scatter",mode:"lines",
-        line:{color:plotLine,width:2.5},showlegend:false,
-        hoverinfo:"text",text:cumY.map(function(yv,i){return "y="+yv.toFixed(3)+" mm, overlap="+cumX[i].toFixed(1)+"\u00d7";})});
-      annots.push({x:profOffset+profWidth+lineL*0.02,y:scanH/2-scanH*0.08,
-        xref:"x",yref:"y",text:"Cumulative",showarrow:false,
-        font:{size:9,family:"monospace",color:plotLine,weight:"bold"}});
-      annots.push({x:profOffset+profWidth+lineL*0.02,y:scanH/2+scanH*0.08,
-        xref:"x",yref:"y",text:"overlap",showarrow:false,
-        font:{size:9,family:"monospace",color:plotText}});
-    }
-
-    // Baseline axis line for profiles
-    shapes.push({type:"line",xref:"x",yref:"y",
-      x0:profOffset,y0:nL>1?-dia*3:-(dia*2),x1:profOffset,y1:nL>1?scanH+dia*3:dia*2,
-      line:{color:plotGrid,width:0.5}});
-
-    // Dimensional annotation: line length (below scan area)
-    var dimY=nL>1?scanH+dia*4:dia*3;
-    shapes.push({type:"line",xref:"x",yref:"y",x0:0,y0:dimY,x1:lineL,y1:dimY,
-      line:{color:plotText,width:0.8}});
-    annots.push({x:lineL/2,y:dimY+dia*1.5,xref:"x",yref:"y",
-      text:lineL+" mm (line length)",showarrow:false,
-      font:{size:10,family:"monospace",color:plotText}});
-
-    // Dimensional annotation: hatch spacing (left side)
-    if(nL>1&&nShow>=2){
-      var hdy1=showLines[0]*hh,hdy2=showLines[0]*hh+hh;
-      if(hdy2<=scanH){
-        shapes.push({type:"line",xref:"x",yref:"y",
-          x0:-lineL*0.06,y0:hdy1,x1:-lineL*0.06,y1:hdy2,
-          line:{color:plotText,width:0.8}});
-        annots.push({x:-lineL*0.08,y:(hdy1+hdy2)/2,xref:"x",yref:"y",
-          text:hh+" mm",showarrow:false,textangle:-90,
-          font:{size:9,family:"monospace",color:plotText}});
-      }
-    }
-
-    // Pattern title annotation
-    var patNames={linear:"Linear scan",raster:"Unidirectional raster"};
-    annots.push({x:0,y:nL>1?-dia*4:-dia*3.5,xref:"x",yref:"y",
-      text:patNames[pat]||pat,showarrow:false,xanchor:"left",
-      font:{size:11,family:"monospace",color:plotText,weight:"bold"}});
-
-    var xMax=profOffset+profWidth+lineL*0.15;
-    var yMin2=nL>1?Math.min(-dia*5,showLines[0]*hh-dia*4):-dia*5;
-    var yMax2=nL>1?Math.max(scanH+dia*6,dimY+dia*3):dia*5;
-
-    Plotly.react(fRef,traces,{
-      xaxis:{range:[-lineL*0.12,xMax],showgrid:false,zeroline:false,showticklabels:false,
-        color:plotText,linecolor:plotGrid},
-      yaxis:{range:[yMax2,yMin2],showgrid:false,zeroline:false,showticklabels:false,
-        color:plotText,linecolor:plotGrid,scaleanchor:"x",constrain:"domain"},
-      plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
-      margin:{l:16,r:16,t:8,b:8},showlegend:false,
-      shapes:shapes,annotations:annots
-    },{responsive:true,displayModeBar:false});
-
-    /* Attach click handler for point selection (must be after Plotly.react) */
-    var scanH2=(pat==="linear"?0:((res.effNLines||1)-1)*(res.effHatch||hatch));
-    fRef.removeAllListeners("plotly_click");
-    fRef.on("plotly_click",function(data){
-      if(!data||!data.points||!data.points.length)return;
-      var pt=data.points[0];
-      if(isFinite(pt.x)&&isFinite(pt.y)){
-        var cx=Math.max(0,Math.min(lineL,pt.x));
-        var cy=Math.max(0,Math.min(scanH2,pt.y));
-        setSelPt({x:cx,y:cy});setVizTab("ptTiming");
-      }
-    });
-
-    // ── 2. Cross-scan fluence profile (fluence vs y at x=lineL/2) ──
-    if(cRef&&prf>0){
-      // Along-line sum at center (reusable constant)
-      var M=Math.ceil(trunc/ps);if(M>50000)M=50000;
-      var alongSum=0;
-      for(var ak=-M;ak<=M;ak++){alongSum+=Math.exp(-2*(ak*ps)*(ak*ps)/w2);}
-
-      var margin=dia*5;
-      var yMin=-margin,yMax=scanH+margin;
-      var nPtsY=200,dyP=(yMax-yMin)/nPtsY;
-      var crossY=[],crossF=[],crossMax=0;
-      for(var ci=0;ci<=nPtsY;ci++){
-        var yp=yMin+ci*dyP;crossY.push(yp);
-        var cSum=0;
-        for(var cm=0;cm<nL;cm++){var dy=yp-cm*hh;var cc=Math.exp(-2*dy*dy/w2);if(cc>1e-15)cSum+=cc;}
-        var cf=H0*alongSum*cSum;crossF.push(cf);
-        if(cf>crossMax)crossMax=cf;
-      }
-      Plotly.react(cRef,[{x:crossY,y:crossF,type:"scatter",mode:"lines",
-        line:{color:plotLine,width:2},fill:"tozeroy",
-        fillcolor:theme==="dark"?"rgba(86,180,233,0.1)":"rgba(0,114,178,0.06)"}],{
-        xaxis:{title:{text:"y position (mm)",font:{size:10,family:"monospace",color:plotText}},
-          color:plotText,gridcolor:plotGrid,linecolor:plotGrid,tickfont:{size:8,family:"monospace",color:plotText}},
-        yaxis:{title:{text:"Fluence (J/cm\u00b2)",font:{size:10,family:"monospace",color:plotText}},
-          color:plotText,gridcolor:plotGrid,linecolor:plotGrid,tickfont:{size:8,family:"monospace",color:plotText},
-          rangemode:"tozero"},
-        plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
-        margin:{l:55,r:10,t:8,b:36},showlegend:false,
-        annotations:[{x:0.5,y:1.0,xref:"paper",yref:"paper",
-          text:"Cross-scan profile at x = "+(lineL/2).toFixed(1)+" mm",
-          showarrow:false,font:{size:9,family:"monospace",color:plotText}}]
-      },{responsive:true,displayModeBar:false});
-    }
-
-    // ── 3. Along-scan edge profile (fluence vs x at y=scanH/2) ──
-    if(eRef&&prf>0){
-      var yCenterP=scanH/2;
-      var cSumEdge=0;
-      for(var em=0;em<nL;em++){var edy=yCenterP-em*hh;var ecc=Math.exp(-2*edy*edy/w2);if(ecc>1e-15)cSumEdge+=ecc;}
-      var exMin=-dia*3,exMax=lineL+dia*3;
-      var nPtsE=300,dxE=(exMax-exMin)/nPtsE;
-      var edgeX=[],edgeF=[];
-      for(var ei=0;ei<=nPtsE;ei++){
-        var exp2=exMin+ei*dxE;edgeX.push(exp2);
-        var eck=exp2/ps,ekr=trunc/ps;
-        var eklo=Math.max(0,Math.ceil(eck-ekr)),ekhi=Math.min(nPL-1,Math.floor(eck+ekr));
-        var esum=0;for(var ek=eklo;ek<=ekhi;ek++){var edk=exp2-ek*ps;esum+=Math.exp(-2*edk*edk/w2);}
-        edgeF.push(H0*esum*cSumEdge);
-      }
-      Plotly.react(eRef,[{x:edgeX,y:edgeF,type:"scatter",mode:"lines",
-        line:{color:plotLine,width:1.5},fill:"tozeroy",
-        fillcolor:theme==="dark"?"rgba(86,180,233,0.06)":"rgba(0,114,178,0.04)"}],{
-        xaxis:{title:{text:"x position (mm)",font:{size:10,family:"monospace",color:plotText}},
-          color:plotText,gridcolor:plotGrid,linecolor:plotGrid,tickfont:{size:8,family:"monospace",color:plotText}},
-        yaxis:{title:{text:"H (J/cm\u00b2)",font:{size:10,family:"monospace",color:plotText}},
-          color:plotText,gridcolor:plotGrid,linecolor:plotGrid,tickfont:{size:8,family:"monospace",color:plotText},
-          rangemode:"tozero"},
-        plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
-        margin:{l:55,r:10,t:8,b:36},showlegend:false,
-        annotations:[{x:0.5,y:1.0,xref:"paper",yref:"paper",
-          text:"Along-scan edge profile at y = "+(yCenterP).toFixed(3)+" mm",
-          showarrow:false,font:{size:9,family:"monospace",color:plotText}}]
-      },{responsive:true,displayModeBar:false});
-    }
-    }); // end requestAnimationFrame
-  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN]);
-
-  var _vizTab=useState("fluence"),vizTab=_vizTab[0],setVizTab=_vizTab[1];
-  var timRef=useRef(null),spcRef=useRef(null),ptTimRef=useRef(null);
-
-  // Render Plotly pulse timing diagram — representative windows at transitions
-  // Shows 2-3 windows at scan line boundaries to reveal flyback gaps and
-  // timing structure, instead of plotting every pulse across the full scan.
-  useEffect(function(){
-    if(vizTab!=="timing"||!res||!timRef.current||typeof Plotly==="undefined")return;
-    if(prf<=0)return;
-
-    var pulsePeriod=1/prf;
-    var lineDur=lineL/vel;
-    var nPL=Math.max(1,Math.floor(lineDur*prf));
-    var jumpV=vel*5;
-    var nL=pat==="linear"?1:(res.effNLines||1);
-    var hh=pat==="linear"?0:(res.effHatch||hatch);
-    var flybackDur=lineL/jumpV+hh/jumpV;
-    if(pat==="linear")flybackDur=0;
-    var totalPulses=nPL*nL;
-    var totalTime=nL*lineDur+(nL-1)*flybackDur;
-
-    var nWinPulses=15; // pulses per window
-
-    // Build subplot data for each window
-    var traces=[],annotations=[],shapes=[];
-    var windowDefs=[];
-
-    // Window 1: Start of line 1
-    windowDefs.push({label:"Line 1 \u2014 Start",tStart:0,showPulses:nWinPulses,lineIdx:0});
-
-    // Window 2: Transition line 1 → line 2 (if multi-line)
-    if(nL>1){
-      var t1End=lineDur;
-      var t2Start=lineDur+flybackDur;
-      var preCount=Math.min(6,nPL);
-      var postCount=Math.min(8,nPL);
-      var tWinStart=(nPL-preCount)*pulsePeriod;
-      windowDefs.push({
-        label:"Line 1\u21922 Transition (flyback: "+ft(flybackDur)+")",
-        tStart:tWinStart,showPulses:preCount,
-        lineIdx:0,
-        transition:{t1End:t1End,t2Start:t2Start,postPulses:postCount,line2Idx:1}
-      });
-    }
-
-    // Window 3: Mid-scan transition (if many lines)
-    if(nL>10){
-      var midL=Math.floor(nL/2);
-      var midStart=midL*(lineDur+flybackDur);
-      var midEnd=midStart+lineDur;
-      var midNextStart=midEnd+flybackDur;
-      var preC2=Math.min(6,nPL);
-      windowDefs.push({
-        label:"Line "+(midL+1)+"\u2192"+(midL+2)+" (mid-scan)",
-        tStart:midStart+(nPL-preC2)*pulsePeriod,showPulses:preC2,
-        lineIdx:midL,
-        transition:{t1End:midEnd,t2Start:midNextStart,postPulses:Math.min(8,nPL),line2Idx:midL+1}
-      });
-    }
-
-    // Generate Plotly subplots — use one chart with separate y-domains
-    var nWins=windowDefs.length;
-    var winGap=0.08;
-    var winH=(1-winGap*(nWins-1))/nWins;
-
-    for(var wi=0;wi<nWins;wi++){
-      var wd=windowDefs[wi];
-      var yBot=1-(wi+1)*winH-wi*winGap;
-      var yTop=yBot+winH;
-      var xaxName=wi===0?"xaxis":"xaxis"+(wi+1);
-      var yaxName=wi===0?"yaxis":"yaxis"+(wi+1);
-      var xKey=wi===0?"x":"x"+(wi+1);
-      var yKey=wi===0?"y":"y"+(wi+1);
-
-      // Build stem data for this window's pulses
-      var stemX=[],stemY=[];
-      for(var pi=0;pi<wd.showPulses;pi++){
-        var t=wd.tStart+pi*pulsePeriod;
-        stemX.push(t*1e6,t*1e6,null);
-        stemY.push(0,1,null);
-      }
-
-      traces.push({x:stemX,y:stemY,type:"scatter",mode:"lines",
-        xaxis:xKey,yaxis:yKey,
-        line:{color:plotLine,width:1.5},showlegend:false,hoverinfo:"x"});
-
-      // Transition pulses (next line, after flyback)
-      if(wd.transition){
-        var stemX2=[],stemY2=[];
-        for(var pi2=0;pi2<wd.transition.postPulses;pi2++){
-          var t2=wd.transition.t2Start+pi2*pulsePeriod;
-          stemX2.push(t2*1e6,t2*1e6,null);
-          stemY2.push(0,1,null);
-        }
-        traces.push({x:stemX2,y:stemY2,type:"scatter",mode:"lines",
-          xaxis:xKey,yaxis:yKey,
-          line:{color:theme==="dark"?"#E69F00":"#CC6600",width:1.5},showlegend:false,hoverinfo:"x"});
-
-        // Flyback gap shading
-        shapes.push({
-          type:"rect",xref:xKey,yref:yKey,
-          x0:wd.transition.t1End*1e6,x1:wd.transition.t2Start*1e6,y0:0,y1:1.1,
-          fillcolor:"rgba(230,95,0,0.08)",line:{width:0},
-        });
-        // Flyback boundary lines
-        shapes.push({type:"line",xref:xKey,yref:yKey,
-          x0:wd.transition.t1End*1e6,x1:wd.transition.t1End*1e6,y0:0,y1:1.1,
-          line:{color:"#E65100",width:1.5,dash:"dash"}});
-        shapes.push({type:"line",xref:xKey,yref:yKey,
-          x0:wd.transition.t2Start*1e6,x1:wd.transition.t2Start*1e6,y0:0,y1:1.1,
-          line:{color:"#E65100",width:1.5,dash:"dash"}});
-      }
-
-      // Window label annotation
-      annotations.push({
-        x:0.01,y:0.92,xref:"paper",yref:yKey+" domain",
-        text:wd.label,showarrow:false,
-        font:{size:9,family:"monospace",color:plotText,weight:"bold"},
-        bgcolor:plotBg,borderpad:2
-      });
-    }
-
-    // Build layout with subplots
-    var layout={
-      plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
-      margin:{l:65,r:16,t:10,b:40},
-      showlegend:false,
-      shapes:shapes,
-      annotations:annotations
+  /* ── ECharts theme config (Paul Tol High-Contrast) ── */
+  var ec=useMemo(function(){
+    var dk=theme==="dark";
+    return {
+      bg:dk?"#14171A":"#FAFAFA",
+      panel:dk?"#1E1E1E":"#FFFFFF",
+      grid:dk?"#2E2E2E":"#E8E8E8",
+      spine:dk?"#AAAAAA":"#444444",
+      tick:dk?"#9CA3AF":"#555555",
+      title:dk?"#E0E0E0":"#222222",
+      stem:dk?"#6CB3FF":"#004488",
+      stemShaft:dk?"rgba(187,187,187,0.55)":"rgba(136,136,136,0.55)",
+      cumLine:dk?"#EE99AA":"#BB5566",
+      mpe:dk?"#DDAA33":"#DDAA33",
+      sub:dk?"#888888":"#777777",
+      navBg:dk?"#252525":"#F0F0F0",
+      navWin:dk?"rgba(108,179,255,0.12)":"rgba(0,68,136,0.08)",
+      navBorder:dk?"rgba(108,179,255,0.4)":"rgba(0,68,136,0.35)"
     };
+  },[theme]);
 
-    for(var li=0;li<nWins;li++){
-      var yBot2=1-(li+1)*winH-li*winGap;
-      var yTop2=yBot2+winH;
-      var xn=li===0?"xaxis":"xaxis"+(li+1);
-      var yn=li===0?"yaxis":"yaxis"+(li+1);
-      layout[xn]={
-        title:li===nWins-1?{text:"Time (\u00b5s)",font:{size:10,family:"monospace",color:plotText}}:undefined,
-        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
-        tickfont:{size:8,family:"monospace",color:plotText},
-        ticksuffix:" \u00b5s",
-        anchor:yn.replace("axis","")
-      };
-      layout[yn]={
-        domain:[yBot2,yTop2],
-        range:[0,1.15],showticklabels:false,
-        gridcolor:plotGrid,linecolor:plotGrid,
-        anchor:xn.replace("axis","")
-      };
-    }
+  var ptTimRef=useRef(null);
+  var _chartRef=useRef(null);
 
-    var config={responsive:true,displayModeBar:true,
-      modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false};
-    Plotly.react(timRef.current,traces,layout,config);
-  },[res,vizTab,theme,prf,vel,lineL,pat,hatch,scanHN]);
-
-  // Render Plotly fluence cross-section — zoomed pulse overlap structure
-  // Shows ±3 beam diameters centered on peak, individual pulse Gaussians,
-  // cumulative sum, single-pulse reference, and MPE annotation.
-  useEffect(function(){
-    if(vizTab!=="spatial"||!res||!spcRef.current||typeof Plotly==="undefined")return;
-    if(prf<=0||pw<=0)return;
-
-    var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
-    var Ep=prf>0?pw/prf:0;
-    var H0=2*Ep/(Math.PI*w2)*100; // peak single-pulse fluence J/cm²
-    var ps=vel/prf; // pulse spacing mm
-    var trunc=3*sigma;
-    var nPL=Math.max(1,Math.floor((lineL/vel)*prf));
-    var mpeVal=skinMPE(wl,res.st.tt);
-
-    // Cross-line sum at y=0 (on the scan line)
-    var crossSum=1.0;
-    var cNL=res.effNLines||1;
-    if(pat!=="linear"&&hatch>0&&cNL>1){
-      for(var m=1;m<=cNL;m++){var yy=m*hatch;var cy=Math.exp(-2*yy*yy/w2);if(cy<1e-12)break;crossSum+=2*cy;}
-    }
-
-    // ── Zoomed view: ±3 beam diameters around center ──
-    var xCenter=lineL/2;
-    var zoomHW=dia*3;
-    var zoomXMin=xCenter-zoomHW,zoomXMax=xCenter+zoomHW;
-    var nPtsZ=400,dxZ=(zoomXMax-zoomXMin)/nPtsZ;
-    var zoomX=[],zoomCum=[],cumMax=0;
-
-    for(var zi=0;zi<=nPtsZ;zi++){
-      var xp=zoomXMin+zi*dxZ;
-      var ck=xp/ps,kr=trunc/ps;
-      var klo=Math.max(0,Math.ceil(ck-kr)),khi=Math.min(nPL-1,Math.floor(ck+kr));
-      var s=0;for(var k=klo;k<=khi;k++){var dk=xp-k*ps;s+=Math.exp(-2*dk*dk/w2);}
-      var cumF=H0*s*crossSum;
-      if(cumF>cumMax)cumMax=cumF;
-      // Store in µm relative to center for clarity
-      zoomX.push((xp-xCenter)*1000);
-      zoomCum.push(cumF);
-    }
-
-    // Single-pulse reference envelope (centered at nearest pulse to xCenter)
-    var nearestK=Math.round(xCenter/ps);
-    var refX=[],refY=[];
-    for(var ri=0;ri<=nPtsZ;ri++){
-      var rxp=zoomXMin+ri*dxZ;
-      var rdx=rxp-nearestK*ps;
-      refX.push((rxp-xCenter)*1000);
-      refY.push(H0*Math.exp(-2*rdx*rdx/w2));
-    }
-
-    // Individual pulse envelopes (~8 visible pulses around center)
-    var nShow=Math.min(10,nPL);
-    var startK=nearestK-Math.floor(nShow/2);
-    var indivTraces=[];
-    for(var pi=0;pi<nShow;pi++){
-      var pk=startK+pi;
-      if(pk<0||pk>=nPL)continue;
-      var pCenter=pk*ps;
-      var pX=[],pY=[];
-      for(var pj=0;pj<=nPtsZ;pj++){
-        var pxp=zoomXMin+pj*dxZ;
-        var pdx=pxp-pCenter;
-        var ph=H0*Math.exp(-2*pdx*pdx/w2);
-        pX.push((pxp-xCenter)*1000);
-        pY.push(ph>H0*0.005?ph:null);
-      }
-      indivTraces.push({x:pX,y:pY,type:"scatter",mode:"lines",
-        line:{color:plotLine,width:0.8},opacity:0.2,
-        connectNulls:false,showlegend:false,hoverinfo:"skip"});
-    }
-
-    var overlapFactor=cumMax/H0;
-    var yMaxChart=cumMax*1.2;
-    // If MPE is within 2× of cumulative peak, include it in chart range
-    if(isFinite(mpeVal)&&mpeVal>0&&mpeVal<yMaxChart*2)yMaxChart=Math.max(yMaxChart,mpeVal*1.15);
-    var mpeAbove=!isFinite(mpeVal)||mpeVal<=0||mpeVal>yMaxChart;
-
-    var traces=indivTraces.slice();
-    // Single pulse reference
-    traces.push({x:refX,y:refY,type:"scatter",mode:"lines",
-      line:{color:plotLine,width:1.5,dash:"dot"},
-      name:"Single pulse (H\u2080 = "+numFmt(H0,3)+" J/cm\u00b2)",hoverinfo:"skip"});
-    // Cumulative
-    traces.push({x:zoomX,y:zoomCum,type:"scatter",mode:"lines",
-      line:{color:plotLine,width:2.5},fill:"tozeroy",
-      fillcolor:theme==="dark"?"rgba(86,180,233,0.08)":"rgba(0,114,178,0.08)",
-      name:"Cumulative ("+overlapFactor.toFixed(1)+"\u00d7 overlap)"});
-    // MPE line (only if within chart range)
-    if(!mpeAbove){
-      traces.push({x:[zoomX[0],zoomX[zoomX.length-1]],y:[mpeVal,mpeVal],type:"scatter",mode:"lines",
-        line:{color:"#d32f2f",width:2,dash:"dash"},
-        name:"MPE(T="+ft(res.st.tt)+") = "+numFmt(mpeVal,3)+" J/cm\u00b2"});
-    }
-
-    var layout={
-      xaxis:{title:{text:"Position relative to center (\u00b5m)",font:{size:11,family:"monospace",color:plotText}},
-        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
-        tickfont:{size:9,family:"monospace",color:plotText}},
-      yaxis:{title:{text:"Fluence, H (J/cm\u00b2)",font:{size:11,family:"monospace",color:plotText}},
-        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
-        range:[0,yMaxChart],
-        tickfont:{size:9,family:"monospace",color:plotText}},
-      plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
-      margin:{l:70,r:16,t:10,b:40},
-      legend:{x:0.02,y:0.98,bgcolor:"rgba(255,255,255,0.85)",bordercolor:plotGrid,borderwidth:1,
-        font:{size:9,family:"monospace",color:plotText}},
-      showlegend:true,
-      annotations:mpeAbove&&isFinite(mpeVal)&&mpeVal>0?[{
-        x:0.5,y:1.0,xref:"paper",yref:"paper",
-        text:"MPE(T="+ft(res.st.tt)+") = "+numFmt(mpeVal,3)+" J/cm\u00b2 \u2014 "+(mpeVal/cumMax).toFixed(0)+"\u00d7 above peak (above chart range)",
-        showarrow:false,font:{size:9,family:"monospace",color:"#d32f2f"},
-        bgcolor:"#fff5f5",bordercolor:"#d32f2f33",borderwidth:1,borderpad:4}]:[]
-    };
-    var config={responsive:true,scrollZoom:true,displayModeBar:true,
-      modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false};
-    Plotly.react(spcRef.current,traces,layout,config);
-  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN]);
-
-  /* ── Click handler on fluence map to select observation point ── */
   /* Reset selPt when new results arrive */
   useEffect(function(){setSelPt(null);},[res]);
 
+  /* ── Dispose ECharts instance on unmount ── */
+  useEffect(function(){
+    return function(){
+      if(_chartRef.current){_chartRef.current.dispose();_chartRef.current=null;}
+    };
+  },[]);
+
   /* ── Point Timing Diagram: pulse arrivals + cumulative fluence at a point ── */
   useEffect(function(){
-    if(vizTab!=="ptTiming"||!res||!ptTimRef.current||typeof Plotly==="undefined")return;
+    if(!res||!ptTimRef.current||typeof echarts==="undefined")return;
     if(prf<=0||pw<=0)return;
 
     var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
     var Ep=pw/prf;
-    var H0=2*Ep/(Math.PI*w2)*100; // J/cm²
+    var H0=2*Ep/(Math.PI*w2)*100; // J/cm\u00b2
     var ps=vel/prf; // pulse spacing mm
     var trunc=3*sigma;
     var trunc2=trunc*trunc;
@@ -1864,7 +1359,6 @@ function GeneralScanContent(p){
     var obsX,obsY;
     if(selPt){obsX=selPt.x;obsY=selPt.y;}
     else{
-      // Find worst-case point from grid
       var g=res.g,maxF=0,maxIdx=0;
       for(var gi=0;gi<g.nx*g.ny;gi++){if(g.flu[gi]>maxF){maxF=g.flu[gi];maxIdx=gi;}}
       var giy=Math.floor(maxIdx/g.nx),gix=maxIdx-giy*g.nx;
@@ -1872,7 +1366,7 @@ function GeneralScanContent(p){
     }
 
     // Collect pulse contributions at the observation point
-    var events=[]; // {t, H}
+    var events=[];
     var tLineStart=0;
     for(var li=0;li<nL;li++){
       var yLine=li*hh;
@@ -1880,18 +1374,12 @@ function GeneralScanContent(p){
       var dy2=dy*dy;
       if(dy2>trunc2){tLineStart+=lineDur+(li<nL-1?flybackTime:0);continue;}
       var crossAtt=Math.exp(-2*dy2/w2);
-
-      var scanDir=1; /* raster is unidirectional */
+      var scanDir=1;
       var xStart=scanDir===1?0:lineL;
-
-      // Find pulse range that contributes
-      // x_pulse = xStart + scanDir * k * ps
-      // obsX - x_pulse within ±trunc → k range
       var kCenter=(obsX-xStart)/(scanDir*ps);
       var kRange=trunc/ps;
       var kMin=Math.max(0,Math.ceil(kCenter-kRange));
       var kMax=Math.min(nPL-1,Math.floor(kCenter+kRange));
-
       for(var k=kMin;k<=kMax;k++){
         var xPulse=xStart+scanDir*k*ps;
         var dx=obsX-xPulse;
@@ -1906,79 +1394,155 @@ function GeneralScanContent(p){
       tLineStart+=lineDur+(li<nL-1?flybackTime:0);
     }
 
-    // Sort by time and compute cumulative
     events.sort(function(a,b){return a.t-b.t;});
     var totalTime=res.st.tt;
     var mpeVal=skinMPE(wl,totalTime);
 
-    // Build traces
-    var tArr=[],cumArr=[],impulseT=[],impulseH=[];
+    // Build cumulative step data and impulse data
+    var cumData=[];
+    var impulseData=[];
     var cumH=0;
-    // Start at t=0 with H=0
-    tArr.push(0);cumArr.push(0);
+    cumData.push([0,0]);
     for(var ei=0;ei<events.length;ei++){
       var ev=events[ei];
-      // Step: horizontal at previous cumH up to this pulse time
-      tArr.push(ev.t);cumArr.push(cumH);
-      // Step: vertical jump at this pulse time
+      cumData.push([ev.t,cumH]);
       cumH+=ev.H;
-      tArr.push(ev.t);cumArr.push(cumH);
-      // Impulse bar
-      impulseT.push(ev.t);impulseH.push(ev.H);
+      cumData.push([ev.t,cumH]);
+      impulseData.push([ev.t,ev.H]);
     }
-    // Extend to end of scan
-    tArr.push(totalTime);cumArr.push(cumH);
+    cumData.push([totalTime,cumH]);
 
-    // Scale time to ms for readability
+    // Scale time for readability
     var tScale=1,tUnit="s";
     if(totalTime<0.01){tScale=1e6;tUnit="\u00b5s";}
     else if(totalTime<10){tScale=1e3;tUnit="ms";}
 
-    var plotText=theme==="dark"?"#e5e5e5":"#404040";
-    var plotBg=theme==="dark"?"#1a1a1a":"#fafafa";
-    var plotGrid=theme==="dark"?"#333":"#e5e5e5";
-
-    var traces2=[
-      // Pulse impulses (thin bars)
-      {x:impulseT.map(function(t){return t*tScale}),y:impulseH,
-       type:"bar",marker:{color:"rgba(33,150,243,0.5)"},width:totalTime*tScale*0.003,
-       name:"Per-pulse fluence",yaxis:"y2",hovertemplate:"t = %{x:.4f} "+tUnit+"<br>H = %{y:.4e} J/cm\u00b2<extra>Pulse</extra>"},
-      // Cumulative fluence (step function)
-      {x:tArr.map(function(t){return t*tScale}),y:cumArr,
-       type:"scatter",mode:"lines",line:{color:"#E65100",width:2},
-       name:"Cumulative fluence",hovertemplate:"t = %{x:.4f} "+tUnit+"<br>\u03a3H = %{y:.4e} J/cm\u00b2<extra>Cumulative</extra>"},
-      // MPE reference line
-      {x:[0,totalTime*tScale],y:[mpeVal,mpeVal],
-       type:"scatter",mode:"lines",line:{color:"#2e7d32",width:1.5,dash:"dash"},
-       name:"MPE(T="+totalTime.toPrecision(3)+"s) = "+mpeVal.toPrecision(3)+" J/cm\u00b2",
-       hoverinfo:"skip"}
-    ];
+    var cumScaled=cumData.map(function(p){return [p[0]*tScale,p[1]];});
+    var impulseScaled=impulseData.map(function(p){return [p[0]*tScale,p[1]];});
 
     var safetyRatio=cumH/mpeVal;
-    var layout2={
-      plot_bgcolor:plotBg,paper_bgcolor:"rgba(0,0,0,0)",
-      margin:{l:65,r:16,t:30,b:50},
-      title:{text:"Point Timing: ("+(obsX).toFixed(2)+", "+(obsY).toFixed(2)+") mm \u2014 "+events.length+" pulses \u2014 "+(safetyRatio<=1?"SAFE (":"EXCEEDS MPE (")+numFmt(safetyRatio*100,1)+"%)",
-        font:{size:11,family:"monospace",color:safetyRatio<=1?"#2e7d32":"#bf360c"}},
-      xaxis:{title:{text:"Time ("+tUnit+")",font:{size:10,family:"monospace",color:plotText}},
-        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
-        tickfont:{size:9,family:"monospace",color:plotText}},
-      yaxis:{title:{text:"Cumulative fluence (J/cm\u00b2)",font:{size:10,family:"monospace",color:plotText}},
-        color:plotText,gridcolor:plotGrid,linecolor:plotGrid,
-        tickfont:{size:9,family:"monospace",color:plotText},
-        rangemode:"tozero"},
-      yaxis2:{overlaying:"y",side:"right",showgrid:false,
-        title:{text:"Per-pulse (J/cm\u00b2)",font:{size:9,family:"monospace",color:"rgba(33,150,243,0.7)"}},
-        tickfont:{size:8,family:"monospace",color:"rgba(33,150,243,0.7)"},
-        rangemode:"tozero"},
-      showlegend:true,legend:{x:0.01,y:0.99,bgcolor:"rgba(0,0,0,0)",
-        font:{size:9,family:"monospace",color:plotText}},
-      barmode:"overlay"
+
+    // ── ECharts rendering ──
+    if(_chartRef.current){_chartRef.current.dispose();_chartRef.current=null;}
+    var chart=echarts.init(ptTimRef.current,null,{renderer:"canvas"});
+    _chartRef.current=chart;
+
+    var fontFamily="Inter, system-ui, -apple-system, sans-serif";
+
+    var option={
+      backgroundColor:"transparent",
+      animation:false,
+      textStyle:{fontFamily:fontFamily},
+
+      grid:[
+        {left:68,right:24,top:8,height:"22%"},
+        {left:68,right:24,top:"38%",height:"42%"}
+      ],
+
+      xAxis:[
+        {type:"value",gridIndex:0,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1.5}},
+         axisTick:{show:true,length:5,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{show:false},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:1}},
+         min:0,max:totalTime*tScale},
+        {type:"value",gridIndex:1,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1.5}},
+         axisTick:{show:true,length:5,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{show:true,fontFamily:fontFamily,fontSize:11,color:ec.tick,
+           formatter:function(v){return v%1===0?String(v):v.toFixed(1);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:1}},
+         name:"Time ("+tUnit+")",nameLocation:"middle",nameGap:32,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:12,fontWeight:500,color:ec.title},
+         min:0,max:totalTime*tScale}
+      ],
+
+      yAxis:[
+        {type:"value",gridIndex:0,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1.5}},
+         axisTick:{show:true,length:5,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{fontFamily:fontFamily,fontSize:11,color:ec.tick,
+           formatter:function(v){return v<0.001&&v>0?v.toExponential(1):numFmt(v,2);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:1}},
+         name:"Pulse H (J/cm\u00b2)",nameLocation:"middle",nameGap:52,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0},
+        {type:"value",gridIndex:1,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1.5}},
+         axisTick:{show:true,length:5,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{fontFamily:fontFamily,fontSize:11,color:ec.tick,
+           formatter:function(v){return v<0.001&&v>0?v.toExponential(1):numFmt(v,3);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:1}},
+         name:"Cumulative (J/cm\u00b2)",nameLocation:"middle",nameGap:52,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0}
+      ],
+
+      dataZoom:[
+        {type:"inside",xAxisIndex:[0,1],filterMode:"none",zoomOnMouseWheel:"ctrl"},
+        {type:"slider",xAxisIndex:[0,1],
+         bottom:8,height:28,
+         borderColor:ec.navBorder,
+         fillerColor:ec.navWin,
+         backgroundColor:ec.navBg,
+         handleStyle:{color:ec.navBorder,borderColor:ec.navBorder},
+         moveHandleStyle:{color:ec.navBorder},
+         textStyle:{fontFamily:fontFamily,fontSize:10,color:ec.tick},
+         dataBackground:{lineStyle:{color:ec.cumLine,opacity:0.4,width:1},areaStyle:{color:"transparent"}},
+         selectedDataBackground:{lineStyle:{color:ec.cumLine,opacity:0.7,width:1},areaStyle:{color:"transparent"}}}
+      ],
+
+      toolbox:{show:false},
+
+      tooltip:{
+        trigger:"axis",
+        axisPointer:{type:"cross",label:{fontFamily:fontFamily,fontSize:10}},
+        textStyle:{fontFamily:fontFamily,fontSize:11},
+        formatter:function(params){
+          if(!params||!params.length)return "";
+          var t=params[0].value[0];
+          var out=["<b>t = "+numFmt(t,4)+" "+tUnit+"</b>"];
+          for(var pi=0;pi<params.length;pi++){
+            var p=params[pi];
+            if(p.seriesName==="MPE limit")continue;
+            out.push(p.marker+" "+p.seriesName+": "+numFmt(p.value[1],4)+" J/cm\u00b2");
+          }
+          return out.join("<br>");
+        }
+      },
+
+      series:[
+        {name:"Per-pulse fluence",type:"bar",xAxisIndex:0,yAxisIndex:0,
+         data:impulseScaled,
+         barWidth:Math.max(1,Math.min(3,400/Math.max(1,impulseScaled.length))),
+         itemStyle:{color:ec.stem},
+         emphasis:{itemStyle:{color:ec.stem}},
+         large:true,largeThreshold:500},
+
+        {name:"Cumulative fluence",type:"line",xAxisIndex:1,yAxisIndex:1,
+         data:cumScaled,
+         step:false,
+         lineStyle:{color:ec.cumLine,width:2},
+         symbol:"none",
+         emphasis:{disabled:true}},
+
+        {name:"MPE limit",type:"line",xAxisIndex:1,yAxisIndex:1,
+         data:[[0,mpeVal],[totalTime*tScale,mpeVal]],
+         lineStyle:{color:ec.mpe,width:1.5,type:"dashed"},
+         symbol:"none",
+         emphasis:{disabled:true}}
+      ]
     };
 
-    Plotly.react(ptTimRef.current,traces2,layout2,{responsive:true,displayModeBar:true,
-      modeBarButtonsToRemove:["select2d","lasso2d","autoScale2d"],displaylogo:false});
-  },[res,vizTab,theme,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN,selPt]);
+    chart.setOption(option);
+
+    var onResize=function(){chart.resize();};
+    window.addEventListener("resize",onResize);
+
+    return function(){
+      window.removeEventListener("resize",onResize);
+    };
+  },[res,ec,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN,selPt]);
 
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* ── Inputs: full width, 3-column ── */}
@@ -2128,95 +1692,22 @@ function GeneralScanContent(p){
       </div>
     </div>
 
-    {/* ── Tabbed Visualization ── */}
+    {/* ── Point Timing Visualization ── */}
     <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
-        <div style={{display:"flex",gap:4}}>
-          {[["fluence","Cumulative Fluence Map"],["timing","Pulse Timing Diagram"],["spatial","Fluence Cross-Section"],["ptTiming","Point Timing"]].map(function(vt){
-            return <button key={vt[0]} onClick={function(){setVizTab(vt[0])}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(vizTab===vt[0]?T.ac:T.bd),cursor:"pointer",background:vizTab===vt[0]?T.ac:"transparent",color:vizTab===vt[0]?"#fff":T.tm,borderRadius:4}}>{vt[1]}</button>;
-          })}
-        </div>
-        {res?<div style={{fontSize:9,color:T.td,fontFamily:"monospace"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:14,fontWeight:600,color:T.tm,fontFamily:"Inter, system-ui, sans-serif"}}>Point timing</div>
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"Inter, system-ui, sans-serif",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
       </div>
-
-      {/* All three panels are always mounted; only visibility toggles.
-           This prevents the canvas from being destroyed/recreated on tab switch,
-           which would lose its painted heatmap content. */}
-      <div style={{display:vizTab==="fluence"?"block":"none"}}>
-        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Scan pattern schematic with beam overlap profiles (left), cross-scan fluence profile (right), and along-scan edge profile (bottom).</div>
-        {res?<div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div>
-              <div style={{fontSize:8,fontWeight:600,color:T.tm,marginBottom:4}}>Scan Pattern + Beam Overlap</div>
-              <div ref={fluMapRef} style={{width:"100%",height:320,borderRadius:4}}/>
-            </div>
-            <div>
-              <div style={{fontSize:8,fontWeight:600,color:T.tm,marginBottom:4}}>Cross-Scan Fluence Profile</div>
-              <div ref={crossRef} style={{width:"100%",height:320,borderRadius:4}}/>
-            </div>
-          </div>
-          <div style={{marginTop:10}}>
-            <div style={{fontSize:8,fontWeight:600,color:T.tm,marginBottom:4}}>Along-Scan Edge Profile</div>
-            <div ref={edgeRef} style={{width:"100%",height:160,borderRadius:4}}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:6,marginTop:10}}>
-            {[["Peak fluence",numFmt(res.sf.pF,4)+" J/cm\u00b2"],
-              ["Scan area",lineL+"\u00d7"+((pat==="linear"?0:((res.effNLines||1)-1)*(res.effHatch||hatch)).toFixed(3))+" mm"],
-              ["Hatch/beam",(pat==="linear"?"\u2014":((hatch/dia).toFixed(1)+"\u00d7"))],
-              ["Lines at peak",(function(){if(pat==="linear")return "1";var rNL=res.effNLines||1,rHH=res.effHatch||hatch;var w2p=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),ct=0,yc=(rNL-1)*rHH/2;for(var mp=0;mp<rNL;mp++){if(Math.exp(-2*(yc-mp*rHH)*(yc-mp*rHH)/w2p)>0.01)ct++;}return ct;})()]
-            ].map(function(item,i){return <div key={i} style={{background:T.bgI,borderRadius:4,padding:"4px 6px",border:"1px solid "+T.bd}}><div style={{fontSize:7,color:T.td,marginBottom:1}}>{item[0]}</div><div style={{fontSize:9,fontWeight:700,fontFamily:"monospace",color:T.tx}}>{item[1]}</div></div>;})}
-          </div>
-        </div>:<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>Click Calculate to generate fluence map</div>}
+      <div style={{fontSize:10,color:T.td,marginBottom:8,fontFamily:"Inter, system-ui, sans-serif"}}>
+        Pulse arrival times and cumulative fluence buildup at a single observation point.
+        {selPt?" Observing ("+selPt.x.toFixed(2)+", "+selPt.y.toFixed(2)+") mm. ":" Showing worst-case point. "}
+        {selPt?<button onClick={function(){setSelPt(null)}} style={{marginLeft:8,fontSize:9,padding:"2px 8px",background:"transparent",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",color:T.ac,fontFamily:"Inter, system-ui, sans-serif"}}>Reset to worst-case</button>:null}
       </div>
-
-      <div style={{display:vizTab==="timing"?"block":"none"}}>
-        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Representative time windows at scan line transitions showing pulse timing, flyback gaps, and inter-line timing structure.</div>
-        {res&&prf>0?<div>
-          <div ref={timRef} style={{width:"100%",height:400,borderRadius:6}}/>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",gap:6,marginTop:8}}>
-            {(function(){var pd=1/prf,ld=lineL/vel,jv=vel*5,nPl=Math.floor(ld*prf),nL2=pat==="linear"?1:(res.effNLines||1),hh=pat==="linear"?0:(res.effHatch||hatch);
-              var fb=pat==="linear"?0:(lineL/jv+hh/jv);
-              var tt=nL2*ld+(nL2-1)*fb;
-              return [["PRF",(prf/1000).toFixed(0)+" kHz"],["Pulse period",ft(pd)],["Pulses/line",nPl.toLocaleString()],
-                ["Flyback gap",pat==="linear"?"\u2014":ft(fb)],["Total",(nPl*nL2).toLocaleString()+" in "+ft(tt)]
-              ].map(function(item,i){return <div key={i} style={{background:T.bgI,borderRadius:4,padding:"4px 6px",border:"1px solid "+T.bd}}><div style={{fontSize:7,color:T.td,marginBottom:1}}>{item[0]}</div><div style={{fontSize:9,fontWeight:700,fontFamily:"monospace",color:T.tx}}>{item[1]}</div></div>;});
-            })()}
-          </div>
-        </div>
-          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
+      {res&&prf>0?<div>
+        <div ref={ptTimRef} style={{width:"100%",height:500,borderRadius:6}}/>
       </div>
-
-      <div style={{display:vizTab==="spatial"?"block":"none"}}>
-        <div style={{fontSize:9,color:T.td,marginBottom:4}}>Zoomed view ({"\u00b1"}3 beam diameters) showing individual pulse Gaussians and their cumulative overlap. Scroll to zoom, drag to pan.</div>
-        {res&&prf>0?<div>
-          <div ref={spcRef} style={{width:"100%",height:380,borderRadius:6}}/>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(5, 1fr)",gap:6,marginTop:8}}>
-            {[["Single pulse H\u2080",numFmt(prf>0?2*(pw/prf)/(Math.PI*(dia/Math.sqrt(2))*(dia/Math.sqrt(2)))*100:0,3)+" J/cm\u00b2"],
-              ["Pulse spacing",(vel/prf*1000).toFixed(2)+" \u00b5m"],
-              ["Pulses/line",Math.floor((lineL/vel)*prf).toLocaleString()],
-              ["Overlap factor",((function(){var w2=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),ps2=vel/prf,tr=3*dia/(2*Math.sqrt(2)),s=0;for(var k=-Math.ceil(tr/ps2);k<=Math.ceil(tr/ps2);k++){s+=Math.exp(-2*(k*ps2)*(k*ps2)/w2);}return s;})()).toFixed(1)+"\u00d7"],
-              ["Cross-line sum",(function(){var rNL=res.effNLines||1;if(pat==="linear"||hatch<=0||rNL<=1)return 1;var rHH=res.effHatch||hatch,w2=(dia/Math.sqrt(2))*(dia/Math.sqrt(2)),cs=1;for(var m2=1;m2<=rNL;m2++){var c2=Math.exp(-2*(m2*rHH)*(m2*rHH)/w2);if(c2<1e-12)break;cs+=2*c2;}return cs;})().toFixed(2)+"\u00d7"]
-            ].map(function(item,i){return <div key={i} style={{background:T.bgI,borderRadius:4,padding:"4px 6px",border:"1px solid "+T.bd}}><div style={{fontSize:7,color:T.td,marginBottom:1}}>{item[0]}</div><div style={{fontSize:9,fontWeight:700,fontFamily:"monospace",color:T.tx}}>{item[1]}</div></div>;})}
-          </div>
-        </div>
-          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate fluence profile"}</div>}
-      </div>
-
-      {/* Point Timing: pulse arrivals and cumulative fluence at a single point */}
-      <div style={{display:vizTab==="ptTiming"?"block":"none"}}>
-        <div style={{fontSize:9,color:T.td,marginBottom:4}}>
-          Pulse arrival times and cumulative fluence buildup at a single observation point.
-          {selPt?" Observing ("+selPt.x.toFixed(2)+", "+selPt.y.toFixed(2)+") mm. ":" Showing worst-case point. "}
-          Click the Cumulative Fluence Map to select a different point.
-          {selPt?<button onClick={function(){setSelPt(null)}} style={{marginLeft:8,fontSize:8,padding:"2px 6px",background:"transparent",border:"1px solid "+T.bd,borderRadius:3,cursor:"pointer",color:T.ac}}>Reset to worst-case</button>:null}
-        </div>
-        {res&&prf>0?<div>
-          <div ref={ptTimRef} style={{width:"100%",height:400,borderRadius:6}}/>
-        </div>
-          :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
-      </div>
+        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"Inter, system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
     </div>
-
     {/* ── Performance Note ── */}
     {perfNote?<div style={{padding:"8px 12px",borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"monospace",lineHeight:1.6}}>
       {"\u26a1"} {perfNote}

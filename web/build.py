@@ -182,9 +182,10 @@ html = f'''<!DOCTYPE html>
     ::-webkit-scrollbar-thumb{{background:#bbb;border-radius:3px}}
     ::-webkit-scrollbar-thumb:hover{{background:#888}}
     select{{cursor:pointer}}
-    .plotly .modebar{{opacity:0.4;transition:opacity .2s}}
-    .plotly:hover .modebar{{opacity:1}}
   </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 </head>
 <body>
 <div id="root"></div>
@@ -195,7 +196,7 @@ html = f'''<!DOCTYPE html>
 <script src="https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js" onerror="se('ReactDOM')()"></script>
 <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js" onerror="se('PropTypes')()"></script>
 <script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js" onerror="se('Recharts')()"></script>
-<script src="https://cdn.plot.ly/plotly-basic-2.35.2.min.js" onerror="se('Plotly')()"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js" onerror="se('echarts')()"></script>
 {babel_cdn}
 <script>
 // Calculation engine (from engine.js — single source of truth for all MPE logic)
