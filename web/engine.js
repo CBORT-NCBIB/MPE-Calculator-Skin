@@ -1145,6 +1145,9 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
       var seg_ell = Math.sqrt((seg.bx-seg.ax)*(seg.bx-seg.ax) + (seg.by-seg.ay)*(seg.by-seg.ay));
       total_time += seg_ell / seg.v_mm_s;
 
+      // Skip blanked segments (flyback, repositioning)
+      if (seg.blanked) continue;
+
       // Bounding box of this segment ± 3w
       var sxmin = Math.min(seg.ax, seg.bx) - trunc;
       var sxmax = Math.max(seg.ax, seg.bx) + trunc;
@@ -1183,6 +1186,9 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
       var seg_len = Math.sqrt((sg.bx-sg.ax)*(sg.bx-sg.ax) + (sg.by-sg.ay)*(sg.by-sg.ay));
       if (seg_len < 1e-30) continue;
       total_time += seg_len / sg.v_mm_s;
+
+      // Skip blanked segments (flyback, repositioning)
+      if (sg.blanked) continue;
 
       var ux = (sg.bx - sg.ax) / seg_len;
       var uy = (sg.by - sg.ay) / seg_len;
@@ -1614,6 +1620,63 @@ function computeScanFluenceSeparable(grid, sp) {
  * @param {Object} [scanParams] - Optional scan parameters for separable fast path
  * @returns {Object} { grid, stats }
  */
+/**
+ * Build generalized path segments directly from scan parameters.
+ * Each scan line becomes ONE segment (not decomposed into beam-diameter
+ * chunks). This is the natural input format for the erf segment-
+ * superposition framework.
+ *
+ * @param {Object} sp - Scan parameters:
+ *   {d_1e_mm, x0, y0, line_length_mm, n_lines, hatch_mm, pattern,
+ *    v_scan_mm_s, v_jump_mm_s, blanking}
+ * @returns {Array} [{ax, ay, bx, by, v_mm_s, blanked}, ...]
+ */
+function buildPathSegments(sp) {
+  if (!sp || !isFinite(sp.line_length_mm) || sp.line_length_mm <= 0) return null;
+  if (!isFinite(sp.v_scan_mm_s) || sp.v_scan_mm_s <= 0) return null;
+
+  var x0 = sp.x0 || 0, y0 = sp.y0 || 0;
+  var L = sp.line_length_mm;
+  var v = sp.v_scan_mm_s;
+  var vj = sp.v_jump_mm_s || v * 5;
+  var nL = sp.n_lines || 1;
+  var hatch = sp.hatch_mm || 0;
+  var pat = sp.pattern || "linear";
+  var blanking = sp.blanking !== false; // default true
+  var segs = [];
+
+  if (pat === "linear") {
+    segs.push({ ax: x0, ay: y0, bx: x0 + L, by: y0, v_mm_s: v });
+  } else if (pat === "raster") {
+    // Unidirectional raster: all lines left→right, flyback between
+    for (var j = 0; j < nL; j++) {
+      var ly = y0 + j * hatch;
+      segs.push({ ax: x0, ay: ly, bx: x0 + L, by: ly, v_mm_s: v });
+      if (j < nL - 1) {
+        // Flyback: right→left then step down
+        segs.push({ ax: x0 + L, ay: ly, bx: x0, by: ly, v_mm_s: vj, blanked: blanking });
+        segs.push({ ax: x0, ay: ly, bx: x0, by: ly + hatch, v_mm_s: vj, blanked: blanking });
+      }
+    }
+  } else if (pat === "bidi") {
+    // Bidirectional raster: alternating directions, vertical jumps
+    for (var j2 = 0; j2 < nL; j2++) {
+      var ly2 = y0 + j2 * hatch;
+      if (j2 % 2 === 0) {
+        segs.push({ ax: x0, ay: ly2, bx: x0 + L, by: ly2, v_mm_s: v });
+      } else {
+        segs.push({ ax: x0 + L, ay: ly2, bx: x0, by: ly2, v_mm_s: v });
+      }
+      if (j2 < nL - 1) {
+        var jumpX = (j2 % 2 === 0) ? x0 + L : x0;
+        segs.push({ ax: jumpX, ay: ly2, bx: jumpX, by: ly2 + hatch, v_mm_s: vj, blanked: blanking });
+      }
+    }
+  }
+
+  return segs;
+}
+
 function computeScanFluence(beam, segments, ppd, scanParams) {
   if (!scanParams && (!segments || segments.length === 0)) return null;
   ppd = ppd || 8;
@@ -2244,6 +2307,7 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     buildBidiRasterScan: buildBidiRasterScan,
     buildRasterScan: buildRasterScan,
     buildCustomScan: buildCustomScan,
+    buildPathSegments: buildPathSegments,
     maxPermissiblePower: maxPermissiblePower,
     minSafeVelocity: minSafeVelocity,
     maxPulseEnergy: maxPulseEnergy,
@@ -2304,6 +2368,7 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     buildBidiRasterScan: buildBidiRasterScan,
     buildRasterScan: buildRasterScan,
     buildCustomScan: buildCustomScan,
+    buildPathSegments: buildPathSegments,
     maxPermissiblePower: maxPermissiblePower,
     minSafeVelocity: minSafeVelocity,
     maxPulseEnergy: maxPulseEnergy,
