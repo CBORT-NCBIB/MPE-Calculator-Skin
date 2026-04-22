@@ -1011,6 +1011,220 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
   return { n_sweeps: sweeps.length, total_time_s: total_time, min_velocity: min_velocity };
 }
 
+// ── Generalized segment-superposition fluence framework ─────────
+//
+// Implements the erf-based segment fluence formula for arbitrary
+// scan paths. See: "Generalized Gaussian Fluence Accumulation from
+// Arbitrary Scan Paths" (framework document, April 2026).
+//
+// Architecture: decomposes any scan path into contiguous linear
+// segments and sums the closed-form erf fluence from each.
+// Automatically selects discrete Gaussian sum (ρ < 1) or
+// continuous erf (ρ ≥ 1) based on overlap parameter.
+//
+// Core equation (framework Eq. 17):
+//   F_seg(r) = P/(v·w·√(2π)) · exp(-2d²/w²)
+//              · [erf(√2·ξ₀/w) − erf(√2·(ξ₀−ℓ)/w)]
+//
+// where w is the 1/e² beam radius, d is perpendicular distance,
+// ξ₀ is along-scan projection, ℓ is segment length.
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Overlap parameter ρ = w · f_rep / v (framework Eq. 13).
+ * When ρ ≥ 1, the continuous erf formula is accurate to < 1.5%.
+ * When ρ < 1, the discrete Gaussian sum must be used.
+ *
+ * @param {number} w_mm - 1/e² beam radius in mm
+ * @param {number} prf_hz - Pulse repetition frequency in Hz
+ * @param {number} v_mm_s - Scan velocity in mm/s
+ * @returns {number} Overlap parameter ρ
+ */
+function overlapParameter(w_mm, prf_hz, v_mm_s) {
+  if (v_mm_s <= 0 || prf_hz <= 0) return 0;
+  return w_mm * prf_hz / v_mm_s;
+}
+
+/**
+ * Fluence deposited at observation point (rx, ry) by a CW Gaussian
+ * beam scanning along a single linear segment from (ax, ay) to
+ * (bx, by) at constant velocity v with average power P.
+ *
+ * This is the zero-thermal-diffusion limit of the Eagar–Tsai (1983)
+ * traveling Gaussian source solution — framework Eq. 17.
+ *
+ * @param {number} rx, ry - Observation point (mm)
+ * @param {number} ax, ay - Segment start point (mm)
+ * @param {number} bx, by - Segment end point (mm)
+ * @param {number} P_W    - Average power (W)
+ * @param {number} v_mm_s - Scan velocity (mm/s)
+ * @param {number} w_mm   - 1/e² beam radius (mm)
+ * @returns {number} Fluence in J/cm²
+ */
+function segmentFluenceErf(rx, ry, ax, ay, bx, by, P_W, v_mm_s, w_mm) {
+  var sdx = bx - ax, sdy = by - ay;
+  var ell = Math.sqrt(sdx * sdx + sdy * sdy);
+  if (ell < 1e-30) return 0;
+
+  // Unit vector along segment
+  var ux = sdx / ell, uy = sdy / ell;
+
+  // Displacement from segment start to observation point
+  var qx = rx - ax, qy = ry - ay;
+
+  // Along-scan projection ξ₀ and perpendicular distance d (Eqs. 23–24)
+  var xi0 = qx * ux + qy * uy;
+  var d_perp = -qx * uy + qy * ux;   // signed; d² used below
+  var d2 = d_perp * d_perp;
+
+  // Cross-scan truncation: exp(-2d²/w²) < exp(-18) ≈ 1.5e-8 at d = 3w
+  var w2 = w_mm * w_mm;
+  if (d2 > 9 * w2) return 0; // 3w truncation
+
+  // Along-scan truncation: skip if point is far beyond both endpoints
+  var trunc = 3 * w_mm;
+  if (xi0 < -trunc || xi0 - ell > trunc) return 0;
+
+  // Segment fluence formula (Eq. 17)
+  // F = P/(v·w·√(2π)) · exp(-2d²/w²) · [erf(√2·ξ₀/w) - erf(√2·(ξ₀-ℓ)/w)]
+  // Factor of 100 converts mm² → cm² for J/cm² output
+  var prefactor = P_W * 100 / (v_mm_s * w_mm * Math.sqrt(2 * Math.PI));
+  var cross_scan = Math.exp(-2 * d2 / w2);
+  var s2w = Math.SQRT2 / w_mm;
+  var erf_bracket = _erf(s2w * xi0) - _erf(s2w * (xi0 - ell));
+
+  return prefactor * cross_scan * erf_bracket;
+}
+
+/**
+ * Compute cumulative fluence on a grid from a set of path segments
+ * using the generalized segment-superposition framework.
+ *
+ * Supports both CW and pulsed beams:
+ *   - CW or pulsed with ρ ≥ 1: uses erf segment formula directly
+ *   - Pulsed with ρ < 1: uses discrete Gaussian sum per segment
+ *
+ * Path segments are defined as {ax, ay, bx, by, v_mm_s} objects
+ * representing arbitrary linear movements (not restricted to
+ * axis-aligned or uniform-length segments).
+ *
+ * @param {Object} grid - FluenceGrid
+ * @param {Array} pathSegs - [{ax, ay, bx, by, v_mm_s}, ...]
+ * @param {Object} beam - {d_1e_mm, avg_power_W, prf_hz, pulse_energy_J, is_cw}
+ * @returns {Object} { total_time_s, n_segments, regime }
+ */
+function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
+  if (!pathSegs || pathSegs.length === 0) return null;
+
+  var d = beam.d_1e_mm;
+  var w = d / Math.sqrt(2);          // 1/e² radius (mm)
+  var P = beam.avg_power_W || (beam.pulse_energy_J * beam.prf_hz);
+  var prf = beam.prf_hz || 0;
+  var Ep = beam.pulse_energy_J || (P / prf);
+  var is_cw = beam.is_cw;
+
+  // Determine computation regime (framework Proposition 7.1)
+  var rho = is_cw ? Infinity : overlapParameter(w, prf, pathSegs[0].v_mm_s);
+  var use_erf = is_cw || rho >= 1.0;
+
+  var nx = grid.nx, ny = grid.ny;
+  var dx = grid.dx_mm;
+  var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
+  var flu = grid.fluence;
+
+  var total_time = 0;
+
+  if (use_erf) {
+    // ── Continuous erf regime ──
+    // Sum segment fluence contributions from all segments at each grid point.
+    // Use bounding-box culling per segment to skip distant grid points.
+    var trunc = 3 * w;
+
+    for (var si = 0; si < pathSegs.length; si++) {
+      var seg = pathSegs[si];
+      var seg_ell = Math.sqrt((seg.bx-seg.ax)*(seg.bx-seg.ax) + (seg.by-seg.ay)*(seg.by-seg.ay));
+      total_time += seg_ell / seg.v_mm_s;
+
+      // Bounding box of this segment ± 3w
+      var sxmin = Math.min(seg.ax, seg.bx) - trunc;
+      var sxmax = Math.max(seg.ax, seg.bx) + trunc;
+      var symin = Math.min(seg.ay, seg.by) - trunc;
+      var symax = Math.max(seg.ay, seg.by) + trunc;
+
+      var ixMin = Math.max(0, Math.floor((sxmin - xmin) / dx));
+      var ixMax = Math.min(nx - 1, Math.ceil((sxmax - xmin) / dx));
+      var iyMin = Math.max(0, Math.floor((symin - ymin) / dx));
+      var iyMax = Math.min(ny - 1, Math.ceil((symax - ymin) / dx));
+
+      for (var iy = iyMin; iy <= iyMax; iy++) {
+        var gy = ymin + iy * dx;
+        for (var ix = ixMin; ix <= ixMax; ix++) {
+          var gx = xmin + ix * dx;
+          var F = segmentFluenceErf(gx, gy, seg.ax, seg.ay, seg.bx, seg.by,
+                                     P, seg.v_mm_s, w);
+          if (F > 0) flu[iy * nx + ix] += F;
+        }
+      }
+    }
+  } else {
+    // ── Discrete regime (ρ < 1) ──
+    // Lay discrete pulses along each segment and sum Gaussian contributions.
+    _initGaussTable();
+    var w2 = w * w;
+    var H0_cm2 = 2 * Ep / (Math.PI * w2) * 100; // J/cm²
+    var sigma = w / 2;
+    var trunc_mm = 6 * sigma; // 3σ = 3w/2 = 1.5w truncation for discrete
+    var trunc2 = trunc_mm * trunc_mm;
+    var trunc_grid = Math.ceil(trunc_mm / dx);
+    var ds = pathSegs[0].v_mm_s / prf; // pulse spacing (mm)
+
+    for (var si2 = 0; si2 < pathSegs.length; si2++) {
+      var sg = pathSegs[si2];
+      var seg_len = Math.sqrt((sg.bx-sg.ax)*(sg.bx-sg.ax) + (sg.by-sg.ay)*(sg.by-sg.ay));
+      if (seg_len < 1e-30) continue;
+      total_time += seg_len / sg.v_mm_s;
+
+      var ux = (sg.bx - sg.ax) / seg_len;
+      var uy = (sg.by - sg.ay) / seg_len;
+      var n_pulses = Math.max(1, Math.floor(seg_len / ds));
+
+      for (var pk = 0; pk < n_pulses; pk++) {
+        var frac = pk / Math.max(1, n_pulses - 1);
+        if (n_pulses === 1) frac = 0.5;
+        var px = sg.ax + frac * seg_len * ux;
+        var py = sg.ay + frac * seg_len * uy;
+
+        var cix = Math.round((px - xmin) / dx);
+        var ciy = Math.round((py - ymin) / dx);
+        var ixMin2 = Math.max(0, cix - trunc_grid);
+        var ixMax2 = Math.min(nx - 1, cix + trunc_grid);
+        var iyMin2 = Math.max(0, ciy - trunc_grid);
+        var iyMax2 = Math.min(ny - 1, ciy + trunc_grid);
+
+        for (var iy2 = iyMin2; iy2 <= iyMax2; iy2++) {
+          var gy2 = ymin + iy2 * dx;
+          var dy2 = (gy2 - py) * (gy2 - py);
+          if (dy2 > trunc2) continue;
+          for (var ix2 = ixMin2; ix2 <= ixMax2; ix2++) {
+            var gx2 = xmin + ix2 * dx;
+            var dx2 = (gx2 - px) * (gx2 - px);
+            var r2 = dx2 + dy2;
+            if (r2 > trunc2) continue;
+            flu[iy2 * nx + ix2] += H0_cm2 * _gaussLookup(2 * r2 / w2);
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    total_time_s: total_time,
+    n_segments: pathSegs.length,
+    regime: use_erf ? "erf" : "discrete",
+    rho: rho
+  };
+}
+
 // ── Separable 1D Gaussian sum (θ₃-based) fluence computation ───────
 //
 // Mathematical basis:
@@ -2020,6 +2234,9 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     MAX_SEGMENTS: MAX_SEGMENTS,
     computeScanFluencePulsed: computeScanFluencePulsed,
     computeScanFluenceCW: computeScanFluenceCW,
+    segmentFluenceErf: segmentFluenceErf,
+    overlapParameter: overlapParameter,
+    computeScanFluenceSegmentErf: computeScanFluenceSegmentErf,
     computeScanFluence: computeScanFluence,
     analyticalPeakFluence: analyticalPeakFluence,
     evaluateScanSafety: evaluateScanSafety,
@@ -2077,6 +2294,9 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     MAX_SEGMENTS: MAX_SEGMENTS,
     computeScanFluencePulsed: computeScanFluencePulsed,
     computeScanFluenceCW: computeScanFluenceCW,
+    segmentFluenceErf: segmentFluenceErf,
+    overlapParameter: overlapParameter,
+    computeScanFluenceSegmentErf: computeScanFluenceSegmentErf,
     computeScanFluence: computeScanFluence,
     analyticalPeakFluence: analyticalPeakFluence,
     evaluateScanSafety: evaluateScanSafety,
