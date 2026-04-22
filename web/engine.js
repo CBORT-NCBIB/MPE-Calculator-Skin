@@ -1120,7 +1120,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
   var w = d / Math.sqrt(2);          // 1/e² radius (mm)
   var P = beam.avg_power_W || (beam.pulse_energy_J * beam.prf_hz);
   var prf = beam.prf_hz || 0;
-  var Ep = beam.pulse_energy_J || (P / prf);
+  var Ep = beam.pulse_energy_J || (prf > 0 ? P / prf : 0);
   var is_cw = beam.is_cw;
 
   // Determine computation regime (framework Proposition 7.1)
@@ -1208,7 +1208,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
     _initGaussTable();
     var H0_cm2_d = 2 * Ep / (Math.PI * w2) * 100; // J/cm²
     var sigma = w / 2;
-    var trunc_mm = 6 * sigma; // 3σ = 3w/2 = 1.5w truncation for discrete
+    var trunc_mm = 6 * sigma; // 6σ = 6·(w/2) = 3w truncation (matches erf regime)
     var trunc2 = trunc_mm * trunc_mm;
     var trunc_grid = Math.ceil(trunc_mm / dx);
     var ds = pathSegs[0].v_mm_s / prf; // pulse spacing (mm)
