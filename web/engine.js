@@ -1131,22 +1131,31 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
   var dx = grid.dx_mm;
   var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
   var flu = grid.fluence;
+  var ppH = grid.peak_pulse_H;
+  var lvt = grid.last_visit_t;
+  var w2 = w * w;
+
+  // Peak single-pulse fluence at beam center (J/cm²)
+  var H0_cm2 = (!is_cw && Ep > 0) ? (2 * Ep / (Math.PI * w2) * 100) : 0;
 
   var total_time = 0;
 
   if (use_erf) {
     // ── Continuous erf regime ──
-    // Sum segment fluence contributions from all segments at each grid point.
-    // Use bounding-box culling per segment to skip distant grid points.
     var trunc = 3 * w;
 
     for (var si = 0; si < pathSegs.length; si++) {
       var seg = pathSegs[si];
       var seg_ell = Math.sqrt((seg.bx-seg.ax)*(seg.bx-seg.ax) + (seg.by-seg.ay)*(seg.by-seg.ay));
+      var t_seg_start = total_time;
       total_time += seg_ell / seg.v_mm_s;
 
       // Skip blanked segments (flyback, repositioning)
       if (seg.blanked) continue;
+
+      // Unit vector along segment
+      var sux = 0, suy = 0;
+      if (seg_ell > 1e-30) { sux = (seg.bx - seg.ax) / seg_ell; suy = (seg.by - seg.ay) / seg_ell; }
 
       // Bounding box of this segment ± 3w
       var sxmin = Math.min(seg.ax, seg.bx) - trunc;
@@ -1165,7 +1174,31 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
           var gx = xmin + ix * dx;
           var F = segmentFluenceErf(gx, gy, seg.ax, seg.ay, seg.bx, seg.by,
                                      P, seg.v_mm_s, w);
-          if (F > 0) flu[iy * nx + ix] += F;
+          if (F > 0) {
+            var idx = iy * nx + ix;
+            flu[idx] += F;
+
+            // Visit time: when the beam is closest to this grid point.
+            // ξ₀ = projection of (point - seg_start) onto segment direction.
+            // Clamped to [0, ℓ] gives the closest point on the segment.
+            // t_visit = t_seg_start + ξ_clamped / v
+            var qx = gx - seg.ax, qy = gy - seg.ay;
+            var xi0 = qx * sux + qy * suy;
+            var xi_clamped = xi0 < 0 ? 0 : (xi0 > seg_ell ? seg_ell : xi0);
+            var t_visit = t_seg_start + xi_clamped / seg.v_mm_s;
+            lvt[idx] = t_visit; // last visit (overwritten by later segments)
+
+            // Peak single-pulse fluence: H0 × exp(-2d²/w²)
+            // d is the perpendicular distance from point to segment line
+            if (H0_cm2 > 0) {
+              var d_perp = -qx * suy + qy * sux;
+              var Hp = H0_cm2 * Math.exp(-2 * d_perp * d_perp / w2);
+              if (Hp > ppH[idx]) ppH[idx] = Hp;
+            } else if (is_cw) {
+              // CW: peak single-sweep fluence = this segment's contribution
+              if (F > ppH[idx]) ppH[idx] = F;
+            }
+          }
         }
       }
     }
@@ -1173,8 +1206,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
     // ── Discrete regime (ρ < 1) ──
     // Lay discrete pulses along each segment and sum Gaussian contributions.
     _initGaussTable();
-    var w2 = w * w;
-    var H0_cm2 = 2 * Ep / (Math.PI * w2) * 100; // J/cm²
+    var H0_cm2_d = 2 * Ep / (Math.PI * w2) * 100; // J/cm²
     var sigma = w / 2;
     var trunc_mm = 6 * sigma; // 3σ = 3w/2 = 1.5w truncation for discrete
     var trunc2 = trunc_mm * trunc_mm;
@@ -1185,6 +1217,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
       var sg = pathSegs[si2];
       var seg_len = Math.sqrt((sg.bx-sg.ax)*(sg.bx-sg.ax) + (sg.by-sg.ay)*(sg.by-sg.ay));
       if (seg_len < 1e-30) continue;
+      var t_seg_start_d = total_time;
       total_time += seg_len / sg.v_mm_s;
 
       // Skip blanked segments (flyback, repositioning)
@@ -1199,6 +1232,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
         if (n_pulses === 1) frac = 0.5;
         var px = sg.ax + frac * seg_len * ux;
         var py = sg.ay + frac * seg_len * uy;
+        var t_pulse = t_seg_start_d + frac * seg_len / sg.v_mm_s;
 
         var cix = Math.round((px - xmin) / dx);
         var ciy = Math.round((py - ymin) / dx);
@@ -1216,7 +1250,12 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
             var dx2 = (gx2 - px) * (gx2 - px);
             var r2 = dx2 + dy2;
             if (r2 > trunc2) continue;
-            flu[iy2 * nx + ix2] += H0_cm2 * _gaussLookup(2 * r2 / w2);
+            var two_r2_w2 = 2 * r2 / w2;
+            var Hp_d = H0_cm2_d * _gaussLookup(two_r2_w2);
+            var idx_d = iy2 * nx + ix2;
+            flu[idx_d] += Hp_d;
+            if (Hp_d > ppH[idx_d]) ppH[idx_d] = Hp_d;
+            lvt[idx_d] = t_pulse;
           }
         }
       }
@@ -1681,16 +1720,41 @@ function computeScanFluence(beam, segments, ppd, scanParams) {
   if (!scanParams && (!segments || segments.length === 0)) return null;
   ppd = ppd || 8;
 
-  // ── Separable fast path: bypass segment-based grid creation entirely ──
-  // This avoids the O(line_length/beam_diameter × n_lines) segment array
-  // that can crash the browser for micro-scale beams over large areas.
-  if (scanParams && canUseSeparable(scanParams)) {
-    var grid = createFluenceGridFromParams(scanParams, ppd);
-    var stats = computeScanFluenceSeparable(grid, scanParams);
-    return { grid: grid, stats: stats };
+  // ── New segment-superposition framework (primary path) ──
+  if (scanParams) {
+    var pathSegs = buildPathSegments(scanParams);
+    if (pathSegs && pathSegs.length > 0) {
+      var grid = createFluenceGridFromParams(scanParams, ppd);
+      var fwBeam = {
+        d_1e_mm: beam.d_1e_mm,
+        avg_power_W: beam.avg_power_W || (beam.pulse_energy_J * beam.prf_hz),
+        prf_hz: beam.prf_hz || 0,
+        pulse_energy_J: beam.pulse_energy_J || 0,
+        is_cw: beam.is_cw
+      };
+      var stats = computeScanFluenceSegmentErf(grid, pathSegs, fwBeam);
+
+      // Set total_pulses and min_velocity for safety evaluation
+      if (!beam.is_cw && beam.prf_hz > 0) {
+        stats.total_pulses = Math.round(stats.total_time_s * beam.prf_hz);
+      } else if (beam.is_cw) {
+        stats.total_pulses = 0;
+        stats.min_velocity = scanParams.v_scan_mm_s || 500;
+      }
+
+      stats.method = "segment-erf";
+      return { grid: grid, stats: stats };
+    }
   }
 
-  // ── Standard path: requires pre-built segment array ──
+  // ── Fallback: separable fast path ──
+  if (scanParams && canUseSeparable(scanParams)) {
+    var grid_s = createFluenceGridFromParams(scanParams, ppd);
+    var stats_s = computeScanFluenceSeparable(grid_s, scanParams);
+    return { grid: grid_s, stats: stats_s };
+  }
+
+  // ── Fallback: standard segment-based path ──
   if (!segments || segments.length === 0) return null;
   var grid2 = createFluenceGrid(beam.d_1e_mm, segments, ppd);
   var stats2;
@@ -1834,7 +1898,14 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   var n = grid.nx * grid.ny;
   var worstR1 = 0, worstR2 = 0;
   var worstIdx = 0, worstVal = 0;
+  var worstVisitTime = Infinity;
   var peakF = 0, maxPulses = 0;
+
+  // Tie-breaking tolerance: cells within this relative fraction of the
+  // worst ratio are considered tied, and the one scanned earliest wins.
+  // This ensures deterministic worst-case selection for symmetric scans
+  // where multiple grid cells have identical peak fluence.
+  var TIE_TOL = 1e-6; // 0.0001% relative tolerance
 
   for (var i = 0; i < n; i++) {
     if (grid.fluence[i] > peakF) peakF = grid.fluence[i];
@@ -1848,9 +1919,24 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
     if (r2 > worstR2) worstR2 = r2;
 
     var worst = r1 > r2 ? r1 : r2;
-    if (worst > worstVal) {
+
+    // Deterministic tie-breaking: when a cell is strictly worse, it wins.
+    // When a cell is within TIE_TOL of the current worst (a "tie"),
+    // the cell scanned EARLIEST wins — this is most conservative because
+    // it maximizes the total exposure duration from that point's perspective.
+    if (worst > worstVal * (1 + TIE_TOL)) {
+      // Strictly worse — new winner regardless of visit time
       worstVal = worst;
       worstIdx = i;
+      worstVisitTime = grid.last_visit_t[i];
+    } else if (worst >= worstVal * (1 - TIE_TOL) && worstVal > 0) {
+      // Within tolerance — tie-break by earliest visit time
+      var t_i = grid.last_visit_t[i];
+      if (t_i < worstVisitTime) {
+        worstVal = worst;
+        worstIdx = i;
+        worstVisitTime = t_i;
+      }
     }
   }
 
