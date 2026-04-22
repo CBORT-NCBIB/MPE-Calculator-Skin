@@ -12,18 +12,6 @@ A Python package for computing laser skin MPE values with support for single-pul
 
 ---
 
-### Authors
-
-Isaac T. Gallegos¹\*, Brett E. Bouma¹², David Veysset¹  
-
-### Affiliations
-
-1. Wellman Center for Photomedicine, Harvard Medical School, Massachusetts General Hospital, Boston, MA 02114, USA  
-2. Institute for Medical Engineering and Science, Massachusetts Institute of Technology, Cambridge, MA 02139, USA  
-
-\* Corresponding author
-
-
 ## Features
 
 - **Wavelength coverage:** 180 nm to 1000 µm (UV through far infrared)
@@ -266,3 +254,14 @@ This software is provided for **research and educational purposes only**. It is 
 This GitHub repository implements the ICNIRP 2013 standards using the following reference:
 
 "ICNIRP GUIDELINES ON LIMITS OF EXPOSURE TO LASER RADIATION  OF WAVELENGTHS BETWEEN 180 nm AND 1,000 um", International Commission on Non-Ionizing Radiation Protection, 2013
+
+### Authors
+
+Isaac T. Gallegos¹\*, Brett E. Bouma¹², David Veysset¹  
+
+### Affiliations
+
+1. Wellman Center for Photomedicine, Harvard Medical School, Massachusetts General Hospital, Boston, MA 02114, USA  
+2. Institute for Medical Engineering and Science, Massachusetts Institute of Technology, Cambridge, MA 02139, USA  
+
+\* Corresponding author
