@@ -3105,8 +3105,8 @@ var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
 
 var TH={
-  light:{bg:"#f0f2f5",card:"#f8f9fb",bgI:"#eaecf0",bd:"#d4d8de",bl:"#a0a4aa",tx:"#1a1d22",tm:"#525960",td:"#737880",ac:"#1C4E80",a2:"#4A6FA5",ok:"#2E7D32",no:"#C62828",gr:"#e4e7eb",tp:"#f8f9fb"},
-  dark:{bg:"#28282e",card:"#333338",bgI:"#2c2c32",bd:"#48484f",bl:"#58585f",tx:"#d8d8e0",tm:"#a0a0a8",td:"#808088",ac:"#5B9BD5",a2:"#7BAFD4",ok:"#66BB6A",no:"#EF5350",gr:"#38383e",tp:"#333338"}
+  light:{bg:"#f0f2f5",card:"#f8f9fb",bgI:"#eaecf0",bd:"#d4d8de",bl:"#a0a4aa",tx:"#1a1d22",tm:"#525960",td:"#737880",ac:"#1C4E80",a2:"#4A6FA5",ok:"#00796B",no:"#C62828",gr:"#e4e7eb",tp:"#f8f9fb"},
+  dark:{bg:"#28282e",card:"#333338",bgI:"#2c2c32",bd:"#48484f",bl:"#58585f",tx:"#d8d8e0",tm:"#a0a0a8",td:"#808088",ac:"#5B9BD5",a2:"#7BAFD4",ok:"#4DB6AC",no:"#EF5350",gr:"#38383e",tp:"#333338"}
 };
 
 var uid=1;
@@ -4762,11 +4762,11 @@ function GeneralScanContent(p){
 
     {/* ── Safety Results ── */}
     {res?<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
-      <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#e8f5e9":"#fbe9e7",borderRadius:6,padding:14,textAlign:"center"}}>
-        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:res.sf.safe?"#2e7d32":"#bf360c",marginBottom:4}}>Safety Verdict</div>
-        <div style={{fontSize:22,fontWeight:700,color:res.sf.safe?"#2e7d32":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div>
-        <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.safe?"#388e3c":"#d84315",marginTop:4}}>Margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
-        <div style={{fontSize:9,color:res.sf.safe?"#4caf50":"#e64a19",marginTop:2}}>Binding: {res.sf.br}</div>
+      <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#e0f2f1":"#fbe9e7",borderRadius:6,padding:14,textAlign:"center"}}>
+        <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:res.sf.safe?"#00796B":"#bf360c",marginBottom:4}}>Safety Verdict</div>
+        <div style={{fontSize:22,fontWeight:700,color:res.sf.safe?"#00796B":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div>
+        <div style={{fontSize:10,fontFamily:"monospace",color:res.sf.safe?"#00897B":"#d84315",marginTop:4}}>Margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
+        <div style={{fontSize:9,color:res.sf.safe?"#26a69a":"#e64a19",marginTop:2}}>Binding: {res.sf.br}</div>
       </div>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:4}}>Rule 1 {"\u2014"} Single Pulse</div>
@@ -4814,7 +4814,7 @@ function GeneralScanContent(p){
     </div>:null}
 
     {/* ── Thermal Relaxation ── */}
-    {res&&isFinite(res.sf.minRv)?<div style={{background:res.sf.rvOk?"#e8f5e9":"#fff3e0",borderRadius:6,border:"1px solid "+(res.sf.rvOk?"#c8e6c9":"#ffe0b2"),padding:14}}>
+    {res&&isFinite(res.sf.minRv)?<div style={{background:res.sf.rvOk?"#e0f2f1":"#fff3e0",borderRadius:6,border:"1px solid "+(res.sf.rvOk?"#b2dfdb":"#ffe0b2"),padding:14}}>
       <div style={secH}>Thermal Relaxation Assessment</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
         <div style={{textAlign:"center"}}>
@@ -4824,13 +4824,13 @@ function GeneralScanContent(p){
         </div>
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Min Revisit Interval</div>
-          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#2e7d32":"#e65100"}}>{numFmt(res.sf.minRv,3)} s</div>
+          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#00796B":"#e65100"}}>{numFmt(res.sf.minRv,3)} s</div>
           <div style={{fontSize:8,color:T.td,marginTop:2}}>{res.sf.rvPts} points revisited</div>
         </div>
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:9,color:T.td,textTransform:"uppercase",fontWeight:600,marginBottom:4}}>Ratio (revisit / {"\u03c4"}{"\u1d63"})</div>
-          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#2e7d32":"#e65100"}}>{(res.sf.minRv/res.sf.tauR).toFixed(2)}{"\u00d7"}</div>
-          <div style={{fontSize:8,color:res.sf.rvOk?"#388e3c":"#e65100",fontWeight:600,marginTop:2}}>{res.sf.rvOk?"\u2713 Tissue cools between passes":"\u26a0 Thermal accumulation likely"}</div>
+          <div style={{fontSize:16,fontFamily:"monospace",fontWeight:700,color:res.sf.rvOk?"#00796B":"#e65100"}}>{(res.sf.minRv/res.sf.tauR).toFixed(2)}{"\u00d7"}</div>
+          <div style={{fontSize:8,color:res.sf.rvOk?"#00897B":"#e65100",fontWeight:600,marginTop:2}}>{res.sf.rvOk?"\u2713 Tissue cools between passes":"\u26a0 Thermal accumulation likely"}</div>
         </div>
       </div>
       <div style={{fontSize:9,color:T.td,marginTop:10,lineHeight:1.5}}>
