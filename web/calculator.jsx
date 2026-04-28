@@ -918,6 +918,19 @@ function GeneralScanContent(p){
   var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
   var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
 
+  /* Scan visualization feature toggles */
+  var _svGrid=useState(true),svGrid=_svGrid[0],setSvGrid=_svGrid[1];
+  var _svBeam=useState(true),svBeam=_svBeam[0],setSvBeam=_svBeam[1];
+  var _svFlyback=useState(true),svFlyback=_svFlyback[0],setSvFlyback=_svFlyback[1];
+  var _svAnts=useState(false),svAnts=_svAnts[0],setSvAnts=_svAnts[1];
+  var _antOff=useState(0),antOff=_antOff[0],setAntOff=_antOff[1];
+  useEffect(function(){
+    if(!svAnts)return;
+    var f;var tick=function(){setAntOff(function(p){return(p+0.5)%20;});f=requestAnimationFrame(tick);};
+    f=requestAnimationFrame(tick);
+    return function(){cancelAnimationFrame(f);};
+  },[svAnts]);
+
   var lb={display:"block",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:4};
   var ip={width:"100%",padding:"7px 10px",fontSize:13,fontFamily:"monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
   var secH={fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:10};
@@ -936,7 +949,7 @@ function GeneralScanContent(p){
   useEffect(function(){if(pwMode==="power"&&prf>0&&pw>0){setEpS((pw/prf).toExponential(4));}},[prf,pw,pwMode]);
   /* Keep hatch in sync with scan height and scan line count */
   useEffect(function(){
-    if(pat==="raster"&&scanHN>0&&nLines>=1)setHatch(nLines>1?scanHN/(nLines-1):scanHN);
+    if((pat==="raster"||pat==="bidi")&&scanHN>0&&nLines>=1)setHatch(nLines>1?scanHN/(nLines-1):scanHN);
   },[pat,scanHN,nLines]);
   /* Keep vel in sync for all derived velocity input modes */
   useEffect(function(){
@@ -1095,14 +1108,14 @@ function GeneralScanContent(p){
       if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
     }
     // Scan area
-    if(!isFinite(lineL)||lineL<=0){alert(pat==="raster"?"Scan width must be > 0":"Scan length must be > 0");return;}
-    if(pat==="raster"){
+    if(!isFinite(lineL)||lineL<=0){alert(pat!=="linear"?"Scan width must be > 0":"Scan length must be > 0");return;}
+    if(pat!=="linear"){
       if(!isFinite(scanHN)||scanHN<=0){alert("Scan height must be > 0");return;}
       if(!isFinite(nLines)||nLines<1){alert("Number of scan lines must be ≥ 1");return;}
     }
     // Effective scan parameters (nLines and hatch are kept in sync via useEffect)
-    var effNLines=pat==="raster"?Math.max(1,nLines):1;
-    var effHatch=pat==="raster"&&nLines>1?scanHN/(nLines-1):scanHN;
+    var effNLines=pat!=="linear"?Math.max(1,nLines):1;
+    var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
     // Effective scan velocity from selected input mode
     var effVel;
     if(velMode==="velocity"){
@@ -1129,7 +1142,7 @@ function GeneralScanContent(p){
     var calcPrf=laserMode==="cw"?0:prf;
     var calcTau=laserMode==="cw"?0:tau;
     var isCWEst=laserMode==="cw";
-    var canSep=!isCWEst&&calcPrf>0&&(pat==="linear"||pat==="raster");
+    var canSep=!isCWEst&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
     var segsEst=canSep?[]:null;
     var estTime,estPulses;
     if(canSep){
@@ -1137,14 +1150,25 @@ function GeneralScanContent(p){
       var nLEst=pat==="linear"?1:effNLines;
       var jumpVEst=effVel*5;
       var hatchEst=pat==="linear"?0:(effHatch||dia);
-      var flybackEst=pat==="linear"?0:(lineL/jumpVEst+hatchEst/jumpVEst);
+      var flybackEst=pat==="linear"?0:(pat==="bidi"?(hatchEst/jumpVEst):(lineL/jumpVEst+hatchEst/jumpVEst));
       estTime=nLEst*lineDurEst+(nLEst-1)*flybackEst;
       estPulses=calcPrf*nLEst*lineDurEst;
     }else{
-      if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,effVel,dia);
-      else segsEst=scanBuildRaster(0,0,lineL,effNLines,effHatch,effVel,effVel*5,dia,blk);
-      estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
-      estPulses=calcPrf*estTime;
+      /* Non-separable (CW): guard against huge nLines — use analytical estimation if >10000 lines */
+      if(effNLines>10000){
+        var lineDurEst2=lineL/effVel;
+        var jumpVEst2=effVel*5;
+        var hatchEst2=pat==="linear"?0:(effHatch||dia);
+        var flybackEst2=pat==="linear"?0:(pat==="bidi"?(hatchEst2/jumpVEst2):(lineL/jumpVEst2+hatchEst2/jumpVEst2));
+        estTime=effNLines*lineDurEst2+(effNLines-1)*flybackEst2;
+        estPulses=0; /* CW — no discrete pulses */
+        segsEst=[];
+      }else{
+        if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,effVel,dia);
+        else segsEst=scanBuildRaster(0,0,lineL,effNLines,effHatch,effVel,effVel*5,dia,blk);
+        estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
+        estPulses=calcPrf*estTime;
+      }
     }
     var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
     var trunc=Math.ceil(3*sigma/estDx);
@@ -1216,12 +1240,12 @@ function GeneralScanContent(p){
       var beam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
 
       // Derive effective scan params (same logic as calculate())
-      var effNLines=pat==="raster"?Math.max(1,nLines):1;
-      var effHatch=pat==="raster"&&nLines>1?scanHN/(nLines-1):scanHN;
+      var effNLines=pat!=="linear"?Math.max(1,nLines):1;
+      var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
       var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
 
       // Build separable params if applicable (same logic as Worker)
-      var canSep=!isCW&&calcPrf>0&&(pat==="linear"||pat==="raster");
+      var canSep=!isCW&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
       function mkSepP(vv,ep){
         if(!canSep)return null;
         return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,v_scan_mm_s:vv,
@@ -1244,7 +1268,7 @@ function GeneralScanContent(p){
             if(maxPr1<maxP)maxP=maxPr1;}
         }
         var minVel=0;
-        if(!canSep){
+        if(!canSep&&effNLines<=10000){
           // Only run bisection on the main thread for brute-force paths
           // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
           function testV(tv){
@@ -1543,9 +1567,120 @@ function GeneralScanContent(p){
     };
   },[res,ec,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN,selPt]);
 
+  /* ── Scan pattern visualization: pre-computed values ──────────── */
+  /* Engineering notation for dimension labels */
+  function svFmtDim(val){
+    if(!isFinite(val)||val===0)return "0 mm";
+    var av=Math.abs(val);
+    if(av>=1e6)return (val/1e6).toPrecision(4)+" km";
+    if(av>=1e3)return (val/1e3).toPrecision(4)+" m";
+    if(av>=0.1)return +val.toPrecision(4)+" mm";
+    if(av>=1e-4)return (val*1e3).toPrecision(4)+" \u00b5m";
+    if(av>=1e-7)return (val*1e6).toPrecision(4)+" nm";
+    return val.toExponential(2)+" mm";
+  }
+  /* Scan pattern visualization: pre-computed values */
+  var _isLt=theme==="light";
+  var vc={
+    mark:_isLt?"#2176CC":"#5B9BD5", jump:_isLt?"#B8423A":"#D06050",
+    dimAct:_isLt?"#2176CC":"#5B9BD5", dimDer:_isLt?"#7BAED4":"#8ABEE0",
+    canvas:_isLt?"#FAFAFA":"#2A2A30", canvasBd:_isLt?"#E0E0E0":"#444",
+    gridMin:_isLt?"#ECECEC":"#383840", gridMaj:_isLt?"#DCDCDC":"#444450",
+    area:_isLt?"rgba(255,255,255,0.5)":"rgba(50,50,55,0.5)",
+    areaBd:_isLt?"#C0C5CB":"#555",
+    lbl:_isLt?"#666":"#AAA", legTx:_isLt?"#666":"#AAA",
+    lbl2:_isLt?"#555":"#BBB",
+    corr:_isLt?0.05:0.08,
+    hc:_isLt?"#00796B":"#4DB6AC",
+    axX:"#D03030", axY:"#1B8C1B"
+  };
+  var svBtnBg=_isLt?"#EBF2FA":"#3A4555";
+  var svBtnBd=_isLt?"#B8D4F0":"#5577AA";
+  var svIc=_isLt?"#555":"#AAA";
+  /* Fixed canvas — wider left padding for hatch callout */
+  var svW_c=460,svH_c=260;
+  var svPd_t=24,svPd_r=44,svPd_b=36,svPd_l=80;
+  var svPlW=svW_c-svPd_l-svPd_r, svPlH=svH_c-svPd_t-svPd_b;
+  /* Independent x/y scaling */
+  var svPatW=Math.max(lineL,0.001);
+  var svPatH=pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001);
+  var svScX=(svPlW*0.85)/svPatW;
+  var svScY=(svPlH*0.85)/svPatH;
+  var svOx=svPd_l+(svPlW-svPatW*svScX)/2;
+  var svOy=svPd_t+(svPlH-svPatH*svScY)/2;
+  var svRW=svPatW*svScX, svRH=svPatH*svScY;
+  var svBSc=Math.min(svScX,svScY);
+  var svBeamR=Math.max((dia/Math.sqrt(2))*svBSc,1.5);
+  svBeamR=Math.min(svBeamR,Math.min(svRW,svRH)/2);
+  /* Fix 1: beam suppression when beam >> scan area */
+  var svBeamOwl=dia>Math.max(lineL,scanHN||0)*2;
+  var svRenderBeam=svBeam&&!svBeamOwl;
+  /* Fix 2: line decimation */
+  var svHtVis=(nLines>1&&scanHN>0)?scanHN/(nLines-1):0;
+  var svLinePx=svHtVis*svScY;
+  var svTooMany=pat!=="linear"&&nLines>1&&svLinePx<4;
+  var svDecIndices=null;
+  if(svTooMany){
+    var svMaxShow=12;
+    var sdSet={};sdSet[0]=true;sdSet[nLines-1]=true;
+    for(var sdi=1;sdi<svMaxShow-1;sdi++){sdSet[Math.round(sdi*(nLines-1)/(svMaxShow-1))]=true;}
+    svDecIndices=[];for(var sdk in sdSet){if(sdSet.hasOwnProperty(sdk))svDecIndices.push(Number(sdk));}
+    svDecIndices.sort(function(a,b){return a-b;});
+  }
+  var svDecCount=svDecIndices?svDecIndices.length:0;
+  var svMarks=[],svJumps=[];
+  if(pat==="linear"){
+    svMarks.push({x1:svOx,y1:svOy+svRH/2,x2:svOx+svRW,y2:svOy+svRH/2,idx:0});
+  }else if(svTooMany){
+    /* Decimated: iterate only over the small set of indices (never over all nLines) */
+    for(var svdi=0;svdi<svDecIndices.length;svdi++){
+      var svIdx=svDecIndices[svdi];
+      var svLy=svOy+svIdx*svHtVis*svScY;
+      var svLtr=pat==="bidi"?(svIdx%2===0):true;
+      svMarks.push({x1:svLtr?svOx:svOx+svRW,y1:svLy,x2:svLtr?svOx+svRW:svOx,y2:svLy,idx:svIdx});
+    }
+    for(var svmi=0;svmi<svMarks.length-1;svmi++){
+      var svCur=svMarks[svmi],svNxt=svMarks[svmi+1];
+      var svCurLtr=pat==="bidi"?(svCur.idx%2===0):true;
+      var svCurEx=svCurLtr?svOx+svRW:svOx;
+      if(pat==="bidi")svJumps.push({x1:svCurEx,y1:svCur.y1,x2:svCurEx,y2:svNxt.y1});
+      else svJumps.push({x1:svOx+svRW,y1:svCur.y1,x2:svOx,y2:svNxt.y1});
+    }
+  }else{
+    var svNVis=Math.min(nLines,200);
+    for(var svi=0;svi<svNVis;svi++){
+      var svLy2=svOy+svi*svHtVis*svScY;
+      var svLtr2=pat==="bidi"?(svi%2===0):true;
+      svMarks.push({x1:svLtr2?svOx:svOx+svRW,y1:svLy2,x2:svLtr2?svOx+svRW:svOx,y2:svLy2,idx:svi});
+    }
+    for(var svmi2=0;svmi2<svMarks.length-1;svmi2++){
+      var svCur2=svMarks[svmi2],svNxt2=svMarks[svmi2+1];
+      var svCurLtr2=pat==="bidi"?(svCur2.idx%2===0):true;
+      var svCurEx2=svCurLtr2?svOx+svRW:svOx;
+      if(pat==="bidi")svJumps.push({x1:svCurEx2,y1:svCur2.y1,x2:svCurEx2,y2:svNxt2.y1});
+      else svJumps.push({x1:svOx+svRW,y1:svCur2.y1,x2:svOx,y2:svNxt2.y1});
+    }
+  }
+  /* Hatch callout geometry — left margin */
+  var svShowHC=pat!=="linear"&&nLines>1&&svHtVis>0;
+  var svHcY1=svOy,svHcY2=svOy+svHtVis*svScY;
+  var svHcGap=svHcY2-svHcY1;
+  var svHcBX=svOx-12;
+  var svHcInline=svHcGap>=8;
+  var svHcInset=svHcGap<8;
+  var svHcLabel=svFmtDim(svHtVis);
+  /* Formatted dimension labels */
+  var svWLabel=svFmtDim(lineL);
+  var svHLabel=svFmtDim(scanHN);
+  var svGridMinP="",svGridMajP="";
+  if(svGrid){
+    for(var sgx=0;sgx<=svW_c;sgx+=10){if(sgx%50===0)svGridMajP+="M"+sgx+",0V"+svH_c+" ";else svGridMinP+="M"+sgx+",0V"+svH_c+" ";}
+    for(var sgy=0;sgy<=svH_c;sgy+=10){if(sgy%50===0)svGridMajP+="M0,"+sgy+"H"+svW_c+" ";else svGridMinP+="M0,"+sgy+"H"+svW_c+" ";}
+  }
+
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
-    {/* ── Inputs: full width, 3-column ── */}
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
+    {/* ── Inputs: 2-column layout ── */}
+    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Beam Parameters</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1603,91 +1738,117 @@ function GeneralScanContent(p){
             }
           </div>
         </div>
-      </div>
-      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
-        <div style={secH}>Scan Pattern</div>
-        <div style={{display:"flex",gap:4,marginBottom:10}}>
-          {[["linear","Linear"],["raster","Raster"]].map(function(pt){
-            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{pt[1]}</button>;
-          })}
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {/* Scan area dimensions */}
-          <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr":"1fr 1fr",gap:8}}>
-            <div>
-              <label htmlFor="scan-sw" style={lb}>{pat==="linear"?"Scan Length (mm)":"Scan Width (mm)"}</label>
-              <input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/>
-            </div>
-            {pat==="raster"?<div>
-              <label htmlFor="scan-sh" style={lb}>Scan Height (mm)</label>
-              <input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/>
-            </div>:null}
-          </div>
-          {/* Scan lines (raster only) */}
-          {pat==="raster"?<div>
-            <label htmlFor="scan-nl" style={lb}>Scan Lines</label>
-            <input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/>
-            {nLines>1&&scanHN>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"Line spacing: "+(scanHN/(nLines-1)).toFixed(4)+" mm"}</div>:null}
-          </div>:null}
-          {/* Velocity input */}
-          <div>
-            <label style={lb}>Scan Speed</label>
-            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}>
-              <option value="velocity">Scan velocity (mm/s)</option>
-              <option value="dwell">Pixel dwell time (µs)</option>
-              <option value="scanrate">Line scan rate (lines/s)</option>
-              <option value="framerate">Frame rate (fps)</option>
-            </select>
-            {velMode==="velocity"?
-              <input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>
-            :velMode==="dwell"?
-              <div>
-                <input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>
-                {dwellN>0&&dia>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}
-              </div>
-            :velMode==="scanrate"?
-              <div>
-                <input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>
-                {srateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}
-              </div>
-            :
-              <div>
-                <input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>
-                {frateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"+(pat==="raster"?" ("+lineL+" \u00d7 "+nLines+" lines \u00d7 "+frateN+" fps)":"")}</div>:null}
-              </div>
-            }
-          </div>
-        </div>
-      </div>
-      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
-        <div>
-          <div style={secH}>Settings</div>
-          <div style={{marginBottom:10}}>
-            <label style={lb}>Grid Resolution (pts/diameter)</label>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <input type="range" min={3} max={32} value={ppd} onChange={function(e){setPpd(Number(e.target.value));setDirty(true)}} style={{flex:1}}/>
-              <span style={{fontSize:12,fontFamily:"monospace",fontWeight:700,color:T.ac,minWidth:20}}>{ppd}</span>
-            </div>
-            <div style={{fontSize:9,color:T.td,marginTop:2,fontFamily:"monospace"}}>Spacing: {(dia/ppd).toFixed(4)} mm {ppd>=8?"\u2713 converged":""}</div>
-          </div>
+
+          {/* Divider */}
+          <div style={{borderTop:"1px solid "+T.bd,margin:"4px 0"}}/>
+          {/* Dwell time + flyback (merged from Settings) */}
           <div>
             <label style={lb}>Dwell Time Definition</label>
-            <div style={{display:"flex",gap:6}}>
+            <div style={{display:"flex",gap:4}}>
               {[["gaussian","Gaussian"],["geometric","Geometric"]].map(function(dm){
                 return <button key={dm[0]} onClick={function(){setDwm(dm[0])}} style={{flex:1,padding:"5px 8px",fontSize:10,fontWeight:dwm===dm[0]?700:500,background:dwm===dm[0]?T.ac:"transparent",color:dwm===dm[0]?"#fff":T.tm,border:dwm===dm[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{dm[1]}</button>;
               })}
             </div>
           </div>
           {pat!=="linear"?<div>
-            <label style={lb}>Galvo Flyback Blanking</label>
-            <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,color:blk?T.ac:T.tm}}>
-              <input type="checkbox" checked={blk} onChange={function(){setBlk(!blk);setDirty(true);}} style={{accentColor:T.ac,width:14,height:14}}/>
-              {blk?"Laser blanked during flyback/jumps":"Laser fires during flyback (conservative)"}
+            <label style={{...lb,marginBottom:6}}>Galvo Flyback Blanking</label>
+            <label style={{display:"flex",alignItems:"flex-start",gap:6,cursor:"pointer",fontSize:11,color:T.tx}}>
+              <input type="checkbox" checked={blk} onChange={function(){setBlk(!blk);setDirty(true);}} style={{accentColor:T.ac,width:14,height:14,marginTop:2}}/>
+              <span style={{lineHeight:1.3}}>{blk?"Laser blanked during flyback/jumps":"Laser fires during flyback (conservative)"}</span>
             </label>
-            <div style={{fontSize:8,color:T.td,marginTop:2}}>OCT/confocal systems typically blank during galvo return</div>
+            <div style={{fontSize:8,color:T.td,marginTop:2,marginLeft:20}}>OCT/confocal systems typically blank during galvo return</div>
           </div>:null}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",padding:14}}>
+        {/* Header: title + toggle toolbar */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={secH}>Scan Pattern</div>
+          <div style={{display:"flex",gap:2}}>
+            <button onClick={function(){setSvGrid(!svGrid);}} title="Grid" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svGrid?svBtnBg:"transparent",border:svGrid?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svGrid?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.4" strokeLinecap="round"><line x1="5" y1="1" x2="5" y2="15"/><line x1="11" y1="1" x2="11" y2="15"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="1" y1="11" x2="15" y2="11"/></svg></button>
+            <button onClick={function(){setSvBeam(!svBeam);}} title="Beam spot" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svBeam?svBtnBg:"transparent",border:svBeam?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svBeam?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3"><circle cx="8" cy="8" r="5" strokeDasharray="2.5 2"/><circle cx="8" cy="8" r="1.5" fill={svIc} stroke="none"/></svg></button>
+            <button onClick={function(){setSvFlyback(!svFlyback);}} title="Flyback paths" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svFlyback?svBtnBg:"transparent",border:svFlyback?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svFlyback?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3" strokeLinecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="12" x2="14" y2="12"/><path d="M14,4 C16,4 16,12 14,12" strokeDasharray="2 2" opacity="0.6"/></svg></button>
+            <button onClick={function(){setSvAnts(!svAnts);}} title="Scan animation" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svAnts?svBtnBg:"transparent",border:svAnts?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svAnts?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.5" strokeLinecap="round"><line x1="2" y1="8" x2="12" y2="8" strokeDasharray="2.5 3"/><polygon points="11,5.5 15,8 11,10.5" fill={svIc} stroke="none" opacity="0.5"/></svg></button>
+          </div>
         </div>
-        <button onClick={calculate} style={{padding:"10px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:5,cursor:"pointer",width:"100%",marginTop:12}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
+        {/* Pattern selector */}
+        <div style={{display:"flex",gap:4,marginBottom:8}}>
+          {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
+            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:4,cursor:"pointer"}}>{pt[1]}</button>;
+          })}
+        </div>
+        {/* SVG Visualization — all fixes */}
+        <div style={{borderRadius:4,overflow:"hidden",border:"1px solid "+vc.canvasBd,marginBottom:10}}>
+          <svg viewBox={"0 0 "+svW_c+" "+svH_c} style={{width:"100%",height:"auto",display:"block",background:vc.canvas}} xmlns="http://www.w3.org/2000/svg" shapeRendering="geometricPrecision">
+            <defs>
+              <clipPath id="sv-clip"><rect x={svOx-2} y={svOy-2} width={svRW+4} height={svRH+4}/></clipPath>
+              <marker id="sv-arr" markerWidth="8" markerHeight="5" refX="7.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,2.5 L0,5 z" fill={vc.dimAct}/></marker>
+              <marker id="sv-arr2" markerWidth="8" markerHeight="5" refX="0.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,0 L0,2.5 L8,5 z" fill={vc.dimAct}/></marker>
+              <marker id="sv-hc1" markerWidth="5" markerHeight="4" refX="4.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L5,2 L0,4 z" fill={vc.hc}/></marker>
+              <marker id="sv-hc2" markerWidth="5" markerHeight="4" refX="0.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M5,0 L0,2 L5,4 z" fill={vc.hc}/></marker>
+            </defs>
+            {svGrid?<g><path d={svGridMinP} fill="none" stroke={vc.gridMin} strokeWidth="0.5"/><path d={svGridMajP} fill="none" stroke={vc.gridMaj} strokeWidth="0.5"/></g>:null}
+            {svGrid?<g>
+              <line x1={svOx-14} y1={svOy+svRH} x2={svOx+22} y2={svOy+svRH} stroke={vc.axX} strokeWidth="0.8" opacity="0.4"/>
+              <line x1={svOx} y1={svOy+svRH+14} x2={svOx} y2={svOy+svRH-22} stroke={vc.axY} strokeWidth="0.8" opacity="0.4"/>
+              <text x={svOx+24} y={svOy+svRH+3} fill={vc.axX} fontSize="7.5" fontFamily="monospace" opacity="0.5" fontWeight="500">x</text>
+              <text x={svOx+3} y={svOy+svRH-24} fill={vc.axY} fontSize="7.5" fontFamily="monospace" opacity="0.5" fontWeight="500">y</text>
+              <circle cx={svOx} cy={svOy+svRH} r="1.8" fill="none" stroke={vc.lbl} strokeWidth="0.6"/>
+            </g>:null}
+            <rect x={svOx} y={svOy} width={svRW} height={svRH} fill={vc.area} stroke={vc.areaBd} strokeWidth="1" rx="1"/>
+            {svRenderBeam?<g clipPath="url(#sv-clip)">{svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,len=Math.sqrt(dx*dx+dy*dy),ang=Math.atan2(dy,dx)*180/Math.PI;return <rect key={"c"+i} x={-len/2} y={-svBeamR} width={len} height={svBeamR*2} rx={svBeamR} transform={"translate("+((s.x1+s.x2)/2)+","+((s.y1+s.y2)/2)+") rotate("+ang+")"} fill={vc.mark} opacity={vc.corr}/>;})}</g>:null}
+            {svFlyback?svJumps.map(function(s,i){var vert=Math.abs(s.x1-s.x2)<1;var d=vert?"M"+s.x1+","+s.y1+"L"+s.x2+","+s.y2:"M"+s.x1+","+s.y1+"C"+(s.x1+(s.x2>s.x1?25:-25))+","+s.y1+" "+(s.x2+(s.x1>s.x2?25:-25))+","+s.y2+" "+s.x2+","+s.y2;return <path key={"j"+i} d={d} fill="none" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="4,3" opacity="0.55"/>;}):null}
+            {svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,mx=(s.x1+s.x2)/2,my=(s.y1+s.y2)/2,ang=Math.atan2(dy,dx)*180/Math.PI;return <g key={"m"+i}><line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.mark} strokeWidth="1.5" strokeLinecap="round"/>{svAnts?<line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.canvas} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,7" strokeDashoffset={-antOff} opacity="0.45"/>:null}<polygon points="0,-3.2 6.5,0 0,3.2" fill={vc.mark} opacity="0.75" transform={"translate("+mx+","+my+") rotate("+ang+")"}/><circle cx={s.x1} cy={s.y1} r="1.8" fill={vc.mark} opacity="0.5"/></g>;})}
+            {svRenderBeam&&svMarks.length>0?<g><circle cx={svMarks[0].x1} cy={svMarks[0].y1} r={svBeamR} fill="none" stroke={vc.mark} strokeWidth="1" strokeDasharray="2.5,2" opacity="0.45"/></g>:null}
+            {/* Inline hatch callout — bracket in left margin */}
+            {svShowHC&&svHcInline?<g>
+              <line x1={svHcBX-5} y1={svHcY1} x2={svOx-4} y2={svHcY1} stroke={vc.hc} strokeWidth="0.9"/>
+              <line x1={svHcBX-5} y1={svHcY2} x2={svOx-4} y2={svHcY2} stroke={vc.hc} strokeWidth="0.9"/>
+              <line x1={svHcBX} y1={svHcY1} x2={svHcBX} y2={svHcY2} stroke={vc.hc} strokeWidth="0.8" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2-1} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="10" fontFamily="monospace" fontWeight="600">{"Δh"}</text>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2+10} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="9.5" fontFamily="monospace" fontWeight="600">{svHcLabel}</text>
+            </g>:null}
+            {/* Inset hatch callout — for sub-pixel spacing */}
+            {svShowHC&&svHcInset?<g>
+              <rect x="3" y={svPd_t-2} width={svPd_l-8} height="62" rx="3" fill={_isLt?"white":"#2A2A30"} stroke={vc.hc} strokeWidth="0.8"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+11} textAnchor="middle" fill={vc.hc} fontSize="9" fontFamily="sans-serif" fontWeight="700" letterSpacing="0.04em">LINE SPACING</text>
+              <line x1="10" y1={svPd_t+24} x2={svPd_l-22} y2={svPd_t+24} stroke={vc.mark} strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1="10" y1={svPd_t+44} x2={svPd_l-22} y2={svPd_t+44} stroke={vc.mark} strokeWidth="1.5" strokeLinecap="round"/>
+              <line x1={svPd_l-16} y1={svPd_t+24} x2={svPd_l-16} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.8" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <line x1={svPd_l-20} y1={svPd_t+24} x2={svPd_l-12} y2={svPd_t+24} stroke={vc.hc} strokeWidth="0.7"/>
+              <line x1={svPd_l-20} y1={svPd_t+44} x2={svPd_l-12} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.7"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+57} textAnchor="middle" fill={vc.hc} fontSize="10.5" fontFamily="monospace" fontWeight="700">{svHcLabel}</text>
+            </g>:null}
+            {/* Width dimension */}
+            <g><line x1={svOx} y1={svOy+svRH+3} x2={svOx} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx+svRW} y1={svOy+svRH+3} x2={svOx+svRW} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx} y1={svOy+svRH+18} x2={svOx+svRW} y2={svOy+svRH+18} stroke={vc.dimAct} strokeWidth="0.7" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW/2} y={svOy+svRH+32} textAnchor="middle" fill={vc.dimAct} fontSize="10" fontFamily="monospace" fontWeight="600">{svWLabel}</text></g>
+            {/* Height dimension */}
+            {pat!=="linear"?<g><line x1={svOx+svRW+3} y1={svOy} x2={svOx+svRW+24} y2={svOy} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx+svRW+3} y1={svOy+svRH} x2={svOx+svRW+24} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx+svRW+18} y1={svOy} x2={svOx+svRW+18} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.7" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW+28} y={svOy+svRH/2} dominantBaseline="middle" fill={vc.dimAct} fontSize="10" fontFamily="monospace" fontWeight="600">{svHLabel}</text></g>:null}
+            {/* Pattern label — above scan area */}
+            <text x={svPd_l} y="16" fill={vc.lbl} fontSize="9.5" fontWeight="600" fontFamily="sans-serif" letterSpacing="0.08em">{pat==="linear"?"LINEAR":pat==="bidi"?"BIDIRECTIONAL RASTER":"UNIDIRECTIONAL RASTER"}</text>
+            {pat!=="linear"?<text x={svW_c-8} y="16" textAnchor="end" fill={vc.lbl} fontSize="9" fontFamily="monospace">{nLines+" lines"}</text>:null}
+            {/* Decimation notice — below width dim */}
+            {svTooMany?<text x={svOx+svRW/2} y={svOy+svRH+42} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="monospace" fontStyle="italic">{"showing "+svDecCount+" of "+nLines.toLocaleString()+" lines"}</text>:null}
+            {/* Beam suppression notice — above scan area */}
+            {svBeamOwl&&svBeam?<text x={svOx+svRW/2} y={svOy-8} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="monospace">{"beam ("+svFmtDim(dia)+") \u226B scan area"}</text>:null}
+            {/* Legend — bottom right, outside scan area */}
+            <g transform={"translate("+(svW_c-8)+","+(svH_c-16)+")"}><line x1="-58" y1="0" x2="-44" y2="0" stroke={vc.mark} strokeWidth="1.5"/><text x="-41" y="0.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="monospace">mark</text>{svFlyback?<g><line x1="-58" y1="-14" x2="-44" y2="-14" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="3,2"/><text x="-41" y="-13.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="monospace">jump</text></g>:null}</g>
+          </svg>
+        </div>
+        {/* Inputs */}
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr":"1fr 1fr",gap:8}}>
+            <div><label htmlFor="scan-sw" style={lb}>{pat==="linear"?"Scan Length (mm)":"Scan Width (mm)"}</label><input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/></div>
+            {pat!=="linear"?<div><label htmlFor="scan-sh" style={lb}>Scan Height (mm)</label><input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/></div>:null}
+          </div>
+          {pat!=="linear"?<div><label htmlFor="scan-nl" style={lb}>Scan Lines</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/>{nLines>1&&scanHN>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"Line spacing: "+(scanHN/(nLines-1)).toFixed(4)+" mm"}</div>:null}</div>:null}
+          <div>
+            <label style={lb}>Scan Speed</label>
+            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="velocity">Scan velocity (mm/s)</option><option value="dwell">Pixel dwell time (\u00b5s)</option><option value="scanrate">Line scan rate (lines/s)</option><option value="framerate">Frame rate (fps)</option></select>
+            {velMode==="velocity"?<input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>:velMode==="dwell"?<div><input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>{dwellN>0&&dia>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}</div>:velMode==="scanrate"?<div><input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>{srateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}</div>:<div><input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>{frateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"+(pat!=="linear"?" ("+lineL+" \u00d7 "+nLines+" lines \u00d7 "+frateN+" fps)":"")}</div>:null}</div>}
+          </div>
+        </div>
+      </div>
+      <button onClick={calculate} style={{padding:"14px 24px",fontSize:14,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",width:"100%"}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
       </div>
     </div>
 
@@ -1749,7 +1910,7 @@ function GeneralScanContent(p){
           <td style={{padding:"4px 8px",fontSize:11,fontFamily:"monospace",fontWeight:600}}>{row[1]}</td>
         </tr>;})}</tbody></table>
         <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
-          ["Pattern",pat==="raster"?"Unidirectional raster":"Linear"],
+          ["Pattern",pat==="linear"?"Linear":pat==="bidi"?"Bidirectional raster":"Unidirectional raster"],
           ["Flyback blanking",pat==="linear"?"N/A":(blk?"Yes (laser off during jumps)":"No (conservative)")],
           ["Total segments",String(res.segs.length)],
           ["Total scan time",numFmt(res.st.tt,4)+" s"],
