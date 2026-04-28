@@ -4716,18 +4716,23 @@ function GeneralScanContent(p){
             <g transform={"translate("+(svW_c-8)+","+(svH_c-16)+")"}><line x1="-58" y1="0" x2="-44" y2="0" stroke={vc.mark} strokeWidth="1.5"/><text x="-41" y="0.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="monospace">mark</text>{svFlyback?<g><line x1="-58" y1="-14" x2="-44" y2="-14" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="3,2"/><text x="-41" y="-13.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="monospace">jump</text></g>:null}</g>
           </svg>
         </div>
-        {/* Inputs */}
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr":"1fr 1fr",gap:8}}>
-            <div><label htmlFor="scan-sw" style={lb}>{pat==="linear"?"Scan Length (mm)":"Scan Width (mm)"}</label><input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/></div>
-            {pat!=="linear"?<div><label htmlFor="scan-sh" style={lb}>Scan Height (mm)</label><input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/></div>:null}
-          </div>
-          {pat!=="linear"?<div><label htmlFor="scan-nl" style={lb}>Scan Lines</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/>{nLines>1&&scanHN>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"Line spacing: "+(scanHN/(nLines-1)).toFixed(4)+" mm"}</div>:null}</div>:null}
+        {/* Inputs — compact row */}
+        <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr 1fr":"1fr 1fr 1fr 1fr",gap:8}}>
+          <div><label htmlFor="scan-sw" style={lb}>{pat==="linear"?"Scan Length (mm)":"Width (mm)"}</label><input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/></div>
+          {pat!=="linear"?<div><label htmlFor="scan-sh" style={lb}>Height (mm)</label><input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/></div>:null}
+          {pat!=="linear"?<div><label htmlFor="scan-nl" style={lb}>Lines</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/></div>:null}
           <div>
             <label style={lb}>Scan Speed</label>
-            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="velocity">Scan velocity (mm/s)</option><option value="dwell">Pixel dwell time (\u00b5s)</option><option value="scanrate">Line scan rate (lines/s)</option><option value="framerate">Frame rate (fps)</option></select>
-            {velMode==="velocity"?<input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>:velMode==="dwell"?<div><input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>{dwellN>0&&dia>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}</div>:velMode==="scanrate"?<div><input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>{srateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}</div>:<div><input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>{frateN>0&&lineL>0?<div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"+(pat!=="linear"?" ("+lineL+" \u00d7 "+nLines+" lines \u00d7 "+frateN+" fps)":"")}</div>:null}</div>}
+            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:4,fontSize:10,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="velocity">Velocity (mm/s)</option><option value="dwell">Dwell (\u00b5s)</option><option value="scanrate">Line rate (Hz)</option><option value="framerate">Frame rate (fps)</option></select>
+            {velMode==="velocity"?<input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>:velMode==="dwell"?<input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>:velMode==="scanrate"?<input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>:<input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>}
           </div>
+        </div>
+        {/* Derived readouts — single line below */}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:4}}>
+          {pat!=="linear"&&nLines>1&&scanHN>0?<div style={{fontSize:8,color:T.td,fontFamily:"monospace"}}>{"Line spacing: "+(scanHN/(nLines-1)).toFixed(4)+" mm"}</div>:null}
+          {velMode==="dwell"&&dwellN>0&&dia>0?<div style={{fontSize:8,color:T.td,fontFamily:"monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}
+          {velMode==="scanrate"&&srateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}
+          {velMode==="framerate"&&frateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"}</div>:null}
         </div>
       </div>
       <button onClick={calculate} style={{padding:"14px 24px",fontSize:14,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",width:"100%"}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
