@@ -980,7 +980,7 @@ function GeneralScanContent(p){
       "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
       "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
       "  /* Segment-superposition framework: create scan params for all patterns */",
-      "  var sepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,v_scan_mm_s:p.vel,",
+      "  var sepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,avg_power_W:p.pw,v_scan_mm_s:p.vel,",
       "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
       "     pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:p.vel*5};",
       "  /* Only build segments if separable path not available */",
@@ -997,7 +997,7 @@ function GeneralScanContent(p){
       "  /* Max permissible power */",
       "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
       "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};",
-      "  var unitSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:p.prf>0?1/p.prf:0,v_scan_mm_s:p.vel,",
+      "  var unitSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,v_scan_mm_s:p.vel,",
       "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
       "     pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:p.vel*5};",
       "  var ucr=E.computeScanFluence(unitBeam,sepP?[]:segs,p.auxPpd,unitSepP);",
@@ -1010,7 +1010,7 @@ function GeneralScanContent(p){
       "  /* Min safe velocity bisection */",
       "  var minVel=0;",
       "  function testV(tv){",
-      "    var tSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,v_scan_mm_s:tv,",
+      "    var tSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,avg_power_W:p.pw,v_scan_mm_s:tv,",
       "       x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
       "       pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:tv*5};",
       "    var ts2=tSepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia,p.blk);",
@@ -1142,7 +1142,7 @@ function GeneralScanContent(p){
     var calcPrf=laserMode==="cw"?0:prf;
     var calcTau=laserMode==="cw"?0:tau;
     var isCWEst=laserMode==="cw";
-    var canSep=!isCWEst&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
+    var canSep=((!isCWEst&&calcPrf>0)||(isCWEst&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
     var segsEst=canSep?[]:null;
     var estTime,estPulses;
     if(canSep){
@@ -1245,12 +1245,12 @@ function GeneralScanContent(p){
       var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
 
       // Build separable params if applicable (same logic as Worker)
-      var canSep=!isCW&&calcPrf>0&&(pat==="linear"||pat==="raster"||pat==="bidi");
-      function mkSepP(vv,ep){
+      var canSep=((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      function mkSepP(vv,ep,optP){
         if(!canSep)return null;
-        return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,v_scan_mm_s:vv,
+        return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,avg_power_W:optP!==undefined?optP:pw,v_scan_mm_s:vv,
           x0:0,y0:0,line_length_mm:lineL,n_lines:pat==="linear"?1:effNLines,
-          hatch_mm:pat==="linear"?0:effHatch,pattern:pat,blanking:blk,is_cw:false};
+          hatch_mm:pat==="linear"?0:effHatch,pattern:pat,blanking:blk,is_cw:isCW,v_jump_mm_s:vv*5};
       }
 
       var cr=scanCompute(beam,canSep?[]:segs,effPpd,mkSepP(effVel));
@@ -1258,7 +1258,7 @@ function GeneralScanContent(p){
         var minV=isCW?(cr.st.mv||effVel):0;
         var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:effVel,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
         var unitBeam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?1/calcPrf:0,P:1,cw:isCW};
-        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(effVel,calcPrf>0?1/calcPrf:0));
+        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(effVel,calcPrf>0?1/calcPrf:0,1));
         var maxP=Infinity;
         if(unitCr){
           var upF=0;for(var ui=0;ui<unitCr.g.nx*unitCr.g.ny;ui++)if(unitCr.g.flu[ui]>upF)upF=unitCr.g.flu[ui];

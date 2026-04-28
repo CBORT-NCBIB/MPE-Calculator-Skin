@@ -1302,10 +1302,15 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
  */
 function canUseSeparable(sp) {
   if (!sp) return false;
-  // Must be pulsed (CW uses its own analytical integration)
-  if (sp.is_cw) return false;
-  // Must have valid PRF and velocity
-  if (!isFinite(sp.prf_hz) || sp.prf_hz <= 0) return false;
+  // CW and pulsed both supported — CW uses erf line integral, pulsed uses pulse sum
+  if (!sp.is_cw) {
+    // Pulsed: must have valid PRF
+    if (!isFinite(sp.prf_hz) || sp.prf_hz <= 0) return false;
+  } else {
+    // CW: must have valid average power
+    if (!isFinite(sp.avg_power_W) || sp.avg_power_W <= 0) return false;
+  }
+  // Must have valid velocity
   if (!isFinite(sp.v_scan_mm_s) || sp.v_scan_mm_s <= 0) return false;
   // Must be a recognized uniform pattern
   if (sp.pattern !== "linear" && sp.pattern !== "raster" && sp.pattern !== "bidi") return false;
@@ -1390,6 +1395,79 @@ function computeScanFluenceSeparable(grid, sp) {
   var w = d / Math.sqrt(2);          // 1/e² radius (mm)
   var sigma = d / (2 * Math.sqrt(2)); // σ (mm)
   var w2 = w * w;
+
+  var trunc_mm = GAUSS_TRUNCATION_SIGMA * sigma;
+
+  var nx = grid.nx, ny = grid.ny;
+  var dx = grid.dx_mm;
+  var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
+  var flu = grid.fluence, pc = grid.pulse_count, ppH = grid.peak_pulse_H;
+  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s;
+
+  var n_lines = sp.n_lines || 1;
+  var hatch = sp.hatch_mm || 0;
+  var x0 = sp.x0 || 0;
+  var y0 = sp.y0 || 0;
+  var v = sp.v_scan_mm_s;
+  var L = sp.line_length_mm;
+
+  // ── CW path: erf line integral × cross-line Gaussian sum ──
+  if (sp.is_cw) {
+    var P = sp.avg_power_W;
+    var prefactor_cw = P * 100 / (v * w * Math.sqrt(2 * Math.PI)); // J/cm² per unit erf-bracket
+    var s2w = Math.SQRT2 / w;
+
+    // Along-scan CW profile: erf bracket at each x grid point
+    var Sx_cw = new Float64Array(nx);
+    for (var ix_cw = 0; ix_cw < nx; ix_cw++) {
+      var gx_cw = xmin + ix_cw * dx;
+      var xi0_cw = gx_cw - x0;
+      // erf(√2·ξ₀/w) - erf(√2·(ξ₀-L)/w) — same result for forward and reverse scans
+      Sx_cw[ix_cw] = _erf(s2w * xi0_cw) - _erf(s2w * (xi0_cw - L));
+      if (Sx_cw[ix_cw] < 0) Sx_cw[ix_cw] = 0;
+    }
+
+    // Cross-line Gaussian sum (identical to pulsed — depends only on line positions)
+    var Sy_cw = _compute1DGaussSum(ny, ymin, dx, y0, hatch > 0 ? hatch : 1e30, n_lines, w2, trunc_mm);
+
+    // Accumulate fluence
+    for (var iy_cw = 0; iy_cw < ny; iy_cw++) {
+      if (Sy_cw[iy_cw] < 1e-15) continue;
+      for (var ix_cw2 = 0; ix_cw2 < nx; ix_cw2++) {
+        flu[iy_cw * nx + ix_cw2] = prefactor_cw * Sx_cw[ix_cw2] * Sy_cw[iy_cw];
+      }
+    }
+
+    // Peak single-sweep H (fluence from nearest line only)
+    for (var iy_cwp = 0; iy_cwp < ny; iy_cwp++) {
+      var gy_cwp = ymin + iy_cwp * dx;
+      var nearest_cw = hatch > 0 ? Math.round((gy_cwp - y0) / hatch) : 0;
+      if (nearest_cw < 0) nearest_cw = 0;
+      if (nearest_cw >= n_lines) nearest_cw = n_lines - 1;
+      var dy_cwp = gy_cwp - (y0 + nearest_cw * hatch);
+      var cross_att_cw = Math.exp(-2 * dy_cwp * dy_cwp / w2);
+      for (var ix_cwp = 0; ix_cwp < nx; ix_cwp++) {
+        ppH[iy_cwp * nx + ix_cwp] = prefactor_cw * Sx_cw[ix_cwp] * cross_att_cw;
+      }
+    }
+
+    // Timing: CW has no discrete pulses
+    var line_dur_cw = L / v;
+    var jump_v_cw = (sp.v_jump_mm_s || v * 5);
+    var flyback_cw = sp.pattern === "linear" ? 0 :
+      (sp.pattern === "bidi" ? (hatch / jump_v_cw) : (L / jump_v_cw + hatch / jump_v_cw));
+    var total_time_cw = n_lines * line_dur_cw + (n_lines - 1) * flyback_cw;
+
+    return {
+      total_pulses: 0,
+      total_time_s: total_time_cw,
+      min_velocity: v,
+      stride: 1,
+      method: "separable-cw"
+    };
+  }
+
+  // ── Pulsed path (existing) ──
   var H0_mm2 = 2 * sp.pulse_energy_J / (Math.PI * w2);
   var H0_cm2 = H0_mm2 * 100;
 
@@ -1720,41 +1798,51 @@ function computeScanFluence(beam, segments, ppd, scanParams) {
   if (!scanParams && (!segments || segments.length === 0)) return null;
   ppd = ppd || 8;
 
-  // ── New segment-superposition framework (primary path) ──
-  if (scanParams) {
-    var pathSegs = buildPathSegments(scanParams);
-    if (pathSegs && pathSegs.length > 0) {
-      var grid = createFluenceGridFromParams(scanParams, ppd);
-      var fwBeam = {
-        d_1e_mm: beam.d_1e_mm,
-        avg_power_W: beam.avg_power_W || (beam.pulse_energy_J * beam.prf_hz),
-        prf_hz: beam.prf_hz || 0,
-        pulse_energy_J: beam.pulse_energy_J || 0,
-        is_cw: beam.is_cw
-      };
-      var stats = computeScanFluenceSegmentErf(grid, pathSegs, fwBeam);
-
-      // Set total_pulses and min_velocity for safety evaluation
-      if (!beam.is_cw && beam.prf_hz > 0) {
-        stats.total_pulses = Math.round(stats.total_time_s * beam.prf_hz);
-      } else if (beam.is_cw) {
-        stats.total_pulses = 0;
-        stats.min_velocity = scanParams.v_scan_mm_s || 500;
-      }
-
-      stats.method = "segment-erf";
-      return { grid: grid, stats: stats };
-    }
-  }
-
-  // ── Fallback: separable fast path ──
+  // ── Separable fast path (preferred for uniform raster/bidi patterns) ──
+  // O(nx + ny) via 1D Gaussian sum factorization — mathematically exact.
+  // This MUST be checked first: for large line counts (>1000 lines),
+  // the general segment-erf path would build O(nLines) segment objects
+  // and iterate O(nGridPoints × nSegments), causing OOM/timeout.
   if (scanParams && canUseSeparable(scanParams)) {
     var grid_s = createFluenceGridFromParams(scanParams, ppd);
     var stats_s = computeScanFluenceSeparable(grid_s, scanParams);
     return { grid: grid_s, stats: stats_s };
   }
 
-  // ── Fallback: standard segment-based path ──
+  // ── Segment-superposition framework (for non-separable or CW scans) ──
+  // General O(nGridPoints × nSegments) — only used when separable
+  // factorization is not applicable (CW, non-uniform patterns).
+  if (scanParams) {
+    // Safety cap: refuse to build >50000 segments to prevent OOM
+    var nSegsExpected = (scanParams.n_lines || 1) * 2;
+    if (nSegsExpected <= 50000) {
+      var pathSegs = buildPathSegments(scanParams);
+      if (pathSegs && pathSegs.length > 0) {
+        var grid = createFluenceGridFromParams(scanParams, ppd);
+        var fwBeam = {
+          d_1e_mm: beam.d_1e_mm,
+          avg_power_W: beam.avg_power_W || (beam.pulse_energy_J * beam.prf_hz),
+          prf_hz: beam.prf_hz || 0,
+          pulse_energy_J: beam.pulse_energy_J || 0,
+          is_cw: beam.is_cw
+        };
+        var stats = computeScanFluenceSegmentErf(grid, pathSegs, fwBeam);
+
+        // Set total_pulses and min_velocity for safety evaluation
+        if (!beam.is_cw && beam.prf_hz > 0) {
+          stats.total_pulses = Math.round(stats.total_time_s * beam.prf_hz);
+        } else if (beam.is_cw) {
+          stats.total_pulses = 0;
+          stats.min_velocity = scanParams.v_scan_mm_s || 500;
+        }
+
+        stats.method = "segment-erf";
+        return { grid: grid, stats: stats };
+      }
+    }
+  }
+
+  // ── Legacy fallback: standard segment-based path ──
   if (!segments || segments.length === 0) return null;
   var grid2 = createFluenceGrid(beam.d_1e_mm, segments, ppd);
   var stats2;
