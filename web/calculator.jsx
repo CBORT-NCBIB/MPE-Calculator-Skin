@@ -1615,21 +1615,21 @@ function GeneralScanContent(p){
   /* Scan pattern visualization: pre-computed values */
   var _isLt=theme==="light";
   var vc={
-    mark:_isLt?"#2176CC":"#5B9BD5", jump:_isLt?"#B8423A":"#D06050",
-    dimAct:_isLt?"#2176CC":"#5B9BD5", dimDer:_isLt?"#7BAED4":"#8ABEE0",
-    canvas:_isLt?"#FAFAFA":"#2A2A30", canvasBd:_isLt?"#E0E0E0":"#444",
-    gridMin:_isLt?"#ECECEC":"#383840", gridMaj:_isLt?"#DCDCDC":"#444450",
-    area:_isLt?"rgba(255,255,255,0.5)":"rgba(50,50,55,0.5)",
-    areaBd:_isLt?"#C0C5CB":"#555",
-    lbl:_isLt?"#666":"#AAA", legTx:_isLt?"#666":"#AAA",
-    lbl2:_isLt?"#555":"#BBB",
-    corr:_isLt?0.05:0.08,
-    hc:_isLt?"#00796B":"#4DB6AC",
-    axX:"#D03030", axY:"#1B8C1B"
+    mark:_isLt?"#334155":"#94A3B8", jump:_isLt?"#94A3B8":"#64748B",
+    dimAct:_isLt?"#64748B":"#94A3B8", dimDer:_isLt?"#94A3B8":"#64748B",
+    canvas:_isLt?"#FAFBFC":"#1A1F27", canvasBd:_isLt?"rgba(15,23,42,0.08)":"rgba(255,255,255,0.08)",
+    gridMin:_isLt?"#E8ECF0":"#252D38", gridMaj:_isLt?"#E0E4EA":"#2A3340",
+    area:_isLt?"none":"none",
+    areaBd:_isLt?"#CBD5E1":"#475569",
+    lbl:_isLt?"#475569":"#94A3B8", legTx:_isLt?"#475569":"#94A3B8",
+    lbl2:_isLt?"#334155":"#CBD5E1",
+    corr:_isLt?0.04:0.06,
+    hc:_isLt?"#64748B":"#94A3B8",
+    axX:"#94A3B8", axY:"#94A3B8"
   };
-  var svBtnBg=_isLt?"#EBF2FA":"#3A4555";
-  var svBtnBd=_isLt?"#B8D4F0":"#5577AA";
-  var svIc=_isLt?"#555":"#AAA";
+  var svBtnBg=_isLt?"#F1F5F9":"#1E293B";
+  var svBtnBd=_isLt?"#CBD5E1":"#475569";
+  var svIc=_isLt?"#64748B":"#94A3B8";
   /* Fixed canvas — wider left padding for hatch callout */
   var svW_c=460,svH_c=260;
   var svPd_t=24,svPd_r=44,svPd_b=36,svPd_l=80;
@@ -1854,54 +1854,54 @@ function GeneralScanContent(p){
               <clipPath id="sv-clip"><rect x={svOx-2} y={svOy-2} width={svRW+4} height={svRH+4}/></clipPath>
               <marker id="sv-arr" markerWidth="8" markerHeight="5" refX="7.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,2.5 L0,5 z" fill={vc.dimAct}/></marker>
               <marker id="sv-arr2" markerWidth="8" markerHeight="5" refX="0.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,0 L0,2.5 L8,5 z" fill={vc.dimAct}/></marker>
-              <marker id="sv-hc1" markerWidth="5" markerHeight="4" refX="4.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L5,2 L0,4 z" fill={vc.hc}/></marker>
-              <marker id="sv-hc2" markerWidth="5" markerHeight="4" refX="0.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M5,0 L0,2 L5,4 z" fill={vc.hc}/></marker>
+              <marker id="sv-hc1" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0.5 L4,2 L0,3.5 z" fill={vc.hc}/></marker>
+              <marker id="sv-hc2" markerWidth="4" markerHeight="4" refX="0.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M4,0.5 L0,2 L4,3.5 z" fill={vc.hc}/></marker>
             </defs>
-            {svGrid?<g><path d={svGridMinP} fill="none" stroke={vc.gridMin} strokeWidth="0.5"/><path d={svGridMajP} fill="none" stroke={vc.gridMaj} strokeWidth="0.5"/></g>:null}
+            {svGrid?<g><path d={svGridMinP} fill="none" stroke={vc.gridMin} strokeWidth="0.5" opacity="0.5"/><path d={svGridMajP} fill="none" stroke={vc.gridMaj} strokeWidth="0.5" opacity="0.6"/></g>:null}
             {svGrid?<g>
               <line x1={svOx-14} y1={svOy+svRH} x2={svOx+22} y2={svOy+svRH} stroke={vc.axX} strokeWidth="0.8" opacity="0.4"/>
               <line x1={svOx} y1={svOy+svRH+14} x2={svOx} y2={svOy+svRH-22} stroke={vc.axY} strokeWidth="0.8" opacity="0.4"/>
-              <text x={svOx+24} y={svOy+svRH+3} fill={vc.axX} fontSize="7.5" fontFamily="monospace" opacity="0.5" fontWeight="500">x</text>
-              <text x={svOx+3} y={svOy+svRH-24} fill={vc.axY} fontSize="7.5" fontFamily="monospace" opacity="0.5" fontWeight="500">y</text>
+              <text x={svOx+24} y={svOy+svRH+3} fill={vc.axX} fontSize="7.5" fontFamily="'IBM Plex Mono', monospace" opacity="0.4" fontWeight="400">x</text>
+              <text x={svOx+3} y={svOy+svRH-24} fill={vc.axY} fontSize="7.5" fontFamily="'IBM Plex Mono', monospace" opacity="0.4" fontWeight="400">y</text>
               <circle cx={svOx} cy={svOy+svRH} r="1.8" fill="none" stroke={vc.lbl} strokeWidth="0.6"/>
             </g>:null}
-            <rect x={svOx} y={svOy} width={svRW} height={svRH} fill={vc.area} stroke={vc.areaBd} strokeWidth="1" rx="1"/>
+            <rect x={svOx} y={svOy} width={svRW} height={svRH} fill="none" stroke={vc.areaBd} strokeWidth="0.75"/>
             {svRenderBeam?<g clipPath="url(#sv-clip)">{svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,len=Math.sqrt(dx*dx+dy*dy),ang=Math.atan2(dy,dx)*180/Math.PI;return <rect key={"c"+i} x={-len/2} y={-svBeamR} width={len} height={svBeamR*2} rx={svBeamR} transform={"translate("+((s.x1+s.x2)/2)+","+((s.y1+s.y2)/2)+") rotate("+ang+")"} fill={vc.mark} opacity={vc.corr}/>;})}</g>:null}
-            {svFlyback?svJumps.map(function(s,i){var vert=Math.abs(s.x1-s.x2)<1;var d=vert?"M"+s.x1+","+s.y1+"L"+s.x2+","+s.y2:"M"+s.x1+","+s.y1+"C"+(s.x1+(s.x2>s.x1?25:-25))+","+s.y1+" "+(s.x2+(s.x1>s.x2?25:-25))+","+s.y2+" "+s.x2+","+s.y2;return <path key={"j"+i} d={d} fill="none" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="4,3" opacity="0.55"/>;}):null}
-            {svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,mx=(s.x1+s.x2)/2,my=(s.y1+s.y2)/2,ang=Math.atan2(dy,dx)*180/Math.PI;return <g key={"m"+i}><line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.mark} strokeWidth="1.5" strokeLinecap="round"/>{svAnts?<line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.canvas} strokeWidth="1.5" strokeLinecap="round" strokeDasharray="3,7" strokeDashoffset={-antOff} opacity="0.45"/>:null}<polygon points="0,-3.2 6.5,0 0,3.2" fill={vc.mark} opacity="0.75" transform={"translate("+mx+","+my+") rotate("+ang+")"}/><circle cx={s.x1} cy={s.y1} r="1.8" fill={vc.mark} opacity="0.5"/></g>;})}
-            {svRenderBeam&&svMarks.length>0?<g><circle cx={svMarks[0].x1} cy={svMarks[0].y1} r={svBeamR} fill="none" stroke={vc.mark} strokeWidth="1" strokeDasharray="2.5,2" opacity="0.45"/></g>:null}
+            {svFlyback?svJumps.map(function(s,i){var vert=Math.abs(s.x1-s.x2)<1;var d=vert?"M"+s.x1+","+s.y1+"L"+s.x2+","+s.y2:"M"+s.x1+","+s.y1+"C"+(s.x1+(s.x2>s.x1?25:-25))+","+s.y1+" "+(s.x2+(s.x1>s.x2?25:-25))+","+s.y2+" "+s.x2+","+s.y2;return <path key={"j"+i} d={d} fill="none" stroke={vc.jump} strokeWidth="0.6" strokeDasharray="4,2" opacity="0.5"/>;}):null}
+            {svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,mx=(s.x1+s.x2)/2,my=(s.y1+s.y2)/2,ang=Math.atan2(dy,dx)*180/Math.PI;return <g key={"m"+i}><line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.mark} strokeWidth="1.0"/>{svAnts?<line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.canvas} strokeWidth="1.0" strokeDasharray="3,7" strokeDashoffset={-antOff} opacity="0.45"/>:null}<polygon points="0,-2.5 5,0 0,2.5" fill={vc.mark} opacity="0.65" transform={"translate("+mx+","+my+") rotate("+ang+")"}/><circle cx={s.x1} cy={s.y1} r="1.4" fill={vc.mark} opacity="0.35"/></g>;})}
+            {svRenderBeam&&svMarks.length>0?<g><circle cx={svMarks[0].x1} cy={svMarks[0].y1} r={svBeamR} fill="none" stroke={vc.mark} strokeWidth="0.75" strokeDasharray="2.5,2" opacity="0.3"/></g>:null}
             {/* Inline hatch callout — bracket in left margin */}
             {svShowHC&&svHcInline?<g>
-              <line x1={svHcBX-5} y1={svHcY1} x2={svOx-4} y2={svHcY1} stroke={vc.hc} strokeWidth="0.9"/>
-              <line x1={svHcBX-5} y1={svHcY2} x2={svOx-4} y2={svHcY2} stroke={vc.hc} strokeWidth="0.9"/>
-              <line x1={svHcBX} y1={svHcY1} x2={svHcBX} y2={svHcY2} stroke={vc.hc} strokeWidth="0.8" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
-              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2-1} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="10" fontFamily="monospace" fontWeight="600">{"Δh"}</text>
-              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2+10} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="9.5" fontFamily="monospace" fontWeight="600">{svHcLabel}</text>
+              <line x1={svHcBX-5} y1={svHcY1} x2={svOx-4} y2={svHcY1} stroke={vc.hc} strokeWidth="0.4"/>
+              <line x1={svHcBX-5} y1={svHcY2} x2={svOx-4} y2={svHcY2} stroke={vc.hc} strokeWidth="0.4"/>
+              <line x1={svHcBX} y1={svHcY1} x2={svHcBX} y2={svHcY2} stroke={vc.hc} strokeWidth="0.5" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2-1} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="9" fontFamily="'IBM Plex Mono', monospace" fontWeight="500">{"Δh"}</text>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2+10} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="8.5" fontFamily="'IBM Plex Mono', monospace" fontWeight="500">{svHcLabel}</text>
             </g>:null}
             {/* Inset hatch callout — for sub-pixel spacing */}
             {svShowHC&&svHcInset?<g>
               <rect x="3" y={svPd_t-2} width={svPd_l-8} height="62" rx="3" fill={_isLt?"white":"#2A2A30"} stroke={vc.hc} strokeWidth="0.8"/>
-              <text x={(svPd_l-5)/2+3} y={svPd_t+11} textAnchor="middle" fill={vc.hc} fontSize="9" fontFamily="sans-serif" fontWeight="700" letterSpacing="0.04em">LINE SPACING</text>
-              <line x1="10" y1={svPd_t+24} x2={svPd_l-22} y2={svPd_t+24} stroke={vc.mark} strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1="10" y1={svPd_t+44} x2={svPd_l-22} y2={svPd_t+44} stroke={vc.mark} strokeWidth="1.5" strokeLinecap="round"/>
-              <line x1={svPd_l-16} y1={svPd_t+24} x2={svPd_l-16} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.8" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+11} textAnchor="middle" fill={vc.hc} fontSize="9" fontFamily="'IBM Plex Sans', system-ui, sans-serif" fontWeight="700" letterSpacing="0.04em">LINE SPACING</text>
+              <line x1="10" y1={svPd_t+24} x2={svPd_l-22} y2={svPd_t+24} stroke={vc.mark} strokeWidth="1.0"/>
+              <line x1="10" y1={svPd_t+44} x2={svPd_l-22} y2={svPd_t+44} stroke={vc.mark} strokeWidth="1.0"/>
+              <line x1={svPd_l-16} y1={svPd_t+24} x2={svPd_l-16} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.5" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
               <line x1={svPd_l-20} y1={svPd_t+24} x2={svPd_l-12} y2={svPd_t+24} stroke={vc.hc} strokeWidth="0.7"/>
               <line x1={svPd_l-20} y1={svPd_t+44} x2={svPd_l-12} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.7"/>
-              <text x={(svPd_l-5)/2+3} y={svPd_t+57} textAnchor="middle" fill={vc.hc} fontSize="10.5" fontFamily="monospace" fontWeight="700">{svHcLabel}</text>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+57} textAnchor="middle" fill={vc.hc} fontSize="10.5" fontFamily="'IBM Plex Mono', monospace" fontWeight="700">{svHcLabel}</text>
             </g>:null}
             {/* Width dimension */}
-            <g><line x1={svOx} y1={svOy+svRH+3} x2={svOx} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx+svRW} y1={svOy+svRH+3} x2={svOx+svRW} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx} y1={svOy+svRH+18} x2={svOx+svRW} y2={svOy+svRH+18} stroke={vc.dimAct} strokeWidth="0.7" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW/2} y={svOy+svRH+32} textAnchor="middle" fill={vc.dimAct} fontSize="10" fontFamily="monospace" fontWeight="600">{svWLabel}</text></g>
+            <g><line x1={svOx} y1={svOy+svRH+3} x2={svOx} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW} y1={svOy+svRH+3} x2={svOx+svRW} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx} y1={svOy+svRH+18} x2={svOx+svRW} y2={svOy+svRH+18} stroke={vc.dimAct} strokeWidth="0.4" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW/2} y={svOy+svRH+32} textAnchor="middle" fill={vc.dimAct} fontSize="10" fontFamily="'IBM Plex Mono', monospace" fontWeight="600">{svWLabel}</text></g>
             {/* Height dimension */}
-            {pat!=="linear"?<g><line x1={svOx+svRW+3} y1={svOy} x2={svOx+svRW+24} y2={svOy} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx+svRW+3} y1={svOy+svRH} x2={svOx+svRW+24} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.7"/><line x1={svOx+svRW+18} y1={svOy} x2={svOx+svRW+18} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.7" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW+28} y={svOy+svRH/2} dominantBaseline="middle" fill={vc.dimAct} fontSize="10" fontFamily="monospace" fontWeight="600">{svHLabel}</text></g>:null}
+            {pat!=="linear"?<g><line x1={svOx+svRW+3} y1={svOy} x2={svOx+svRW+24} y2={svOy} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW+3} y1={svOy+svRH} x2={svOx+svRW+24} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW+18} y1={svOy} x2={svOx+svRW+18} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.4" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW+28} y={svOy+svRH/2} dominantBaseline="middle" fill={vc.dimAct} fontSize="10" fontFamily="'IBM Plex Mono', monospace" fontWeight="600">{svHLabel}</text></g>:null}
             {/* Pattern label — above scan area */}
-            <text x={svPd_l} y="16" fill={vc.lbl} fontSize="9.5" fontWeight="600" fontFamily="sans-serif" letterSpacing="0.08em">{pat==="linear"?"LINEAR":pat==="bidi"?"BIDIRECTIONAL RASTER":"UNIDIRECTIONAL RASTER"}</text>
-            {pat!=="linear"?<text x={svW_c-8} y="16" textAnchor="end" fill={vc.lbl} fontSize="9" fontFamily="monospace">{nLines+" lines"}</text>:null}
+            <text x={svPd_l} y="16" fill={vc.lbl} fontSize="9.5" fontWeight="600" fontFamily="'IBM Plex Sans', system-ui, sans-serif" letterSpacing="0.08em">{pat==="linear"?"LINEAR":pat==="bidi"?"BIDIRECTIONAL RASTER":"UNIDIRECTIONAL RASTER"}</text>
+            {pat!=="linear"?<text x={svW_c-8} y="16" textAnchor="end" fill={vc.lbl} fontSize="9" fontFamily="'IBM Plex Mono', monospace">{nLines+" lines"}</text>:null}
             {/* Decimation notice — below width dim */}
-            {svTooMany?<text x={svOx+svRW/2} y={svOy+svRH+42} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="monospace" fontStyle="italic">{"showing "+svDecCount+" of "+nLines.toLocaleString()+" lines"}</text>:null}
+            {svTooMany?<text x={svOx+svRW/2} y={svOy+svRH+42} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="'IBM Plex Mono', monospace" fontStyle="italic">{"showing "+svDecCount+" of "+nLines.toLocaleString()+" lines"}</text>:null}
             {/* Beam suppression notice — above scan area */}
-            {svBeamOwl&&svBeam?<text x={svOx+svRW/2} y={svOy-8} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="monospace">{"beam ("+svFmtDim(dia)+") \u226B scan area"}</text>:null}
+            {svBeamOwl&&svBeam?<text x={svOx+svRW/2} y={svOy-8} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="'IBM Plex Mono', monospace">{"beam ("+svFmtDim(dia)+") \u226B scan area"}</text>:null}
             {/* Legend — bottom right, outside scan area */}
-            <g transform={"translate("+(svW_c-8)+","+(svH_c-16)+")"}><line x1="-58" y1="0" x2="-44" y2="0" stroke={vc.mark} strokeWidth="1.5"/><text x="-41" y="0.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="monospace">mark</text>{svFlyback?<g><line x1="-58" y1="-14" x2="-44" y2="-14" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="3,2"/><text x="-41" y="-13.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="monospace">jump</text></g>:null}</g>
+            <g transform={"translate("+(svW_c-8)+","+(svH_c-16)+")"}><line x1="-58" y1="0" x2="-44" y2="0" stroke={vc.mark} strokeWidth="1.0"/><text x="-41" y="0.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="'IBM Plex Mono', monospace">mark</text>{svFlyback?<g><line x1="-58" y1="-14" x2="-44" y2="-14" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="3,2"/><text x="-41" y="-13.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="'IBM Plex Mono', monospace">flyback</text></g>:null}</g>
             {/* Hover crosshairs — neutral grey, colorblind safe */}
             {svHovS&&!selPt&&pat!=="linear"?<g opacity="0.4">
               <line x1={svHovS.sx} y1={svOy} x2={svHovS.sx} y2={svOy+svRH} stroke={vc.lbl} strokeWidth="0.7" strokeDasharray="3,3"/>
@@ -1922,7 +1922,7 @@ function GeneralScanContent(p){
               <text x={tp.tx+6} y={tp.ty+13} fill="#E6EDF3" fontSize="10" fontFamily={"'IBM Plex Mono', monospace"}>{"("+svHov.x.toFixed(2)+", "+svHov.y.toFixed(2)+")"}</text>
             </g>;})():null}
             {/* Click instruction hint — below dimensions, clear of geometry */}
-            {!selPt&&pat!=="linear"?<text x={svOx+svRW/2} y={svH_c-4} textAnchor="middle" fill={T.ac} fontSize="9" fontFamily={"'IBM Plex Sans', system-ui, sans-serif"} fontWeight="500" opacity="0.6">Click anywhere in scan area to select observation point</text>:null}
+            {!selPt&&pat!=="linear"?<text x={svOx+svRW/2} y={svH_c-4} textAnchor="middle" fill={vc.lbl} fontSize="8.5" fontFamily={"'IBM Plex Sans', system-ui, sans-serif"} fontWeight="400" opacity="0.5">Click anywhere in scan area to select observation point</text>:null}
           </svg>
         </div>
         {/* Coordinate input bar */}
