@@ -172,7 +172,7 @@ html = f'''<!DOCTYPE html>
   <title>Laser Skin MPE Calculator</title>
   <style>
     *{{margin:0;padding:0;box-sizing:border-box}}
-    body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Oxygen,Ubuntu,sans-serif;
+    body{{font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}}
     input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{{
       -webkit-appearance:none;margin:0}}
@@ -185,7 +185,7 @@ html = f'''<!DOCTYPE html>
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap">
 </head>
 <body>
 <div id="root"></div>
