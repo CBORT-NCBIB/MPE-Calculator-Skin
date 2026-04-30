@@ -223,8 +223,8 @@ var DTICKS=[1e-9,1e-7,1e-5,1e-3,.1,10,1000];
 function dtf(v){if(v>=1e3)return(v/1e3)+"ks";if(v>=1)return v+"s";if(v>=1e-3)return(v*1e3)+"ms";if(v>=1e-6)return(v*1e6)+"\u00b5s";return(v*1e9)+"ns";}
 
 var TH={
-  light:{bg:"#F7F8FA",card:"#FFFFFF",bgI:"#EFF1F4",bd:"#D8DCE2",bl:"#9AA3AE",tx:"#1F2933",tm:"#52606D",td:"#616E7C",ac:"#0B5394",a2:"#3D7AB5",ok:"#00796B",no:"#B3261E",gr:"#E8EAED",tp:"#FFFFFF"},
-  dark:{bg:"#0E1117",card:"#161B22",bgI:"#21262D",bd:"#30363D",bl:"#484F58",tx:"#E6EDF3",tm:"#9DA7B1",td:"#8B949E",ac:"#58A6FF",a2:"#79B8FF",ok:"#4DB6AC",no:"#F85149",gr:"#21262D",tp:"#161B22"}
+  light:{bg:"#F5F7FA",card:"#FFFFFF",bgI:"#FAFBFC",bd:"rgba(15,23,42,0.08)",bl:"rgba(15,23,42,0.14)",tx:"#0E1116",tm:"#4B5563",td:"#6B7280",ac:"#1D4ED8",a2:"#3B82F6",ok:"#027A48",no:"#B42318",gr:"#E8EAED",tp:"#FFFFFF",hov:"rgba(15,23,42,0.04)"},
+  dark:{bg:"#0B0F14",card:"#14181F",bgI:"#1A1F27",bd:"rgba(255,255,255,0.08)",bl:"rgba(255,255,255,0.14)",tx:"#E5E7EB",tm:"#9CA3AF",td:"#8B949E",ac:"#58A6FF",a2:"#79B8FF",ok:"#4DB6AC",no:"#F85149",gr:"#1A1F27",tp:"#14181F",hov:"rgba(255,255,255,0.04)"}
 };
 
 var uid=1;
@@ -237,7 +237,7 @@ function dlSVG(ref,fn,sm){try{var svg=ref.current.querySelector("svg");if(!svg)r
 function dlCSV(d,cols,fn,sm){try{var lines=[cols.join(",")];for(var i=0;i<d.length;i++){var row=[];for(var j=0;j<cols.length;j++){var v=d[i][cols[j]];row.push(v===undefined||v===null?"":String(v));}lines.push(row.join(","));}var u="data:text/csv;charset=utf-8,"+encodeURIComponent(lines.join("\n"));var a=document.createElement("a");a.href=u;a.download=fn;a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);sm("CSV downloaded!");setTimeout(function(){sm("")},2e3);}catch(e){sm("Failed");}}
 
 /* ═══════ SHARED STYLES ═══════ */
-function mkBt(on,c,T){return{padding:"6px 14px",fontSize:11,fontWeight:600,border:"1px solid "+(on?c:T.bd),cursor:"pointer",background:on?c:"transparent",color:on?"#fff":T.tm,borderRadius:2};}
+function mkBt(on,c,T){return{padding:"6px 14px",fontSize:11,fontWeight:600,border:"1px solid "+(on?c:T.bd),cursor:"pointer",background:on?c:"transparent",color:on?"#fff":T.tm,borderRadius:4};}
 
 /* ═══════ MPE TAB ═══════ */
 function MPETab(p){
@@ -275,10 +275,10 @@ function MPETab(p){
     }
   }  var wRef=useRef(null),dRef=useRef(null);
   var lb={display:"block",fontSize:11,fontWeight:500,color:T.tm,marginBottom:3,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
-  var ipFull={width:"100%",padding:"6px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"};
-  var thS={padding:"7px 10px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:700,letterSpacing:"0.03em"};
+  var ipFull={width:"100%",padding:"6px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var thS={padding:"7px 10px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:600,letterSpacing:"0.04em"};
   var tdSt={padding:"7px 10px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace"};
-  var hSel={fontSize:9,padding:"2px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,cursor:"pointer",fontWeight:700,outline:"none"};
+  var hSel={fontSize:9,padding:"2px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",fontWeight:600,outline:"none"};
 
   function calc(){setCv(function(c){return c+1;});setDirty(false);setBeamDirty(false);}
   function beamCalc(){setBeamDirty(false);}
@@ -301,19 +301,19 @@ function MPETab(p){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {lasers.map(function(L,idx){var r=results[idx];var col=WC[idx%WC.length];return (
-        <div key={L.id} style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,overflow:"hidden"}}>
+        <div key={L.id} style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",borderBottom:"1px solid "+T.bd,background:T.bg}}>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:2,background:col,flexShrink:0}}/><span style={{fontSize:14,fontWeight:700}}>{L.wl} nm</span><span style={{fontSize:11,color:T.td}}>{r.band}</span>{isInCARange(r.wl)?<span style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>C{"\u2090"} = {r.ca.toFixed(3)}</span>:null}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:10,height:10,borderRadius:4,background:col,flexShrink:0}}/><span style={{fontSize:13,fontWeight:500}}>{L.wl} nm</span><span style={{fontSize:11,color:T.td}}>{r.band}</span>{isInCARange(r.wl)?<span style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>C{"\u2090"} = {r.ca.toFixed(3)}</span>:null}</div>
             {lasers.length>1?<button onClick={function(){rmL(L.id)}} style={{background:"none",border:"none",color:T.td,cursor:"pointer",fontSize:15}}>{"\u00d7"}</button>:null}
           </div>
           <div style={{padding:"12px 14px"}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div><label style={lb}>Wavelength</label><div style={{display:"flex",gap:4}}><input type="text" value={L.wlStr} onChange={function(e){upL(L.id,"wlStr",e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.wlU} onChange={function(e){upL(L.id,"wlU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"'IBM Plex Mono', monospace"}}>{(function(){if(!_std||!_std.display_bands)return bnd(L.wl);for(var bi=0;bi<_std.display_bands.length;bi++){var b=_std.display_bands[bi];if(L.wl>=b.wl_start_nm&&L.wl<b.wl_end_nm)return b.name+" "+b.wl_start_nm+"\u2013"+(b.wl_end_nm>=100000?"":b.wl_end_nm+" nm");if(bi===_std.display_bands.length-1&&L.wl>=b.wl_start_nm)return b.name+" "+b.wl_start_nm+"+ nm";}return bnd(L.wl);})()}</div></div>
-              <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={L.ds} onChange={function(e){upL(L.id,"ds",e.target.value)}} placeholder="e.g. 10" style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.dU} onChange={function(e){upL(L.id,"dU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"'IBM Plex Mono', monospace"}}>= {ft(L.dur)}</div></div>
+              <div><label style={lb}>Wavelength</label><div style={{display:"flex",gap:4}}><input type="text" value={L.wlStr} onChange={function(e){upL(L.id,"wlStr",e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.wlU} onChange={function(e){upL(L.id,"wlU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"'IBM Plex Mono', monospace"}}>{(function(){if(!_std||!_std.display_bands)return bnd(L.wl);for(var bi=0;bi<_std.display_bands.length;bi++){var b=_std.display_bands[bi];if(L.wl>=b.wl_start_nm&&L.wl<b.wl_end_nm)return b.name+" "+b.wl_start_nm+"\u2013"+(b.wl_end_nm>=100000?"":b.wl_end_nm+" nm");if(bi===_std.display_bands.length-1&&L.wl>=b.wl_start_nm)return b.name+" "+b.wl_start_nm+"+ nm";}return bnd(L.wl);})()}</div></div>
+              <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:4}}><input type="text" value={L.ds} onChange={function(e){upL(L.id,"ds",e.target.value)}} placeholder="e.g. 10" style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/><select value={L.dU} onChange={function(e){upL(L.id,"dU",e.target.value)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div><div style={{fontSize:9,color:T.td,marginTop:3,fontFamily:"'IBM Plex Mono', monospace"}}>= {ft(L.dur)}</div></div>
             </div>
             <div style={{marginTop:10,display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:T.tm}} onClick={function(){upL(L.id,"rp",!L.rp)}}><div style={{width:34,height:18,borderRadius:3,background:L.rp?T.a2:"#a3a3a3",position:"relative",flexShrink:0,transition:"background 0.15s"}}><div style={{width:14,height:14,borderRadius:3,background:"#fff",position:"absolute",top:2,left:L.rp?18:2,transition:"left 0.15s"}}/></div>Repetitive Pulse</label>
-              {L.rp?<div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap"}}><div><label style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Repetition Rate</label><div style={{display:"flex",gap:3}}><input type="text" value={L.prfStr} onChange={function(e){upL(L.id,"prfStr",e.target.value)}} style={{width:70,padding:"4px 8px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none"}}/><select value={L.prfU} onChange={function(e){upL(L.id,"prfU",e.target.value)}} style={{fontSize:10,padding:"2px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div><div><label style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Exposure Time</label><div style={{display:"flex",gap:3}}><input type="text" value={L.tTStr} onChange={function(e){upL(L.id,"tTStr",e.target.value)}} style={{width:70,padding:"4px 8px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none"}}/><select value={L.tTU} onChange={function(e){upL(L.id,"tTU",e.target.value)}} style={{fontSize:10,padding:"2px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div></div>:null}
+              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,color:T.tm}} onClick={function(){upL(L.id,"rp",!L.rp)}}><div style={{width:34,height:18,borderRadius:6,background:L.rp?T.a2:"#a3a3a3",position:"relative",flexShrink:0,transition:"background 0.15s"}}><div style={{width:14,height:14,borderRadius:6,background:"#fff",position:"absolute",top:2,left:L.rp?18:2,transition:"left 0.15s"}}/></div>Repetitive Pulse</label>
+              {L.rp?<div style={{display:"flex",gap:10,alignItems:"end",flexWrap:"wrap"}}><div><label style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Repetition Rate</label><div style={{display:"flex",gap:3}}><input type="text" value={L.prfStr} onChange={function(e){upL(L.id,"prfStr",e.target.value)}} style={{width:70,padding:"4px 8px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={L.prfU} onChange={function(e){upL(L.id,"prfU",e.target.value)}} style={{fontSize:10,padding:"2px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,outline:"none",cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div><div><label style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Exposure Time</label><div style={{display:"flex",gap:3}}><input type="text" value={L.tTStr} onChange={function(e){upL(L.id,"tTStr",e.target.value)}} style={{width:70,padding:"4px 8px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><select value={L.tTU} onChange={function(e){upL(L.id,"tTU",e.target.value)}} style={{fontSize:10,padding:"2px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,outline:"none",cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select></div></div></div>:null}
             </div>
             {r?<div style={{marginTop:12,paddingTop:10,borderTop:"1px solid "+T.bd}}>
               {/* Task 7: Section 1 — MPE (total exposure limit) */}
@@ -326,62 +326,62 @@ function MPETab(p){
                 var totalE=isFinite(totalH)&&evalDur>0?totalH/evalDur:NaN;
                 var durLabel=L.rp?"T = "+ft(L.tT):"\u03c4 = "+ft(L.dur);
                 return <div style={{marginBottom:L.rp?12:0}}>
-                  <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ac,marginBottom:8}}>{L.rp?"MPE (total exposure at "+durLabel+")":"MPE"}</div>
+                  <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ac,marginBottom:8}}>{L.rp?"MPE (total exposure at "+durLabel+")":"MPE"}</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr"+(L.rp?"":" 1fr"),gap:12}}>
                     <div style={{padding:irrPrimary?"6px 0":"6px 0 6px 0",borderLeft:!irrPrimary?"3px solid "+T.ac:"none",paddingLeft:!irrPrimary?8:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                         <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Fluence (H)</div>
-                        <select value={L.fU} onChange={function(e){upL(L.id,"fU",e.target.value)}} style={{fontSize:9,padding:"1px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>
+                        <select value={L.fU} onChange={function(e){upL(L.id,"fU",e.target.value)}} style={{fontSize:9,padding:"1px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,outline:"none",cursor:"pointer"}}>
                           {FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}
                         </select>
                       </div>
-                      <div style={{fontSize:16,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:!irrPrimary?T.ac:T.tm}}>{convF(totalH,L.fU)}</div>
+                      <div style={{fontSize:15,fontWeight:600,letterSpacing:"-0.005em",fontFamily:"'IBM Plex Mono', monospace",color:!irrPrimary?T.ac:T.tm}}>{convF(totalH,L.fU)}</div>
                       <div style={{fontSize:9,color:!irrPrimary?T.a2:T.td,marginTop:1}}>{!irrPrimary?STD_NAME+" table value":"= E \u00d7 "+durLabel}</div>
                     </div>
                     <div style={{borderLeft:irrPrimary?"3px solid "+T.ac:"none",paddingLeft:irrPrimary?8:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                         <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Irradiance (E)</div>
-                        <select value={L.eU} onChange={function(e){upL(L.id,"eU",e.target.value)}} style={{fontSize:9,padding:"1px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,outline:"none",cursor:"pointer"}}>
+                        <select value={L.eU} onChange={function(e){upL(L.id,"eU",e.target.value)}} style={{fontSize:9,padding:"1px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,outline:"none",cursor:"pointer"}}>
                           {IRRAD_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}
                         </select>
                       </div>
-                      <div style={{fontSize:16,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:irrPrimary?T.ac:T.tm}}>{convE(totalE,L.eU)}</div>
+                      <div style={{fontSize:15,fontWeight:600,letterSpacing:"-0.005em",fontFamily:"'IBM Plex Mono', monospace",color:irrPrimary?T.ac:T.tm}}>{convE(totalE,L.eU)}</div>
                       <div style={{fontSize:9,color:irrPrimary?T.a2:T.td,marginTop:1}}>{irrPrimary?STD_NAME+" table value":"E = H / "+durLabel}</div>
                     </div>
-                    {!L.rp?<div><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Mode</div><div style={{fontSize:14,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:T.tm}}>Single pulse</div><div style={{fontSize:9,color:T.td,marginTop:1}}>{durLabel}</div></div>:null}
+                    {!L.rp?<div><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Mode</div><div style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:T.tm}}>Single pulse</div><div style={{fontSize:9,color:T.td,marginTop:1}}>{durLabel}</div></div>:null}
                   </div>
                 </div>;
               })()}
               {/* Task 7: Section 2 — Per-Pulse MPE (only for repetitive pulses) */}
               {r.rp?<div style={{paddingTop:10,borderTop:"1px solid "+T.bd}}>
-                <div style={{fontSize:9,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ac,marginBottom:8}}>Per-Pulse MPE</div>
+                <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.ac,marginBottom:8}}>Per-Pulse MPE</div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
                   <div>
                     <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
                       <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Fluence (H)</div>
                     </div>
-                    <div style={{fontSize:16,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:T.ac}}>{convF(r.effH,L.fU)}</div>
+                    <div style={{fontSize:15,fontWeight:600,letterSpacing:"-0.005em",fontFamily:"'IBM Plex Mono', monospace",color:T.ac}}>{convF(r.effH,L.fU)}</div>
                     {r.lacApplied?<div style={{fontSize:8,color:"#e65100",fontWeight:600,marginTop:1}}>{"\u26a0"} Large-area corrected</div>:null}
                     {r.inLacRange&&!r.lacApplied?<div style={{fontSize:8,color:"#e65100",marginTop:1}}>Enter beam diameter below</div>:null}
                     <div style={{fontSize:9,color:T.a2,marginTop:1}}>Governing per-pulse limit</div>
                   </div>
                   <div>
                     <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Irradiance (E)</div>
-                    <div style={{fontSize:16,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:T.tm}}>{convE(r.irr,L.eU)}</div>
+                    <div style={{fontSize:15,fontWeight:600,letterSpacing:"-0.005em",fontFamily:"'IBM Plex Mono', monospace",color:T.tm}}>{convE(r.irr,L.eU)}</div>
                     <div style={{fontSize:9,color:T.td,marginTop:1}}>E = H / {"\u03c4"}</div>
                   </div>
-                  <div><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Governing Rule</div><div style={{fontSize:14,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:T.ac}}>{r.rule}</div><div style={{fontSize:9,color:T.td,marginTop:1}}>{Math.round(r.rp.N)+" pulses in "+ft(L.tT)}</div></div>
+                  <div><div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Governing Rule</div><div style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:T.ac}}>{r.rule}</div><div style={{fontSize:9,color:T.td,marginTop:1}}>{Math.round(r.rp.N)+" pulses in "+ft(L.tT)}</div></div>
                 </div>
                 {/* Task 5: Rule comparison with correct labels; Task 8: show correct values */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:10}}>
-                  <div style={{padding:"8px 12px",borderRadius:2,opacity:r.rp.bd==="Rule 1"?1:0.35,background:r.rp.bd==="Rule 1"?T.ac+"12":"transparent",border:"1px solid "+(r.rp.bd==="Rule 1"?T.ac:T.bd)}}>
+                  <div style={{padding:"8px 12px",borderRadius:4,opacity:r.rp.bd==="Rule 1"?1:0.35,background:r.rp.bd==="Rule 1"?T.ac+"12":"transparent",border:"1px solid "+(r.rp.bd==="Rule 1"?T.ac:T.bd)}}>
                     <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Rule 1 MPE (single pulse limit)</div>
-                    <div style={{fontSize:14,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:r.rp.bd==="Rule 1"?T.ac:T.td,marginTop:2}}>{convF(r.rp.r1,L.fU)}</div>
+                    <div style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:r.rp.bd==="Rule 1"?T.ac:T.td,marginTop:2}}>{convF(r.rp.r1,L.fU)}</div>
                     <div style={{fontSize:8,color:T.td,marginTop:2}}>MPE({"\u03c4"} = {ft(L.dur)})</div>
                   </div>
-                  <div style={{padding:"8px 12px",borderRadius:2,opacity:r.rp.bd==="Rule 2"?1:0.35,background:r.rp.bd==="Rule 2"?T.ac+"12":"transparent",border:"1px solid "+(r.rp.bd==="Rule 2"?T.ac:T.bd)}}>
+                  <div style={{padding:"8px 12px",borderRadius:4,opacity:r.rp.bd==="Rule 2"?1:0.35,background:r.rp.bd==="Rule 2"?T.ac+"12":"transparent",border:"1px solid "+(r.rp.bd==="Rule 2"?T.ac:T.bd)}}>
                     <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td}}>Rule 2 (average)</div>
-                    <div style={{fontSize:14,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:r.rp.bd==="Rule 2"?T.ac:T.td,marginTop:2}}>{convF(r.rp.r2,L.fU)}</div>
+                    <div style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:r.rp.bd==="Rule 2"?T.ac:T.td,marginTop:2}}>{convF(r.rp.r2,L.fU)}</div>
                     <div style={{fontSize:8,color:T.td,marginTop:2}}>MPE(T = {ft(L.tT)}) / N = {convF(skinMPE(r.wl,L.tT),L.fU)} / {Math.round(r.rp.N)}</div>
                   </div>
                 </div>
@@ -392,11 +392,11 @@ function MPETab(p){
         </div>
       );})}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-        <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="number" placeholder="Wavelength (nm)" value={nw} onChange={function(e){setNw(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addL();}}} style={{width:160,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none"}}/><button onClick={addL} style={mkBt(true,T.a2,T)}>+ Add Wavelength</button></div>
-        <div style={{display:"flex",alignItems:"center",gap:10}}><button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:2,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>{dirty?<span style={{fontSize:11,color:T.ac,fontWeight:500}}>Click to update</span>:null}</div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="number" placeholder="Wavelength (nm)" value={nw} onChange={function(e){setNw(e.target.value)}} onKeyDown={function(e){if(e.key==="Enter"){e.preventDefault();addL();}}} style={{width:160,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/><button onClick={addL} style={mkBt(true,T.a2,T)}>+ Add Wavelength</button></div>
+        <div style={{display:"flex",alignItems:"center",gap:10}}><button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>{dirty?<span style={{fontSize:11,color:T.ac,fontWeight:500}}>Click to update</span>:null}</div>
       </div>
       {/* ═══════ BEAM SAFETY EVALUATION (collapsible) ═══════ */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,overflow:"hidden"}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
         {needsBeamDia?<div style={{padding:"10px 14px",marginBottom:0,borderRadius:"6px 6px 0 0",background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:11,color:"#e65100",lineHeight:1.7}}>
           <strong>{"\u26a0"} Large-area correction required ({STD_NAME}):</strong> One or more wavelength/duration combinations fall within the range where the {STD_NAME} large-area skin correction applies. <strong>Beam diameter input is required</strong> below to compute the correct MPE. The effective MPE may be reduced for large beam cross-sections.
         </div>:null}
@@ -405,7 +405,7 @@ function MPETab(p){
             <span style={{fontSize:13,fontWeight:600,color:(beamOpen||needsBeamDia)?T.ac:T.tm}}>{(beamOpen||needsBeamDia)?"\u25BC":"\u25B6"}</span>
             <span style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:beamOpen?T.ac:T.tm}}>Beam Safety Evaluation</span>
             {!beamOpen?<span style={{fontSize:10,color:T.td,fontWeight:400}}>{"\u2014"} Evaluate max permissible pulse energy for a specific beam diameter</span>:null}
-            {!beamOpen?<span style={{fontSize:9,fontFamily:"'IBM Plex Mono', monospace",color:T.tm,background:T.bgI,padding:"2px 8px",borderRadius:3,border:"1px solid "+T.bd}}>Limiting aperture: {getAperture(lasers[0]?lasers[0].wl:532).toFixed(1)} mm (skin, {STD_NAME} Table 8)</span>:null}
+            {!beamOpen?<span style={{fontSize:9,fontFamily:"'IBM Plex Mono', monospace",color:T.tm,background:T.bgI,padding:"2px 8px",borderRadius:6,border:"1px solid "+T.bd}}>Limiting aperture: {getAperture(lasers[0]?lasers[0].wl:532).toFixed(1)} mm (skin, {STD_NAME} Table 8)</span>:null}
           </div>
         </button>
         {(beamOpen||needsBeamDia)?(
@@ -416,7 +416,7 @@ function MPETab(p){
               var defn=(ap&&ap.beam_diameter_definition)||"For Gaussian beams, beam diameter is the 1/e diameter (37% of peak irradiance).";
               var dRef=(ap&&ap.beam_diameter_reference)||"";
               return (
-                <div style={{padding:"8px 12px",marginBottom:12,borderRadius:2,background:T.bgI,border:"1px solid "+T.bd,fontSize:10,color:T.tm,lineHeight:1.7}}>
+                <div style={{padding:"8px 12px",marginBottom:12,borderRadius:4,background:T.card,border:"1px solid "+T.bd,fontSize:10,color:T.tm,lineHeight:1.7}}>
                   <strong style={{color:T.tx}}>Beam diameter convention ({STD_NAME}{dRef?", "+dRef:""}):</strong>{" "}
                   {defn}{" "}
                   The 1/e diameter is <strong style={{color:T.no}}>{"\u221a"}2 {"\u2248"} 1.41{"\u00d7"} smaller</strong> than the 1/e{"\u00b2"} diameter commonly reported in laser datasheets.{" "}
@@ -430,27 +430,27 @@ function MPETab(p){
               <div>
                 <label style={lb}>Beam Diameter</label>
                 <div style={{display:"flex",gap:4}}>
-                  <input type="text" value={bdStr} onChange={function(e){setBdStr(e.target.value);var v=parseFloat(e.target.value);if(isFinite(v)&&v>0){var toMM=1;for(var i=0;i<BEAM_DIA_UNITS.length;i++){if(BEAM_DIA_UNITS[i].id===bdUnit)toMM=BEAM_DIA_UNITS[i].toMM;}setBeamDia(v*toMM);}setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
-                  <select value={bdUnit} onChange={function(e){var oldMM=1,newMM=1;for(var i=0;i<BEAM_DIA_UNITS.length;i++){if(BEAM_DIA_UNITS[i].id===bdUnit)oldMM=BEAM_DIA_UNITS[i].toMM;if(BEAM_DIA_UNITS[i].id===e.target.value)newMM=BEAM_DIA_UNITS[i].toMM;}var cur=parseFloat(bdStr);if(isFinite(cur)){var mm=cur*oldMM;setBdStr((mm/newMM).toPrecision(4));}setBdUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",cursor:"pointer"}}>{BEAM_DIA_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                  <input type="text" value={bdStr} onChange={function(e){setBdStr(e.target.value);var v=parseFloat(e.target.value);if(isFinite(v)&&v>0){var toMM=1;for(var i=0;i<BEAM_DIA_UNITS.length;i++){if(BEAM_DIA_UNITS[i].id===bdUnit)toMM=BEAM_DIA_UNITS[i].toMM;}setBeamDia(v*toMM);}setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <select value={bdUnit} onChange={function(e){var oldMM=1,newMM=1;for(var i=0;i<BEAM_DIA_UNITS.length;i++){if(BEAM_DIA_UNITS[i].id===bdUnit)oldMM=BEAM_DIA_UNITS[i].toMM;if(BEAM_DIA_UNITS[i].id===e.target.value)newMM=BEAM_DIA_UNITS[i].toMM;}var cur=parseFloat(bdStr);if(isFinite(cur)){var mm=cur*oldMM;setBdStr((mm/newMM).toPrecision(4));}setBdUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{BEAM_DIA_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
                 </div>
               </div>
               <div>
                 <label style={lb}>Pulse Energy (optional)</label>
                 <div style={{display:"flex",gap:4}}>
-                  <input type="text" placeholder="e.g. 500" value={peStr} onChange={function(e){setPeStr(e.target.value);setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
-                  <select value={peUnit} onChange={function(e){setPeUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",cursor:"pointer"}}>{ENERGY_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                  <input type="text" placeholder="e.g. 500" value={peStr} onChange={function(e){setPeStr(e.target.value);setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <select value={peUnit} onChange={function(e){setPeUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{ENERGY_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
                 </div>
               </div>
               <div>
                 <label style={lb}>Or Direct Fluence</label>
                 <div style={{display:"flex",gap:4}}>
-                  <input type="text" placeholder="Your fluence" value={fl} step="any" onChange={function(e){setFl(e.target.value);setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
-                  <select value={flUnit} onChange={function(e){setFlUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                  <input type="text" placeholder="Your fluence" value={fl} step="any" onChange={function(e){setFl(e.target.value);setBeamDirty(true);}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"}}/>
+                  <select value={flUnit} onChange={function(e){setFlUnit(e.target.value);setBeamDirty(true);}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
                 </div>
               </div>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-              <button onClick={beamCalc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:beamDirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:2,cursor:"pointer"}}>{beamDirty?"Calculate":"Calculated \u2713"}</button>
+              <button onClick={beamCalc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:beamDirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{beamDirty?"Calculate":"Calculated \u2713"}</button>
               {beamDirty?<span style={{fontSize:11,color:T.ac,fontWeight:500}}>Click to update beam evaluation</span>:null}
             </div>
             {/* Wavelength selection */}
@@ -500,7 +500,7 @@ function MPETab(p){
               if(selRows.length===0)return(<div style={{fontSize:11,color:T.td,padding:"8px 0"}}>Select at least one wavelength to evaluate.</div>);
               if(selRows[0].invalid)return(<div style={{fontSize:11,color:T.td,padding:"8px 0"}}>Enter a valid beam diameter to see evaluation results.</div>);
 
-              var bthS={padding:"6px 8px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.tx,fontSize:8,fontWeight:700,letterSpacing:"0.03em",whiteSpace:"nowrap"};
+              var bthS={padding:"6px 8px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.tx,fontSize:8,fontWeight:600,letterSpacing:"0.04em",whiteSpace:"nowrap"};
               var btdS={padding:"6px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",borderBottom:"1px solid "+T.bd,color:T.tx};
 
               return(
@@ -523,7 +523,7 @@ function MPETab(p){
                     }
                     if(warns.length===0)return null;
                     var lacInfo=_std&&_std.supplementary&&_std.supplementary.large_area_correction;
-                    return <div style={{padding:"10px 12px",marginBottom:12,borderRadius:2,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",lineHeight:1.7}}>
+                    return <div style={{padding:"10px 12px",marginBottom:12,borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",lineHeight:1.7}}>
                       <strong>{"\u26a0"} Large-area correction ({STD_NAME}):</strong>{" "}
                       {lacInfo?lacInfo.description:"For large beam cross-sections, the skin exposure limit is reduced."}
                       {warns.map(function(w,wi3){
@@ -570,7 +570,7 @@ function MPETab(p){
                   </div>
                   {/* Regime explanation from first selected wavelength */}
                   {firstNote?(
-                    <div style={{fontSize:10,color:T.td,lineHeight:1.6,padding:"8px 10px",marginTop:10,background:T.bgI,borderRadius:2,border:"1px solid "+T.bd}}>
+                    <div style={{fontSize:10,color:T.td,lineHeight:1.6,padding:"8px 10px",marginTop:10,background:T.bgI,borderRadius:4,border:"1px solid "+T.bd}}>
                       <strong style={{color:T.tm}}>{STD_NAME}:</strong>{" "}{firstNote}
                     </div>
                   ):null}
@@ -581,7 +581,7 @@ function MPETab(p){
         ):null}
       </div>
       {/* Summary table */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:"14px",opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px",opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.tm}}>Summary{dirty?" (stale)":""}</div><button onClick={doExport} style={mkBt(false,T.ac,T)}>Export Report</button></div>
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>
           <th style={thS}>{"\u03bb"} (nm)</th>
@@ -606,14 +606,14 @@ function MPETab(p){
         </tr>);})}</tbody></table></div>
       </div>
       {/* Charts */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:"14px"}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.tm,marginBottom:6}}>Per-Pulse MPE Plot</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{lasers.map(function(L,i){var col=WC[i%WC.length];return (<label key={L.id} style={{display:"flex",alignItems:"center",gap:4,cursor:"pointer",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",color:L.show?col:T.td,opacity:L.show?1:0.4}}><input type="checkbox" checked={L.show} onChange={function(){toggleShow(L.id)}} style={{accentColor:col,width:13,height:13}}/>{L.wl} nm</label>);})}</div></div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            <select value={plotFU} onChange={function(e){setPlotFU(e.target.value)}} style={{fontSize:10,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            <select value={plotFU} onChange={function(e){setPlotFU(e.target.value)}} style={{fontSize:10,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",cursor:"pointer"}}>{FLUENCE_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
             <div style={{display:"flex"}}><button onClick={function(){setCht("wl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="wl"?T.ac:T.bd),cursor:"pointer",background:cht==="wl"?T.ac:"transparent",color:cht==="wl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>MPE vs. Wavelength</button><button onClick={function(){setCht("t")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="t"?T.ac:T.bd),cursor:"pointer",background:cht==="t"?T.ac:"transparent",color:cht==="t"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>MPE vs. Duration</button></div><button onClick={function(){dlSVG(cht==="wl"?wRef:dRef,cht==="wl"?"mpe_vs_wavelength.svg":"mpe_vs_duration.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} Download SVG</button><button onClick={function(){if(cht==="wl"){var hdr=["wavelength_nm"];for(var di=0;di<wld.durs.length;di++)hdr.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_t"+ft(wld.durs[di]).replace(/ /g,""));var nd=wld.d.map(function(row){var o={wavelength_nm:row.wl};for(var di2=0;di2<wld.durs.length;di2++){o[hdr[di2+1]]=row["d"+di2];}return o;});dlCSV(nd,hdr,"mpe_vs_wavelength.csv",setMsg);}else{var hdr2=["duration_s"];drd.ws.forEach(function(w){hdr2.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm");});var nd2=drd.d.map(function(row){var o2={duration_s:row.t};drd.ws.forEach(function(w){o2["mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm"]=row["w"+w];});return o2;});dlCSV(nd2,hdr2,"mpe_vs_duration.csv",setMsg);}}} style={mkBt(false,T.a2,T)}>{"\u2913"} Download CSV</button></div>
         </div>
-        {cht==="wl"?(<div ref={wRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Wavelength (nm){wld.durs.length===1?" \u2014 t = "+ft(wld.durs[0]):""}</div><ResponsiveContainer width="100%" height={320}><LineChart data={wld.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="wl" type="number" domain={[WL_PLOT_MIN,WL_PLOT_MAX]} ticks={WLTICKS} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} label={{value:"Wavelength (nm)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:2,fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?v+" nm":""}} formatter={function(v,n){if(v==null)return["",""];var idx2=parseInt(String(n).replace("d",""),10);var label=wld.durs[idx2]!==undefined?"t="+ft(wld.durs[idx2]):"MPE";return [numFmt(Number(v),4)+" "+plotFU,label]}}/>{wld.durs.map(function(d,di){var ci=0;for(var j=0;j<plotLasers.length;j++){if(plotLasers[j].dur===d){ci=lasers.indexOf(plotLasers[j]);break;}}return <Line key={"wlc"+di} dataKey={"d"+di} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={"t="+ft(d)} connectNulls={true} isAnimationActive={false}/>;})}{wld.durs.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"'IBM Plex Mono', monospace"}}/>:null}{_std.display_bands?_std.display_bands.map(function(b,bi){return bi<_std.display_bands.length-1?<ReferenceLine key={"bl"+bi} x={b.wl_end_nm} stroke={T.bl} strokeDasharray="4 4"/>:null;}):null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"wd"+L.id} x={L.wl} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>):(<div ref={dRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Duration</div><ResponsiveContainer width="100%" height={320}><LineChart data={drd.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="t" type="number" scale="log" domain={[1e-9,3e4]} ticks={DTICKS} tickFormatter={dtf} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:2,fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?ft(Number(v)):""}} formatter={function(v,n){if(v==null)return["",""];return [numFmt(Number(v),4)+" "+plotFU,String(n).replace("w","")+" nm"]}}/>{drd.ws.map(function(w,wi){var ci=0;for(var j=0;j<lasers.length;j++){if(lasers[j].wl===w&&lasers[j].show){ci=j;break;}}return <Line key={"ln"+w} dataKey={"w"+w} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={w+" nm"} connectNulls={true} isAnimationActive={false}/>;})}{drd.ws.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"'IBM Plex Mono', monospace"}}/>:null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"dd"+L.id} x={L.dur} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>)}
+        {cht==="wl"?(<div ref={wRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Wavelength (nm){wld.durs.length===1?" \u2014 t = "+ft(wld.durs[0]):""}</div><ResponsiveContainer width="100%" height={320}><LineChart data={wld.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="wl" type="number" domain={[WL_PLOT_MIN,WL_PLOT_MAX]} ticks={WLTICKS} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} label={{value:"Wavelength (nm)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?v+" nm":""}} formatter={function(v,n){if(v==null)return["",""];var idx2=parseInt(String(n).replace("d",""),10);var label=wld.durs[idx2]!==undefined?"t="+ft(wld.durs[idx2]):"MPE";return [numFmt(Number(v),4)+" "+plotFU,label]}}/>{wld.durs.map(function(d,di){var ci=0;for(var j=0;j<plotLasers.length;j++){if(plotLasers[j].dur===d){ci=lasers.indexOf(plotLasers[j]);break;}}return <Line key={"wlc"+di} dataKey={"d"+di} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={"t="+ft(d)} connectNulls={true} isAnimationActive={false}/>;})}{wld.durs.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"'IBM Plex Mono', monospace"}}/>:null}{_std.display_bands?_std.display_bands.map(function(b,bi){return bi<_std.display_bands.length-1?<ReferenceLine key={"bl"+bi} x={b.wl_end_nm} stroke={T.bl} strokeDasharray="4 4"/>:null;}):null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"wd"+L.id} x={L.wl} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>):(<div ref={dRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Duration</div><ResponsiveContainer width="100%" height={320}><LineChart data={drd.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="t" type="number" scale="log" domain={[1e-9,3e4]} ticks={DTICKS} tickFormatter={dtf} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?ft(Number(v)):""}} formatter={function(v,n){if(v==null)return["",""];return [numFmt(Number(v),4)+" "+plotFU,String(n).replace("w","")+" nm"]}}/>{drd.ws.map(function(w,wi){var ci=0;for(var j=0;j<lasers.length;j++){if(lasers[j].wl===w&&lasers[j].show){ci=j;break;}}return <Line key={"ln"+w} dataKey={"w"+w} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={w+" nm"} connectNulls={true} isAnimationActive={false}/>;})}{drd.ws.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"'IBM Plex Mono', monospace"}}/>:null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"dd"+L.id} x={L.dur} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>)}
       </div>
     </div>
   );
@@ -636,11 +636,11 @@ function PATab(p){
   var flRef=useRef(null),snrRef=useRef(null);
 
   var lb={display:"block",fontSize:11,fontWeight:500,color:T.tm,marginBottom:3,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
-  var secH={fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.tm,marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+T.bd,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
-  var thS={padding:"7px 10px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.tx,fontSize:9,fontWeight:700,letterSpacing:"0.03em",whiteSpace:"nowrap"};
+  var secH={fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.td,marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+T.bd,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
+  var thS={padding:"7px 10px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.tx,fontSize:9,fontWeight:600,letterSpacing:"0.04em",whiteSpace:"nowrap"};
   var tdSt={padding:"7px 10px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",borderBottom:"1px solid "+T.bd};
-  var hSel={fontSize:9,padding:"2px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,cursor:"pointer",fontWeight:700,outline:"none"};
-  var ipSm={padding:"4px 8px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var hSel={fontSize:9,padding:"2px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",fontWeight:600,outline:"none"};
+  var ipSm={padding:"4px 8px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
 
   function upE(id,key,val){setEntries(function(es){return es.map(function(e){
     if(e.id!==id)return e;var ne=Object.assign({},e);ne[key]=val;
@@ -715,13 +715,13 @@ function PATab(p){
   return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
       {/* ── Wavelength entries ── */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:14}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Photoacoustic System Parameters</div>
         {entries.map(function(e,ei){var col=WC[ei%WC.length];return (
           <div key={e.id} style={{borderBottom:"1px solid "+T.bd,paddingBottom:10,marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:10,height:10,borderRadius:2,background:col}}/>
+                <div style={{width:10,height:10,borderRadius:4,background:col}}/>
                 <span style={{fontSize:12,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:col}}>{e.wl} nm</span>
                 <span style={{fontSize:9,color:T.td}}>{bnd(e.wl)} {"\u00b7"} C{"\u2090"} = {CA(e.wl).toFixed(3)}</span>
               </div>
@@ -732,30 +732,30 @@ function PATab(p){
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
               <div><label style={lb}>Wavelength</label><div style={{display:"flex",gap:3}}>
                 <input type="text" value={e.wlStr} onChange={function(ev){upE(e.id,"wlStr",ev.target.value)}} style={Object.assign({},ipSm,{flex:1})}/>
-                <select value={e.wlU} onChange={function(ev){upE(e.id,"wlU",ev.target.value)}} style={{fontSize:10,padding:"3px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                <select value={e.wlU} onChange={function(ev){upE(e.id,"wlU",ev.target.value)}} style={{fontSize:10,padding:"3px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,cursor:"pointer"}}>{WL_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
               </div></div>
               <div><label style={lb}>Pulse Duration</label><div style={{display:"flex",gap:3}}>
                 <input type="text" value={e.tauStr} onChange={function(ev){upE(e.id,"tauStr",ev.target.value)}} style={Object.assign({},ipSm,{flex:1})}/>
-                <select value={e.tauU} onChange={function(ev){upE(e.id,"tauU",ev.target.value)}} style={{fontSize:10,padding:"3px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                <select value={e.tauU} onChange={function(ev){upE(e.id,"tauU",ev.target.value)}} style={{fontSize:10,padding:"3px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
               </div><div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>= {ft(e.tau)}</div></div>
               <div><label style={lb}>Exposure Time</label><div style={{display:"flex",gap:3}}>
                 <input type="text" value={e.TStr} onChange={function(ev){upE(e.id,"TStr",ev.target.value)}} style={Object.assign({},ipSm,{flex:1})}/>
-                <select value={e.TU} onChange={function(ev){upE(e.id,"TU",ev.target.value)}} style={{fontSize:10,padding:"3px 4px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:3,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                <select value={e.TU} onChange={function(ev){upE(e.id,"TU",ev.target.value)}} style={{fontSize:10,padding:"3px 4px",background:T.card,border:"1px solid "+T.bd,borderRadius:6,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
               </div><div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>= {ft(e.T)}</div></div>
             </div>
           </div>
         );})}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input type="number" placeholder="Wavelength (nm)" value={nwl} onChange={function(ev){setNwl(ev.target.value)}} onKeyDown={function(ev){if(ev.key==="Enter"){ev.preventDefault();addEntry();}}} style={{width:150,padding:"6px 10px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none"}}/>
+            <input type="number" placeholder="Wavelength (nm)" value={nwl} onChange={function(ev){setNwl(ev.target.value)}} onKeyDown={function(ev){if(ev.key==="Enter"){ev.preventDefault();addEntry();}}} style={{width:150,padding:"6px 10px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
             <button onClick={addEntry} style={mkBt(true,T.a2,T)}>+ Add Wavelength</button>
           </div>
-          <button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:2,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>
+          <button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>
         </div>
       </div>
 
       {/* ── Optimal PRF Summary Table ── */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:14,opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div style={secH}>Optimal Repetition Rate Summary</div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
@@ -794,7 +794,7 @@ function PATab(p){
       </div>
 
       {/* ── Charts ── */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:14}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
           <div style={secH}>Safety-Constrained Analysis</div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
@@ -839,7 +839,7 @@ function PATab(p){
                 <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65}>
                   <Label value={"Per-Pulse Fluence Limit (mJ/cm\u00b2)"} angle={-90} position="insideLeft" offset={0} style={{fontSize:10,fill:T.td,textAnchor:"middle"}}/>
                 </YAxis>
-                <Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:2,fontSize:11,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var wi=parseInt(String(n).replace("w",""),10);var en=showEntries[wi];return[numFmt(Number(v),4)+" mJ/cm\u00b2",en?en.wl+" nm":""]}}/>
+                <Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var wi=parseInt(String(n).replace("w",""),10);var en=showEntries[wi];return[numFmt(Number(v),4)+" mJ/cm\u00b2",en?en.wl+" nm":""]}}/>
                 {showEntries.map(function(e,i){
                   return <Line key={"fl"+e.id} dataKey={"w"+i} stroke={WC[entries.indexOf(e)%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm"} connectNulls={true} isAnimationActive={false}/>;
                 })}
@@ -866,7 +866,7 @@ function PATab(p){
                 <YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65}>
                   <Label value={"Relative SNR (\u221aN \u00d7 H / H\u2080)"} angle={-90} position="insideLeft" offset={0} style={{fontSize:10,fill:T.td,textAnchor:"middle"}}/>
                 </YAxis>
-                <Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:2,fontSize:11,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var si2=parseInt(String(n).replace("s",""),10);var en=showEntries[si2];return[Number(v).toFixed(3)+"\u00d7",en?en.wl+" nm, T="+ft(en.T):""]}}/>
+                <Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?numFmt(Number(v),3)+" Hz":""}} formatter={function(v,n){if(v==null)return["",""];var si2=parseInt(String(n).replace("s",""),10);var en=showEntries[si2];return[Number(v).toFixed(3)+"\u00d7",en?en.wl+" nm, T="+ft(en.T):""]}}/>
                 {showEntries.map(function(e,i){return <Line key={"snr"+e.id} dataKey={"s"+i} stroke={WC[entries.indexOf(e)%WC.length]} strokeWidth={2} dot={false} name={e.wl+" nm (T="+ft(e.T)+")"} connectNulls={true} isAnimationActive={false}/>;})
                 }
                 {showEntries.length>1?<Legend verticalAlign="top" wrapperStyle={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",paddingBottom:4}}/>:null}
@@ -880,7 +880,7 @@ function PATab(p){
       </div>
 
       {/* ── Reference citation ── */}
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:"12px 14px",fontSize:11,color:T.td,lineHeight:1.6}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"12px 14px",fontSize:11,color:T.td,lineHeight:1.6}}>
         <strong>Reference:</strong> Francis et al., {"\u201c"}Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,{"\u201d"} <em>JPhys Photonics</em> (2026). SNR analysis based on Equations 5{"\u2013"}12. All MPE values computed using {STD_NAME} skin exposure limits.
       </div>
     </div>
@@ -932,8 +932,8 @@ function GeneralScanContent(p){
   },[svAnts]);
 
   var lb={display:"block",fontSize:11,fontWeight:500,color:T.tm,marginBottom:3,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
-  var ip={width:"100%",padding:"6px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none",boxSizing:"border-box"};
-  var secH={fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.tm,marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+T.bd,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
+  var ip={width:"100%",padding:"6px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var secH={fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.td,marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+T.bd,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
   var thS={padding:"5px 8px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:700};
   var tdS={padding:"5px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace"};
 
@@ -1583,7 +1583,7 @@ function GeneralScanContent(p){
              formatter:function(){return "MPE = "+numFmt(mpeVal,4)+" J/cm\u00b2";},
              fontFamily:fontFamily,fontSize:9,fontWeight:600,color:ec.mpe,
              backgroundColor:"rgba(255,255,255,0.88)",
-             borderColor:ec.mpe,borderWidth:0.5,borderRadius:2,
+             borderColor:ec.mpe,borderWidth:0.5,borderRadius:4,
              padding:[2,6]},
            data:[{coord:[totalTime*tScale*0.02,mpeVal]}]
          }}
@@ -1750,39 +1750,40 @@ function GeneralScanContent(p){
   return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
     {/* ── Inputs: 2-column layout ── */}
     <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,padding:14}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Beam Parameters</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           <div><label htmlFor="scan-wl" style={lb}>Wavelength (nm)</label><input id="scan-wl" type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
           <div><label htmlFor="scan-dia" style={lb}>Beam 1/e² Diameter (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>
           <div>
             <label style={lb}>Laser Mode</label>
-            <div style={{display:"flex",gap:4}}>
+            <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
               {[["pulsed","Pulsed"],["cw","CW"]].map(function(m){
                 return <button key={m[0]} onClick={function(){
                   setLaserMode(m[0]);
                   if(m[0]==="cw")setPwMode("power");
                   setDirty(true);
-                }} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:laserMode===m[0]?700:500,
-                  background:laserMode===m[0]?T.ac:"transparent",
-                  color:laserMode===m[0]?"#fff":T.tm,
-                  border:laserMode===m[0]?"none":"1px solid "+T.bd,
-                  borderRadius:2,cursor:"pointer"}}>{m[1]}</button>;
+                }} style={{flex:1,padding:"4px 10px",fontSize:12,fontWeight:laserMode===m[0]?500:400,
+                  background:laserMode===m[0]?T.card:"transparent",
+                  color:laserMode===m[0]?T.tx:T.tm,
+                  border:"none",
+                  borderBottom:laserMode===m[0]?"2px solid "+T.ac:"2px solid transparent",
+                  cursor:"pointer"}}>{m[1]}</button>;
               })}
             </div>
           </div>
           {laserMode==="pulsed"?<div>
             <label style={lb}>Pulse Duration</label>
             <div style={{display:"flex",gap:4}}>
-              <input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none"}}/>
-              <select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+              <input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
             </div>
           </div>:null}
           {laserMode==="pulsed"?<div>
             <label style={lb}>Repetition Rate</label>
             <div style={{display:"flex",gap:4}}>
-              <input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,outline:"none"}}/>
-              <select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+              <input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
             </div>
           </div>:null}
           <div>
@@ -1790,7 +1791,7 @@ function GeneralScanContent(p){
             <select value={pwMode} onChange={function(e){
               var m=e.target.value;setPwMode(m);setDirty(true);
               if(m==="energy"&&prf>0&&pw>0)setEpS((pw/prf).toExponential(4));
-            }} disabled={laserMode==="cw"} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,cursor:laserMode==="cw"?"default":"pointer",opacity:laserMode==="cw"?0.6:1,boxSizing:"border-box"}}>
+            }} disabled={laserMode==="cw"} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:laserMode==="cw"?"default":"pointer",opacity:laserMode==="cw"?0.6:1,boxSizing:"border-box"}}>
               <option value="power">Average Power (W)</option>
               <option value="energy">Pulse Energy (J)</option>
             </select>
@@ -1813,9 +1814,9 @@ function GeneralScanContent(p){
           {/* Dwell time + flyback (merged from Settings) */}
           <div>
             <label style={lb}>Dwell Time Definition</label>
-            <div style={{display:"flex",gap:4}}>
+            <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
               {[["gaussian","Gaussian"],["geometric","Geometric"]].map(function(dm){
-                return <button key={dm[0]} onClick={function(){setDwm(dm[0])}} style={{flex:1,padding:"5px 8px",fontSize:10,fontWeight:dwm===dm[0]?700:500,background:dwm===dm[0]?T.ac:"transparent",color:dwm===dm[0]?"#fff":T.tm,border:dwm===dm[0]?"none":"1px solid "+T.bd,borderRadius:2,cursor:"pointer"}}>{dm[1]}</button>;
+                return <button key={dm[0]} onClick={function(){setDwm(dm[0])}} style={{flex:1,padding:"4px 10px",fontSize:11,fontWeight:dwm===dm[0]?500:400,background:dwm===dm[0]?T.card:"transparent",color:dwm===dm[0]?T.tx:T.tm,border:"none",borderBottom:dwm===dm[0]?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer"}}>{dm[1]}</button>;
               })}
             </div>
           </div>
@@ -1829,25 +1830,25 @@ function GeneralScanContent(p){
           </div>:null}
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-      <div style={{background:T.card,borderRadius:3,border:"1px solid "+T.bd,overflow:"hidden",padding:14}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",padding:14}}>
         {/* Header: title + toggle toolbar */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
           <div style={secH}>Scan Pattern</div>
           <div style={{display:"flex",gap:2}}>
-            <button onClick={function(){setSvGrid(!svGrid);}} title="Grid" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svGrid?svBtnBg:"transparent",border:svGrid?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:2,cursor:"pointer",opacity:svGrid?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.4" strokeLinecap="round"><line x1="5" y1="1" x2="5" y2="15"/><line x1="11" y1="1" x2="11" y2="15"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="1" y1="11" x2="15" y2="11"/></svg></button>
-            <button onClick={function(){setSvBeam(!svBeam);}} title="Beam spot" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svBeam?svBtnBg:"transparent",border:svBeam?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:2,cursor:"pointer",opacity:svBeam?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3"><circle cx="8" cy="8" r="5" strokeDasharray="2.5 2"/><circle cx="8" cy="8" r="1.5" fill={svIc} stroke="none"/></svg></button>
-            <button onClick={function(){setSvFlyback(!svFlyback);}} title="Flyback paths" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svFlyback?svBtnBg:"transparent",border:svFlyback?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:2,cursor:"pointer",opacity:svFlyback?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3" strokeLinecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="12" x2="14" y2="12"/><path d="M14,4 C16,4 16,12 14,12" strokeDasharray="2 2" opacity="0.6"/></svg></button>
-            <button onClick={function(){setSvAnts(!svAnts);}} title="Scan animation" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svAnts?svBtnBg:"transparent",border:svAnts?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:2,cursor:"pointer",opacity:svAnts?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.5" strokeLinecap="round"><line x1="2" y1="8" x2="12" y2="8" strokeDasharray="2.5 3"/><polygon points="11,5.5 15,8 11,10.5" fill={svIc} stroke="none" opacity="0.5"/></svg></button>
+            <button onClick={function(){setSvGrid(!svGrid);}} title="Grid" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svGrid?svBtnBg:"transparent",border:svGrid?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svGrid?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.4" strokeLinecap="round"><line x1="5" y1="1" x2="5" y2="15"/><line x1="11" y1="1" x2="11" y2="15"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="1" y1="11" x2="15" y2="11"/></svg></button>
+            <button onClick={function(){setSvBeam(!svBeam);}} title="Beam spot" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svBeam?svBtnBg:"transparent",border:svBeam?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svBeam?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3"><circle cx="8" cy="8" r="5" strokeDasharray="2.5 2"/><circle cx="8" cy="8" r="1.5" fill={svIc} stroke="none"/></svg></button>
+            <button onClick={function(){setSvFlyback(!svFlyback);}} title="Flyback paths" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svFlyback?svBtnBg:"transparent",border:svFlyback?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svFlyback?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3" strokeLinecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="12" x2="14" y2="12"/><path d="M14,4 C16,4 16,12 14,12" strokeDasharray="2 2" opacity="0.6"/></svg></button>
+            <button onClick={function(){setSvAnts(!svAnts);}} title="Scan animation" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svAnts?svBtnBg:"transparent",border:svAnts?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svAnts?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.5" strokeLinecap="round"><line x1="2" y1="8" x2="12" y2="8" strokeDasharray="2.5 3"/><polygon points="11,5.5 15,8 11,10.5" fill={svIc} stroke="none" opacity="0.5"/></svg></button>
           </div>
         </div>
         {/* Pattern selector */}
-        <div style={{display:"flex",gap:4,marginBottom:8}}>
+        <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",marginBottom:8}}>
           {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
-            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"6px 8px",fontSize:11,fontWeight:pat===pt[0]?700:500,background:pat===pt[0]?T.ac:"transparent",color:pat===pt[0]?"#fff":T.tm,border:pat===pt[0]?"none":"1px solid "+T.bd,borderRadius:2,cursor:"pointer"}}>{pt[1]}</button>;
+            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"5px 10px",fontSize:12,fontWeight:pat===pt[0]?500:400,background:pat===pt[0]?T.card:"transparent",color:pat===pt[0]?T.tx:T.tm,border:"none",borderBottom:pat===pt[0]?"2px solid "+T.ac:"2px solid transparent",borderRight:pt[0]!=="bidi"?"1px solid "+T.bd:"none",cursor:"pointer"}}>{pt[1]}</button>;
           })}
         </div>
         {/* SVG Visualization — all fixes */}
-        <div style={{borderRadius:2,overflow:"hidden",border:"1px solid "+vc.canvasBd,marginBottom:10}}>
+        <div style={{borderRadius:4,overflow:"hidden",border:"1px solid "+vc.canvasBd,marginBottom:10}}>
           <svg ref={svRef} viewBox={"0 0 "+svW_c+" "+svH_c} style={{width:"100%",height:"auto",display:"block",background:vc.canvas,cursor:pat!=="linear"?"crosshair":"default"}} xmlns="http://www.w3.org/2000/svg" shapeRendering="geometricPrecision" onClick={pat!=="linear"?svHandleClick:null} onMouseMove={pat!=="linear"?svHandleMove:null} onMouseLeave={pat!=="linear"?svHandleLeave:null}>
             <defs>
               <clipPath id="sv-clip"><rect x={svOx-2} y={svOy-2} width={svRW+4} height={svRH+4}/></clipPath>
@@ -1930,16 +1931,16 @@ function GeneralScanContent(p){
             <span style={{fontSize:11,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Observation:</span>
             {selPt?<span style={{fontFamily:"'IBM Plex Mono', monospace",fontSize:12,color:T.tx,fontWeight:500,fontVariantNumeric:"tabular-nums"}}>{"("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm"}</span>
               :<span style={{fontSize:11,color:T.td,fontStyle:"italic",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>click scan area or enter coordinates</span>}
-            {selPt?<button onClick={function(){setSelPt(null);setSelXS("");setSelYS("");}} style={{fontSize:10,padding:"2px 8px",background:"transparent",border:"1px solid "+T.bd,borderRadius:2,cursor:"pointer",color:T.ac,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Reset to worst-case</button>:null}
+            {selPt?<button onClick={function(){setSelPt(null);setSelXS("");setSelYS("");}} style={{fontSize:10,padding:"2px 8px",background:"transparent",border:"1px solid "+T.bd,borderRadius:4,cursor:"pointer",color:T.ac,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Reset to worst-case</button>:null}
           </div>
           <div style={{borderLeft:"1px solid "+T.bd,height:18}}/>
           <div style={{display:"flex",alignItems:"center",gap:4}}>
             <span style={{fontSize:10,color:T.td}}>x</span>
-            <input type="text" value={selXS} onChange={function(e){setSelXS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:2,textAlign:"right",color:T.tx,outline:"none",background:T.bgI,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
+            <input type="text" value={selXS} onChange={function(e){setSelXS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:4,textAlign:"right",color:T.tx,outline:"none",background:T.card,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
             <span style={{fontSize:10,color:T.td}}>y</span>
-            <input type="text" value={selYS} onChange={function(e){setSelYS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:2,textAlign:"right",color:T.tx,outline:"none",background:T.bgI,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
+            <input type="text" value={selYS} onChange={function(e){setSelYS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:4,textAlign:"right",color:T.tx,outline:"none",background:T.card,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
             <span style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>mm</span>
-            <button onClick={svCoordGo} style={{height:24,padding:"0 10px",fontSize:10,fontWeight:500,background:T.ac,color:"#fff",border:"none",borderRadius:2,cursor:"pointer",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Go</button>
+            <button onClick={svCoordGo} style={{height:24,padding:"0 10px",fontSize:10,fontWeight:500,background:T.ac,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Go</button>
           </div>
         </div>:null}
         {/* Inputs — compact row */}
@@ -1949,7 +1950,7 @@ function GeneralScanContent(p){
           {pat!=="linear"?<div><label htmlFor="scan-nl" style={lb}>Lines</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/></div>:null}
           <div>
             <label style={lb}>Scan Speed</label>
-            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:4,fontSize:10,padding:"4px 6px",background:T.bgI,border:"1px solid "+T.bd,borderRadius:2,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="velocity">Velocity (mm/s)</option><option value="dwell">Dwell (\u00b5s)</option><option value="scanrate">Line rate (Hz)</option><option value="framerate">Frame rate (fps)</option></select>
+            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:4,fontSize:10,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="velocity">Velocity (mm/s)</option><option value="dwell">Dwell (\u00b5s)</option><option value="scanrate">Line rate (Hz)</option><option value="framerate">Frame rate (fps)</option></select>
             {velMode==="velocity"?<input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>:velMode==="dwell"?<input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>:velMode==="scanrate"?<input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>:<input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>}
           </div>
         </div>
@@ -1961,12 +1962,12 @@ function GeneralScanContent(p){
           {velMode==="framerate"&&frateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"}</div>:null}
         </div>
       </div>
-      <button onClick={calculate} style={{padding:"14px 24px",fontSize:14,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:3,cursor:"pointer",width:"100%"}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
+      <button onClick={calculate} style={{padding:"14px 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",width:"100%"}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
       </div>
     </div>
 
     {/* ── Point Timing Visualization ── */}
-    <div style={{background:T.card,borderRadius:2,border:"1px solid "+T.bd,padding:14}}>
+    <div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
       <div style={secH}>Point Timing Diagram</div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>
@@ -1976,29 +1977,29 @@ function GeneralScanContent(p){
         {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
       </div>
       {res&&prf>0?<div>
-        <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:2}}/>
+        <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
       </div>
-        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:3,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
+        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
     </div>
     {/* ── Performance Note ── */}
-    {perfNote?<div style={{padding:"8px 12px",borderRadius:2,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"'IBM Plex Mono', monospace",lineHeight:1.6}}>
+    {perfNote?<div style={{padding:"8px 12px",borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"'IBM Plex Mono', monospace",lineHeight:1.6}}>
       {"\u26a1"} {perfNote}
     </div>:null}
 
     {/* ── Safety Results ── */}
-    {res?<div style={{background:T.card,borderRadius:2,border:"1px solid "+T.bd,padding:14}}>
+    {res?<div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
       {/* Verdict bar + rules in single row */}
       <div style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:12}}>
-        <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#E8F5F0":"#fbe9e7",borderRadius:2,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,minWidth:160}}>
-          <div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00796B":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div>
+        <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#E8F5F0":"#fbe9e7",borderRadius:4,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,minWidth:160}}>
+          <div><div style={{fontSize:8,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:res.sf.safe?"#00796B":"#bf360c",marginBottom:1}}>Safety Verdict</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00796B":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div></div>
           <div><div style={{fontSize:9,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00897B":"#d84315"}}>margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
           <div style={{fontSize:9,color:res.sf.safe?"#26a69a":"#e64a19"}}>binding: {res.sf.br}</div></div>
         </div>
-        <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,border:"1px solid "+T.bd,borderRadius:2}}>
+        <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,border:"1px solid "+T.bd,borderRadius:4}}>
           <div style={{padding:"8px 12px",borderRight:"1px solid "+T.bd}}>
             <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 1 — Single Pulse</div>
             <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-              <span style={{fontSize:14,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok}}>{numFmt(res.sf.ppM,4)}</span>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok}}>{numFmt(res.sf.ppM,4)}</span>
               <span style={{fontSize:9,color:T.td}}>J/cm{"²"}</span>
               <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok,marginLeft:"auto"}}>{res.sf.r1m.toFixed(3)}{"×"}</span>
             </div>
@@ -2007,7 +2008,7 @@ function GeneralScanContent(p){
           <div style={{padding:"8px 12px"}}>
             <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 2 — Cumulative</div>
             <div style={{display:"flex",alignItems:"baseline",gap:6}}>
-              <span style={{fontSize:14,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok}}>{numFmt(res.sf.pF,4)}</span>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok}}>{numFmt(res.sf.pF,4)}</span>
               <span style={{fontSize:9,color:T.td}}>J/cm{"²"}</span>
               <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok,marginLeft:"auto"}}>{res.sf.r2m.toFixed(3)}{"×"}</span>
             </div>
@@ -2030,7 +2031,7 @@ function GeneralScanContent(p){
         <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[3]}</td>
       </tr>;})}</tbody></table>
       {/* Thermal relaxation — inline if available */}
-      {isFinite(res.sf.minRv)?<div style={{marginTop:10,padding:"6px 10px",background:res.sf.rvOk?"#E8F5F0":"#fff3e0",borderRadius:2,border:"1px solid "+(res.sf.rvOk?"#C4E5DF":"#ffe0b2"),fontSize:10,color:res.sf.rvOk?"#00796B":"#e65100",fontFamily:"'IBM Plex Mono', monospace"}}>
+      {isFinite(res.sf.minRv)?<div style={{marginTop:10,padding:"6px 10px",background:res.sf.rvOk?"#E8F5F0":"#fff3e0",borderRadius:4,border:"1px solid "+(res.sf.rvOk?"#C4E5DF":"#ffe0b2"),fontSize:10,color:res.sf.rvOk?"#00796B":"#e65100",fontFamily:"'IBM Plex Mono', monospace"}}>
         {res.sf.rvOk?"✓":"⚠"}{" Thermal: τᵣ = "+numFmt(res.sf.tauR,3)+" s, min revisit = "+numFmt(res.sf.minRv,3)+" s ("+((res.sf.minRv/res.sf.tauR)).toFixed(2)+"× τᵣ) — "+(res.sf.rvOk?"tissue cools between passes":"thermal accumulation likely")}
       </div>:null}
       {/* Permissible limits — compact inline */}
@@ -2103,12 +2104,12 @@ function ScanTab(p){
 
   var tabBtStyle=function(active){
     return {
-      padding:"8px 16px",fontSize:11,fontWeight:active?700:500,
-      background:active?T.ac:"transparent",
-      color:active?"#fff":T.tm,
-      border:active?"none":"1px solid "+T.bd,
-      borderRadius:2,cursor:"pointer",
-      transition:"background 0.15s, color 0.15s"
+      padding:"8px 14px",fontSize:12,fontWeight:active?500:400,
+      background:"transparent",
+      color:active?T.tx:T.tm,
+      border:"none",
+      borderBottom:active?"2px solid "+T.tx:"2px solid transparent",
+      borderRadius:0,cursor:"pointer"
     };
   };
 
@@ -2148,7 +2149,7 @@ class ErrorBoundary extends React.Component {
         React.createElement("div",{style:{fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.td||"#666",marginBottom:16}},
           String(this.state.error)),
         React.createElement("button",{onClick:function(){this.setState({hasError:false,error:null});}.bind(this),
-          style:{padding:"8px 16px",fontSize:12,cursor:"pointer",border:"1px solid #ccc",borderRadius:2,background:"#f5f5f5"}},"Retry"));
+          style:{padding:"8px 16px",fontSize:12,cursor:"pointer",border:"1px solid #ccc",borderRadius:4,background:"#f5f5f5"}},"Retry"));
     }
     return this.props.children;
   }
@@ -2162,7 +2163,7 @@ export default function App(){
   var _se=useState(""),stdErr=_se[0],setStdErr=_se[1];
   var fileRef=useRef(null);
   var T=TH[theme];
-  var tabBt=function(id,label){return{padding:"8px 20px",fontSize:12,fontWeight:tab===id?700:500,border:"none",borderBottom:tab===id?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer",background:"transparent",color:tab===id?T.ac:T.tm,letterSpacing:"0.02em"};};
+  var tabBt=function(id,label){return{padding:"8px 20px",fontSize:12,fontWeight:tab===id?500:400,border:"none",borderBottom:tab===id?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer",background:"transparent",color:tab===id?T.ac:T.tm,letterSpacing:"0.02em"};};
 
   function handleStdUpload(ev){
     var file=ev.target.files&&ev.target.files[0];
@@ -2207,12 +2208,12 @@ export default function App(){
       {/* Header */}
       <div style={{borderBottom:"1px solid "+T.bd,padding:"10px 24px",display:"flex",justifyContent:"space-between",alignItems:"center",background:T.card}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:16,fontWeight:700}}>Laser Skin MPE Calculator</span>
-          <span style={{fontSize:12,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:"#0B5394",background:"#E6F1FB",border:"1px solid #B5D4F4",borderRadius:2,padding:"4px 12px"}}>{STD_NAME}</span>
+          <span style={{fontSize:15,fontWeight:600,letterSpacing:"-0.005em"}}>Laser Skin MPE Calculator</span>
+          <span style={{fontSize:12,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:T.ac,background:T.card,border:"1px solid "+T.bd,borderRadius:4,padding:"4px 12px"}}>{STD_NAME}</span>
           <input ref={fileRef} type="file" accept=".json,application/json" onChange={handleStdUpload} style={{display:"none"}}/>
-          <button onClick={function(){fileRef.current&&fileRef.current.click();}} style={{fontSize:11,padding:"4px 10px",border:"1px solid #B5D4F4",borderRadius:2,cursor:"pointer",background:"transparent",color:"#0B5394",fontWeight:500,display:"inline-flex",alignItems:"center",gap:4}} title="Upload a custom standard JSON file">{"\u21C5"} Load standard</button>
+          <button onClick={function(){fileRef.current&&fileRef.current.click();}} style={{fontSize:11,padding:"4px 10px",border:"1px solid "+T.bd,borderRadius:4,cursor:"pointer",background:"transparent",color:T.ac,fontWeight:500,display:"inline-flex",alignItems:"center",gap:4}} title="Upload a custom standard JSON file">{"\u21C5"} Load standard</button>
         </div>
-        <div style={{display:"flex",gap:6,alignItems:"center"}}>{msg?<span style={{fontSize:11,color:T.a2,fontWeight:600}}>{msg}</span>:null}<button onClick={function(){setTheme(theme==="light"?"dark":"light")}} style={{padding:"3px 8px",fontSize:13,border:"1px solid "+T.bd,cursor:"pointer",background:"transparent",color:T.tm,borderRadius:2}} title="Toggle theme">{theme==="light"?"\u263E":"\u2600"}</button></div>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>{msg?<span style={{fontSize:11,color:T.a2,fontWeight:600}}>{msg}</span>:null}<button onClick={function(){setTheme(theme==="light"?"dark":"light")}} style={{padding:"3px 8px",fontSize:13,border:"1px solid "+T.bd,cursor:"pointer",background:"transparent",color:T.tm,borderRadius:4}} title="Toggle theme">{theme==="light"?"\u263E":"\u2600"}</button></div>
       </div>
       {stdErr?<div style={{padding:"8px 24px",background:"#fbe9e7",borderBottom:"1px solid #f4c7c3",fontSize:11,color:"#c62828",fontFamily:"'IBM Plex Mono', monospace"}}>{"\u26a0"} {stdErr}</div>:null}
       {/* Tab bar */}

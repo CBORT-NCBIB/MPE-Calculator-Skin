@@ -172,16 +172,25 @@ html = f'''<!DOCTYPE html>
   <title>Laser Skin MPE Calculator</title>
   <style>
     *{{margin:0;padding:0;box-sizing:border-box}}
+    html{{font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}}
     body{{font-family:'IBM Plex Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
-      -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}}
+      color:#0E1116;line-height:1.45}}
     input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{{
       -webkit-appearance:none;margin:0}}
     input[type=number]{{-moz-appearance:textfield}}
+    *:focus{{outline:none}}
+    *:focus-visible{{outline:2px solid #1D4ED8;outline-offset:2px}}
+    input:focus-visible,select:focus-visible{{outline:none;border-color:#1D4ED8 !important;
+      box-shadow:0 0 0 3px rgba(29,78,216,0.15) !important}}
+    ::selection{{background:rgba(29,78,216,0.18);color:inherit}}
     ::-webkit-scrollbar{{width:6px;height:6px}}
     ::-webkit-scrollbar-track{{background:transparent}}
-    ::-webkit-scrollbar-thumb{{background:#bbb;border-radius:3px}}
-    ::-webkit-scrollbar-thumb:hover{{background:#888}}
+    ::-webkit-scrollbar-thumb{{background:rgba(0,0,0,0.15);border-radius:3px}}
+    ::-webkit-scrollbar-thumb:hover{{background:rgba(0,0,0,0.25)}}
     select{{cursor:pointer}}
+    button{{transition:background 120ms cubic-bezier(0.16,1,0.3,1),
+      border-color 120ms cubic-bezier(0.16,1,0.3,1),
+      color 120ms cubic-bezier(0.16,1,0.3,1)}}
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
