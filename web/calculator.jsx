@@ -881,7 +881,7 @@ function PATab(p){
 
       {/* ── Reference citation ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"12px 14px",fontSize:11,color:T.td,lineHeight:1.6}}>
-        <strong>Reference:</strong> Francis et al., {"\u201c"}Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,{"\u201d"} <em>JPhys Photonics</em> (2026). SNR analysis based on Equations 5{"\u2013"}12. All MPE values computed using {STD_NAME} skin exposure limits.
+        <strong>Reference:</strong> Francis et al., {"\u201c"}Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,{"\u201d"} <em>JPhys Photonics</em> (2026). SNR analysis based on Equations 5{"\u2013"}12.
       </div>
     </div>
   );
@@ -1186,7 +1186,7 @@ function GeneralScanContent(p){
       effPpd=Math.max(3,effPpd);
       notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses");
     }
-    if(canSep){notes.push("Separable engine: "+Math.round(estPulses/1000)+"k pulses computed analytically");}
+    /* separable engine note removed — implementation detail not shown to user */
     else if(estPulses>_E.DEFAULT_MAX_COMPUTE_PULSES){
       var estStride=Math.ceil(estPulses/_E.DEFAULT_MAX_COMPUTE_PULSES);
       notes.push("Pulse subsampling active (stride="+estStride+"): computing 1 in every "+estStride+" pulses for "+Math.round(estPulses/1000)+"k total");
@@ -1747,7 +1747,10 @@ function GeneralScanContent(p){
     return{tx:tx,ty:ty};
   }
 
-  return (<div style={{display:"flex",flexDirection:"column",gap:14}}>
+  return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Region 1: Configuration ═══ */}
+    <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Configuration</div>
     {/* ── Inputs: 2-column layout ── */}
     <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
@@ -1962,30 +1965,22 @@ function GeneralScanContent(p){
           {velMode==="framerate"&&frateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"}</div>:null}
         </div>
       </div>
-      <button onClick={calculate} style={{padding:"14px 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:6,cursor:"pointer",width:"100%"}}>{cmp?"Computing...":dirty?"Calculate Scan Safety":"Calculated \u2713"}</button>
+
       </div>
+    </div>
+    <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+      <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
+    </div>
     </div>
 
-    {/* ── Point Timing Visualization ── */}
-    <div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
-      <div style={secH}>Point Timing Diagram</div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
-        <div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>
-          {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
-          {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
-        </div>
-        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
-      </div>
-      {res&&prf>0?<div>
-        <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
-      </div>
-        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
-    </div>
     {/* ── Performance Note ── */}
     {perfNote?<div style={{padding:"8px 12px",borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"'IBM Plex Mono', monospace",lineHeight:1.6}}>
       {"\u26a1"} {perfNote}
     </div>:null}
 
+    {/* ═══ Region 2: Results ═══ */}
+    <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Results</div>
     {/* ── Safety Results ── */}
     {res?<div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
       {/* Verdict bar + rules in single row */}
@@ -2057,12 +2052,31 @@ function GeneralScanContent(p){
       })()}
     </div>:null}
 
+    {/* ── Point Timing Visualization ── */}
+    <div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
+      <div style={secH}>Point Timing Diagram</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>
+          {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
+          {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
+        </div>
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+      </div>
+      {res&&prf>0?<div>
+        <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
+      </div>
+        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
+    </div>
+    </div>
+
+    {/* ═══ Region 3: Safety Notice ═══ */}
     {/* Safety disclaimer — compact */}
     <div style={{fontSize:9,color:T.td,lineHeight:1.6,padding:"8px 0"}}>
       <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
       This tool evaluates skin MPE per {STD_NAME} using Rules 1 and 2. It assumes Gaussian beam, uniform Ep, and ideal positioning.{" "}
       <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
-    </div>  </div>);
+    </div>
+  </div>);
 }
 
 /* ═══════ OCT SCANNING (placeholder) ═══════ */
@@ -2226,7 +2240,7 @@ export default function App(){
         {tab==="mpe"?<div role="tabpanel" id="panel-mpe" aria-labelledby="tab-mpe"><ErrorBoundary theme={T}><MPETab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
         {tab==="scan"?<div role="tabpanel" id="panel-scan" aria-labelledby="tab-scan"><ErrorBoundary theme={T}><ScanTab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
         {tab==="pa"?<div role="tabpanel" id="panel-pa" aria-labelledby="tab-pa"><ErrorBoundary theme={T}><PATab T={T} theme={theme} msg={msg} setMsg={setMsg}/></ErrorBoundary></div>:null}
-        <div style={{textAlign:"center",fontSize:10,color:T.td,padding:"12px 0 4px",lineHeight:1.7,borderTop:"1px solid "+T.bd,marginTop:16}}>{STD_NAME} {"\u00b7"} {STD_REF} {"\u00b7"} {STD_TABLES}<br/>For research and educational purposes only. Not a certified safety instrument. Skin MPE only {"\u2014"} ocular limits are not evaluated.<br/>Verify all values independently against the applicable standard before any safety-critical use.</div>
+
       </div>
     </div>
   );
