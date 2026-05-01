@@ -299,7 +299,10 @@ function MPETab(p){
   function doExport(){try{var ths2="background:#f1f5f9;padding:8px 12px;text-align:left;border-bottom:2px solid #d4d4d4;font-size:11px";var tds2="padding:6px 12px;border-bottom:1px solid #e5e5e5;font-size:13px";var rows="";for(var i=0;i<results.length;i++){var r=results[i],L=lasers[i];rows+='<tr><td style="'+tds2+'">'+r.wl+'</td><td style="'+tds2+'">'+durInUnit(r.dur,sumDurU)+'</td><td style="'+tds2+'">'+r.band+'</td><td style="'+tds2+'">'+(isInCARange(r.wl)?r.ca.toFixed(3):"\u2014")+'</td><td style="'+tds2+';font-weight:700">'+convFN(r.effH,sumFluU)+'</td><td style="'+tds2+'">'+convEN(r.irr,sumIrrU)+'</td><td style="'+tds2+'">'+(L.rp?L.prf:"\u2014")+'</td><td style="'+tds2+'">'+(r.rp?Math.round(r.rp.N):"1")+'</td><td style="'+tds2+'">'+r.rule+'</td></tr>';}var html='<!DOCTYPE html><html><head><title>MPE Report</title><style>body{font-family:Helvetica,sans-serif;max-width:960px;margin:40px auto;color:#171717;line-height:1.5;padding:0 20px}table{border-collapse:collapse;width:100%;margin:16px 0}th{'+ths2+'}h1{font-size:22px}h2{font-size:14px;color:#525252;margin:24px 0 8px}</style></head><body><h1>Laser Skin MPE Report</h1><p style="color:#737373;font-size:12px">'+STD_NAME+' \u2014 '+new Date().toLocaleString()+'</p><h2>Results</h2><table><thead><tr><th style="'+ths2+'">Wavelength (nm)</th><th style="'+ths2+'">Duration ('+sumDurU+')</th><th style="'+ths2+'">Band</th><th style="'+ths2+'">C<sub>A</sub></th><th style="'+ths2+'">Fluence, H ('+sumFluU+')</th><th style="'+ths2+'">Irradiance, E ('+sumIrrU+')</th><th style="'+ths2+'">Repetition Rate (Hz)</th><th style="'+ths2+'">Pulses</th><th style="'+ths2+'">Rule</th></tr></thead><tbody>'+rows+'</tbody></table><p style="margin-top:32px;font-size:11px;color:#a3a3a3;border-top:1px solid #e5e5e5;padding-top:12px">'+STD_NAME+' \u2014 For research and educational purposes only. Not a certified safety instrument. Skin MPE only \u2014 ocular limits not evaluated. Verify all values against the applicable standard with a qualified Laser Safety Officer.</p></body></html>';var u="data:text/html;charset=utf-8,"+encodeURIComponent(html);var a=document.createElement("a");a.href=u;a.download="mpe-report.html";a.style.display="none";var root=document.getElementById("root");root.appendChild(a);a.click();root.removeChild(a);setMsg("Report downloaded!");setTimeout(function(){setMsg("")},2e3);}catch(e){setMsg("Export failed");}}
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* ═══ Region 1: Exposure Parameters ═══ */}
+      <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Exposure Parameters</div>
       {lasers.map(function(L,idx){var r=results[idx];var col=WC[idx%WC.length];return (
         <div key={L.id} style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 14px",borderBottom:"1px solid "+T.bd,background:T.bg}}>
@@ -580,6 +583,11 @@ function MPETab(p){
           </div>
         ):null}
       </div>
+      </div>
+
+      {/* ═══ Region 2: MPE Results ═══ */}
+      <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>MPE Results</div>
       {/* Summary table */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px",opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.tm}}>Summary{dirty?" (stale)":""}</div><button onClick={doExport} style={mkBt(false,T.ac,T)}>Export Report</button></div>
@@ -614,6 +622,14 @@ function MPETab(p){
             <div style={{display:"flex"}}><button onClick={function(){setCht("wl")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="wl"?T.ac:T.bd),cursor:"pointer",background:cht==="wl"?T.ac:"transparent",color:cht==="wl"?"#fff":T.tm,borderRadius:"4px 0 0 4px"}}>MPE vs. Wavelength</button><button onClick={function(){setCht("t")}} style={{padding:"5px 12px",fontSize:11,fontWeight:600,border:"1px solid "+(cht==="t"?T.ac:T.bd),cursor:"pointer",background:cht==="t"?T.ac:"transparent",color:cht==="t"?"#fff":T.tm,borderRadius:"0 4px 4px 0"}}>MPE vs. Duration</button></div><button onClick={function(){dlSVG(cht==="wl"?wRef:dRef,cht==="wl"?"mpe_vs_wavelength.svg":"mpe_vs_duration.svg",setMsg)}} style={mkBt(false,T.ac,T)}>{"\u2913"} Download SVG</button><button onClick={function(){if(cht==="wl"){var hdr=["wavelength_nm"];for(var di=0;di<wld.durs.length;di++)hdr.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_t"+ft(wld.durs[di]).replace(/ /g,""));var nd=wld.d.map(function(row){var o={wavelength_nm:row.wl};for(var di2=0;di2<wld.durs.length;di2++){o[hdr[di2+1]]=row["d"+di2];}return o;});dlCSV(nd,hdr,"mpe_vs_wavelength.csv",setMsg);}else{var hdr2=["duration_s"];drd.ws.forEach(function(w){hdr2.push("mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm");});var nd2=drd.d.map(function(row){var o2={duration_s:row.t};drd.ws.forEach(function(w){o2["mpe_"+plotFU.replace(/[/\u00b2]/g,"")+"_"+w+"nm"]=row["w"+w];});return o2;});dlCSV(nd2,hdr2,"mpe_vs_duration.csv",setMsg);}}} style={mkBt(false,T.a2,T)}>{"\u2913"} Download CSV</button></div>
         </div>
         {cht==="wl"?(<div ref={wRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Wavelength (nm){wld.durs.length===1?" \u2014 t = "+ft(wld.durs[0]):""}</div><ResponsiveContainer width="100%" height={320}><LineChart data={wld.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="wl" type="number" domain={[WL_PLOT_MIN,WL_PLOT_MAX]} ticks={WLTICKS} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} label={{value:"Wavelength (nm)",position:"insideBottom",offset:-2,style:{fontSize:10,fill:T.td}}}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?v+" nm":""}} formatter={function(v,n){if(v==null)return["",""];var idx2=parseInt(String(n).replace("d",""),10);var label=wld.durs[idx2]!==undefined?"t="+ft(wld.durs[idx2]):"MPE";return [numFmt(Number(v),4)+" "+plotFU,label]}}/>{wld.durs.map(function(d,di){var ci=0;for(var j=0;j<plotLasers.length;j++){if(plotLasers[j].dur===d){ci=lasers.indexOf(plotLasers[j]);break;}}return <Line key={"wlc"+di} dataKey={"d"+di} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={"t="+ft(d)} connectNulls={true} isAnimationActive={false}/>;})}{wld.durs.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"'IBM Plex Mono', monospace"}}/>:null}{_std.display_bands?_std.display_bands.map(function(b,bi){return bi<_std.display_bands.length-1?<ReferenceLine key={"bl"+bi} x={b.wl_end_nm} stroke={T.bl} strokeDasharray="4 4"/>:null;}):null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"wd"+L.id} x={L.wl} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>):(<div ref={dRef}><div style={{fontSize:11,color:T.tm,marginBottom:4}}>Per-Pulse Skin MPE ({plotFU}) vs. Duration</div><ResponsiveContainer width="100%" height={320}><LineChart data={drd.d} margin={{top:8,right:16,bottom:4,left:8}}><CartesianGrid strokeDasharray="3 3" stroke={T.gr}/><XAxis dataKey="t" type="number" scale="log" domain={[1e-9,3e4]} ticks={DTICKS} tickFormatter={dtf} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd}/><YAxis scale="log" domain={["auto","auto"]} allowDataOverflow tickFormatter={logTick} tick={{fill:T.td,fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}} stroke={T.bd} width={65} label={{value:"Fluence, H ("+plotFU+")",angle:-90,position:"insideLeft",offset:0,style:{fontSize:10,fill:T.td,textAnchor:"middle"}}}/><Tooltip contentStyle={{background:T.tp,border:"1px solid "+T.bd,borderRadius:4,fontSize:12,fontFamily:"'IBM Plex Mono', monospace",color:T.tx}} labelFormatter={function(v){return v!=null?ft(Number(v)):""}} formatter={function(v,n){if(v==null)return["",""];return [numFmt(Number(v),4)+" "+plotFU,String(n).replace("w","")+" nm"]}}/>{drd.ws.map(function(w,wi){var ci=0;for(var j=0;j<lasers.length;j++){if(lasers[j].wl===w&&lasers[j].show){ci=j;break;}}return <Line key={"ln"+w} dataKey={"w"+w} stroke={WC[ci%WC.length]} strokeWidth={2} dot={false} name={w+" nm"} connectNulls={true} isAnimationActive={false}/>;})}{drd.ws.length>1?<Legend wrapperStyle={{fontSize:11,fontFamily:"'IBM Plex Mono', monospace"}}/>:null}{plotLasers.map(function(L){var i=lasers.indexOf(L);var h=skinMPE(L.wl,L.dur);if(!isFinite(h)||h<=0)return null;return <ReferenceDot key={"dd"+L.id} x={L.dur} y={h*pfm} r={5} fill={WC[i%WC.length]} stroke={T.bg} strokeWidth={2}/>;})}</LineChart></ResponsiveContainer></div>)}
+      </div>
+      </div>
+
+      {/* ═══ Region 3: Safety Notice ═══ */}
+      <div style={{padding:"8px 12px",borderRadius:4,border:"1px solid "+T.bd,borderLeft:"3px solid #B45309",fontSize:9,color:T.td,lineHeight:1.6,background:T.bgI}}>
+        <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
+        This tool evaluates skin MPE per {STD_NAME}. It assumes Gaussian beam, uniform pulse energy, and ideal positioning.{" "}
+        <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Displayed values are exposure limits, not laser classifications. Classification under IEC 60825-1 / ANSI Z136.1 requires additional analysis. Verify all values against the applicable standard.
       </div>
     </div>
   );
@@ -713,7 +729,10 @@ function PATab(p){
   },[cv,showEntries]);
 
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* ═══ Region 1: Optimization Parameters ═══ */}
+      <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Optimization Parameters</div>
       {/* ── Wavelength entries ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Photoacoustic System Parameters</div>
@@ -753,7 +772,11 @@ function PATab(p){
           <button onClick={calc} style={{padding:"8px 24px",fontSize:13,fontWeight:700,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer"}}>{dirty?"Calculate":"Calculated \u2713"}</button>
         </div>
       </div>
+      </div>
 
+      {/* ═══ Region 2: Optimization Results ═══ */}
+      <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Optimization Results</div>
       {/* ── Optimal PRF Summary Table ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14,opacity:dirty?0.6:1,transition:"opacity 0.2s"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
@@ -882,6 +905,14 @@ function PATab(p){
       {/* ── Reference citation ── */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"12px 14px",fontSize:11,color:T.td,lineHeight:1.6}}>
         <strong>Reference:</strong> Francis et al., {"\u201c"}Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,{"\u201d"} <em>JPhys Photonics</em> (2026). SNR analysis based on Equations 5{"\u2013"}12.
+      </div>
+      </div>
+
+      {/* ═══ Region 3: Safety Notice ═══ */}
+      <div style={{padding:"8px 12px",borderRadius:4,border:"1px solid "+T.bd,borderLeft:"3px solid #B45309",fontSize:9,color:T.td,lineHeight:1.6,background:T.bgI}}>
+        <strong style={{color:T.tm}}>{"\u26a0"} Notice:</strong>{" "}
+        This tool evaluates skin MPE per {STD_NAME}. Optimization is constrained by MPE safety limits.{" "}
+        <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Displayed values are recommendations, not classifications. Verify all values against the applicable standard.
       </div>
     </div>
   );
@@ -1750,7 +1781,7 @@ function GeneralScanContent(p){
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
     {/* ═══ Region 1: Configuration ═══ */}
     <div>
-      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Configuration</div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
     {/* ── Inputs: 2-column layout ── */}
     <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
@@ -1980,7 +2011,7 @@ function GeneralScanContent(p){
 
     {/* ═══ Region 2: Results ═══ */}
     <div>
-      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Results</div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Safety Results</div>
     {/* ── Safety Results ── */}
     {res?<div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
       {/* Verdict bar + rules in single row */}
@@ -2083,10 +2114,31 @@ function GeneralScanContent(p){
 function OCTScanContent(p){
   var T=p.T;
   return (
-    <div style={{padding:40,textAlign:"center"}}>
-      <div style={{fontSize:14,fontWeight:600,color:T.tm,marginBottom:8}}>OCT Scanning</div>
-      <div style={{fontSize:11,color:T.td,lineHeight:1.7,maxWidth:500,margin:"0 auto"}}>
-        This tab will contain language and parameters specific to Optical Coherence Tomography (OCT) as an imaging modality. Content is under development.
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* ═══ Region 1: OCT Scan Configuration ═══ */}
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>OCT Scan Configuration</div>
+        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16}}>
+          <div style={{fontSize:12,color:T.tm,lineHeight:1.7}}>
+            This tab will contain OCT-specific scanning parameters including center wavelength, A-scan rate, B-scan width, number of A-scans per B-scan, and volume scan geometry. The same scan safety engine as General Scanning will be used with OCT-specific terminology and default values.
+          </div>
+          <div style={{fontSize:10,color:T.td,marginTop:8,fontStyle:"italic"}}>Content is under development.</div>
+        </div>
+      </div>
+
+      {/* ═══ Region 2: OCT Scan Safety Results ═══ */}
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>OCT Scan Safety Results</div>
+        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16,color:T.td,fontSize:11}}>
+          Results will appear here after OCT-specific content is implemented. The results structure will mirror General Scanning: Safety Verdict, Timing Diagram, OCT Acquisition Summary, and Permissible Ranges.
+        </div>
+      </div>
+
+      {/* ═══ Region 3: Safety Notice ═══ */}
+      <div style={{padding:"8px 12px",borderRadius:4,border:"1px solid "+T.bd,borderLeft:"3px solid #B45309",fontSize:9,color:T.td,lineHeight:1.6,background:T.bgI}}>
+        <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
+        This tool evaluates skin MPE per {STD_NAME}. OCT-specific defaults will be applied when available.{" "}
+        <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
       </div>
     </div>
   );
@@ -2096,10 +2148,31 @@ function OCTScanContent(p){
 function PAScanContent(p){
   var T=p.T;
   return (
-    <div style={{padding:40,textAlign:"center"}}>
-      <div style={{fontSize:14,fontWeight:600,color:T.tm,marginBottom:8}}>Photoacoustics Scanning</div>
-      <div style={{fontSize:11,color:T.td,lineHeight:1.7,maxWidth:500,margin:"0 auto"}}>
-        This tab will contain language and parameters specific to Photoacoustic imaging. Content is under development.
+    <div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* ═══ Region 1: PA Scan Configuration ═══ */}
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Photoacoustic Scan Configuration</div>
+        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16}}>
+          <div style={{fontSize:12,color:T.tm,lineHeight:1.7}}>
+            This tab will contain photoacoustic-specific scanning parameters including excitation wavelength, pulse energy, PRF, and scan geometry optimized for PA imaging. The same scan safety engine as General Scanning will be used with PA-specific terminology, default values, and additional parameters such as acoustic detection bandwidth.
+          </div>
+          <div style={{fontSize:10,color:T.td,marginTop:8,fontStyle:"italic"}}>Content is under development.</div>
+        </div>
+      </div>
+
+      {/* ═══ Region 2: PA Scan Safety Results ═══ */}
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>PA Scan Safety Results</div>
+        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16,color:T.td,fontSize:11}}>
+          Results will appear here after PA-specific content is implemented. The results structure will mirror General Scanning: Safety Verdict, Timing Diagram, PA Acquisition Summary, and Permissible Ranges.
+        </div>
+      </div>
+
+      {/* ═══ Region 3: Safety Notice ═══ */}
+      <div style={{padding:"8px 12px",borderRadius:4,border:"1px solid "+T.bd,borderLeft:"3px solid #B45309",fontSize:9,color:T.td,lineHeight:1.6,background:T.bgI}}>
+        <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
+        This tool evaluates skin MPE per {STD_NAME}. Safety limits constrain but do not replace photoacoustic optimization analysis.{" "}
+        <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
       </div>
     </div>
   );

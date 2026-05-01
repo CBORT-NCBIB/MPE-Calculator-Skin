@@ -4006,9 +4006,19 @@ function MPETab(p) {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: 14
+      gap: 16
     }
-  }, lasers.map(function (L, idx) {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "Exposure Parameters"), lasers.map(function (L, idx) {
     var r = results[idx];
     var col = WC[idx % WC.length];
     return /*#__PURE__*/React.createElement("div", {
@@ -5403,7 +5413,17 @@ function MPETab(p) {
         color: T.tm
       }
     }, STD_NAME, ":"), " ", firstNote) : null);
-  }()) : null), /*#__PURE__*/React.createElement("div", {
+  }()) : null)), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "MPE Results"), /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.card,
       borderRadius: 6,
@@ -5935,7 +5955,26 @@ function MPETab(p) {
       stroke: T.bg,
       strokeWidth: 2
     });
-  }))))));
+  })))))), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px",
+      borderRadius: 4,
+      border: "1px solid " + T.bd,
+      borderLeft: "3px solid #B45309",
+      fontSize: 9,
+      color: T.td,
+      lineHeight: 1.6,
+      background: T.bgI
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.tm
+    }
+  }, "⚠", " Notice:"), " ", "This tool evaluates skin MPE per ", STD_NAME, ". It assumes Gaussian beam, uniform pulse energy, and ideal positioning.", " ", /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.no
+    }
+  }, "Research and educational use only."), " ", "Displayed values are exposure limits, not laser classifications. Classification under IEC 60825-1 / ANSI Z136.1 requires additional analysis. Verify all values against the applicable standard."));
 }
 
 /* ═══════ PA TAB ═══════ */
@@ -6232,9 +6271,19 @@ function PATab(p) {
     style: {
       display: "flex",
       flexDirection: "column",
-      gap: 14
+      gap: 16
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "Optimization Parameters"), /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.card,
       borderRadius: 6,
@@ -6480,7 +6529,17 @@ function PATab(p) {
       borderRadius: 4,
       cursor: "pointer"
     }
-  }, dirty ? "Calculate" : "Calculated \u2713"))), /*#__PURE__*/React.createElement("div", {
+  }, dirty ? "Calculate" : "Calculated \u2713")))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "Optimization Results"), /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.card,
       borderRadius: 6,
@@ -7006,7 +7065,26 @@ function PATab(p) {
       color: T.td,
       lineHeight: 1.6
     }
-  }, /*#__PURE__*/React.createElement("strong", null, "Reference:"), " Francis et al., ", "\u201c", "Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,", "\u201d", " ", /*#__PURE__*/React.createElement("em", null, "JPhys Photonics"), " (2026). SNR analysis based on Equations 5", "\u2013", "12."));
+  }, /*#__PURE__*/React.createElement("strong", null, "Reference:"), " Francis et al., ", "\u201c", "Optimization of light source parameters for photoacoustic imaging: trade-offs, technologies, and clinical considerations,", "\u201d", " ", /*#__PURE__*/React.createElement("em", null, "JPhys Photonics"), " (2026). SNR analysis based on Equations 5", "\u2013", "12.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px",
+      borderRadius: 4,
+      border: "1px solid " + T.bd,
+      borderLeft: "3px solid #B45309",
+      fontSize: 9,
+      color: T.td,
+      lineHeight: 1.6,
+      background: T.bgI
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.tm
+    }
+  }, "\u26a0", " Notice:"), " ", "This tool evaluates skin MPE per ", STD_NAME, ". Optimization is constrained by MPE safety limits.", " ", /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.no
+    }
+  }, "Research and educational use only."), " ", "Displayed values are recommendations, not classifications. Verify all values against the applicable standard."));
 }
 
 /* ═══════ SCAN TAB ═══════ */
@@ -8531,7 +8609,7 @@ function GeneralScanContent(p) {
       paddingBottom: 6,
       borderBottom: "1px solid " + T.bd
     }
-  }, "Configuration"), /*#__PURE__*/React.createElement("div", {
+  }, "Scan Configuration"), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "grid",
       gridTemplateColumns: "0.43fr 1fr",
@@ -9874,7 +9952,7 @@ function GeneralScanContent(p) {
       paddingBottom: 6,
       borderBottom: "1px solid " + T.bd
     }
-  }, "Results"), res ? /*#__PURE__*/React.createElement("div", {
+  }, "Scan Safety Results"), res ? /*#__PURE__*/React.createElement("div", {
     style: {
       background: T.card,
       borderRadius: 4,
@@ -10192,25 +10270,79 @@ function OCTScanContent(p) {
   var T = p.T;
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: 40,
-      textAlign: "center"
+      display: "flex",
+      flexDirection: "column",
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "OCT Scan Configuration"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.card,
+      border: "1px solid " + T.bd,
+      borderRadius: 6,
+      padding: 16
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 14,
-      fontWeight: 600,
+      fontSize: 12,
       color: T.tm,
-      marginBottom: 8
+      lineHeight: 1.7
     }
-  }, "OCT Scanning"), /*#__PURE__*/React.createElement("div", {
+  }, "This tab will contain OCT-specific scanning parameters including center wavelength, A-scan rate, B-scan width, number of A-scans per B-scan, and volume scan geometry. The same scan safety engine as General Scanning will be used with OCT-specific terminology and default values."), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 10,
       color: T.td,
-      lineHeight: 1.7,
-      maxWidth: 500,
-      margin: "0 auto"
+      marginTop: 8,
+      fontStyle: "italic"
     }
-  }, "This tab will contain language and parameters specific to Optical Coherence Tomography (OCT) as an imaging modality. Content is under development."));
+  }, "Content is under development."))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "OCT Scan Safety Results"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.card,
+      border: "1px solid " + T.bd,
+      borderRadius: 6,
+      padding: 16,
+      color: T.td,
+      fontSize: 11
+    }
+  }, "Results will appear here after OCT-specific content is implemented. The results structure will mirror General Scanning: Safety Verdict, Timing Diagram, OCT Acquisition Summary, and Permissible Ranges.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px",
+      borderRadius: 4,
+      border: "1px solid " + T.bd,
+      borderLeft: "3px solid #B45309",
+      fontSize: 9,
+      color: T.td,
+      lineHeight: 1.6,
+      background: T.bgI
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.tm
+    }
+  }, "⚠", " Notice:"), " ", "This tool evaluates skin MPE per ", STD_NAME, ". OCT-specific defaults will be applied when available.", " ", /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.no
+    }
+  }, "Research and educational use only."), " ", "Verify all values against the applicable standard."));
 }
 
 /* ═══════ PHOTOACOUSTICS SCANNING (placeholder) ═══════ */
@@ -10218,25 +10350,79 @@ function PAScanContent(p) {
   var T = p.T;
   return /*#__PURE__*/React.createElement("div", {
     style: {
-      padding: 40,
-      textAlign: "center"
+      display: "flex",
+      flexDirection: "column",
+      gap: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "Photoacoustic Scan Configuration"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.card,
+      border: "1px solid " + T.bd,
+      borderRadius: 6,
+      padding: 16
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 14,
-      fontWeight: 600,
+      fontSize: 12,
       color: T.tm,
-      marginBottom: 8
+      lineHeight: 1.7
     }
-  }, "Photoacoustics Scanning"), /*#__PURE__*/React.createElement("div", {
+  }, "This tab will contain photoacoustic-specific scanning parameters including excitation wavelength, pulse energy, PRF, and scan geometry optimized for PA imaging. The same scan safety engine as General Scanning will be used with PA-specific terminology, default values, and additional parameters such as acoustic detection bandwidth."), /*#__PURE__*/React.createElement("div", {
     style: {
-      fontSize: 11,
+      fontSize: 10,
       color: T.td,
-      lineHeight: 1.7,
-      maxWidth: 500,
-      margin: "0 auto"
+      marginTop: 8,
+      fontStyle: "italic"
     }
-  }, "This tab will contain language and parameters specific to Photoacoustic imaging. Content is under development."));
+  }, "Content is under development."))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: T.tx,
+      letterSpacing: "-0.005em",
+      marginBottom: 12,
+      paddingBottom: 6,
+      borderBottom: "1px solid " + T.bd
+    }
+  }, "PA Scan Safety Results"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: T.card,
+      border: "1px solid " + T.bd,
+      borderRadius: 6,
+      padding: 16,
+      color: T.td,
+      fontSize: 11
+    }
+  }, "Results will appear here after PA-specific content is implemented. The results structure will mirror General Scanning: Safety Verdict, Timing Diagram, PA Acquisition Summary, and Permissible Ranges.")), /*#__PURE__*/React.createElement("div", {
+    style: {
+      padding: "8px 12px",
+      borderRadius: 4,
+      border: "1px solid " + T.bd,
+      borderLeft: "3px solid #B45309",
+      fontSize: 9,
+      color: T.td,
+      lineHeight: 1.6,
+      background: T.bgI
+    }
+  }, /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.tm
+    }
+  }, "⚠", " Notice:"), " ", "This tool evaluates skin MPE per ", STD_NAME, ". Safety limits constrain but do not replace photoacoustic optimization analysis.", " ", /*#__PURE__*/React.createElement("strong", {
+    style: {
+      color: T.no
+    }
+  }, "Research and educational use only."), " ", "Verify all values against the applicable standard."));
 }
 
 /* ═══════ SCANNING PROTOCOLS (sub-tab router) ═══════ */
