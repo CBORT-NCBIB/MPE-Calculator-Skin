@@ -2042,6 +2042,39 @@ function GeneralScanContent(p){
           </div>
         </div>
       </div>
+      {/* ── Worst-case stationary advisory (galvo-stall fault mode) ── */}
+      {(function(){
+        var T_st=res.st.tt;
+        if(!isFinite(T_st)||T_st<=0)return null;
+        var w_cm=(dia/2)/10;
+        var denom=Math.PI*w_cm*w_cm;
+        if(denom<=0)return null;
+        var sRatio,sSafe,sBind,sH,sMPE;
+        if(laserMode==="cw"){
+          var I_peak=2*pw/denom;
+          sH=I_peak*T_st;
+          sMPE=skinMPE(wl,T_st);
+          sRatio=sH/sMPE;sSafe=sRatio<1;sBind="CW (T="+numFmt(T_st,3)+" s)";
+        }else if(prf>0){
+          var H_pp=2*(pw/prf)/denom;
+          var N_st=prf*T_st;
+          var H_total=H_pp*N_st;
+          var mpe1=skinMPE(wl,tau);
+          var mpeT2=skinMPE(wl,T_st);
+          var r1s=H_pp/mpe1;
+          var r2s=N_st>1?(H_total/mpeT2):r1s;
+          if(r1s>=r2s){sRatio=r1s;sBind="Rule 1 (single pulse)";sH=H_pp;sMPE=mpe1;}
+          else{sRatio=r2s;sBind="Rule 2 (cumulative)";sH=H_total;sMPE=mpeT2;}
+          sSafe=sRatio<1;
+        }else return null;
+        var bg=sSafe?"#E8F5F0":"#fff3e0";
+        var bd=sSafe?"#C4E5DF":"#ffe0b2";
+        var col=sSafe?"#00796B":"#e65100";
+        var note=sSafe?"tissue safe under galvo-stall fault":"fault-mode exceeds MPE \u2014 stall interlock recommended";
+        return <div style={{marginTop:10,padding:"6px 10px",background:bg,borderRadius:4,border:"1px solid "+bd,fontSize:10,color:col,fontFamily:"'IBM Plex Mono', monospace"}}>
+          {(sSafe?"\u2713":"\u26a0")+" Advisory \u2014 worst-case stationary: H = "+numFmt(sH,4)+" J/cm\u00b2 ("+sRatio.toFixed(3)+"\u00d7 MPE), binding "+sBind+" \u2014 "+note}
+        </div>;
+      })()}
       {/* Compact summary table — single table, essential info only */}
       <div style={secH}>Scan Summary</div>
       <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
@@ -2110,72 +2143,2873 @@ function GeneralScanContent(p){
   </div>);
 }
 
-/* ═══════ OCT SCANNING (placeholder) ═══════ */
+/* ═══════ OCT SCANNING ═══════ */
 function OCTScanContent(p){
-  var T=p.T;
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {/* ═══ Region 1: OCT Scan Configuration ═══ */}
-      <div>
-        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>OCT Scan Configuration</div>
-        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16}}>
-          <div style={{fontSize:12,color:T.tm,lineHeight:1.7}}>
-            This tab will contain OCT-specific scanning parameters including center wavelength, A-scan rate, B-scan width, number of A-scans per B-scan, and volume scan geometry. The same scan safety engine as General Scanning will be used with OCT-specific terminology and default values.
+  var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
+  var _wl=useState("1310"),wlS=_wl[0],setWlS=_wl[1]; var _wn=useState(1310),wl=_wn[0],setWl=_wn[1];
+  var _d=useState("0.020"),dS=_d[0],setDS=_d[1]; var _dn=useState(0.020),dia=_dn[0],setDia=_dn[1];
+  var _tau=useState("6.5"),tauS=_tau[0],setTauS=_tau[1]; var _tn=useState(6.5e-6),tau=_tn[0],setTau=_tn[1];
+  var _tU=useState("us"),tauU=_tU[0],setTauU=_tU[1];
+  var _prf=useState("100"),prfS=_prf[0],setPrfS=_prf[1]; var _pn=useState(100000),prf=_pn[0],setPrf=_pn[1];
+  var _pfU=useState("kHz"),prfU=_pfU[0],setPrfU=_pfU[1];
+  var _pw=useState("0.010"),pwS=_pw[0],setPwS=_pw[1]; var _pwn=useState(0.010),pw=_pwn[0],setPw=_pwn[1];
+  var _pwMode=useState("power"),pwMode=_pwMode[0],setPwMode=_pwMode[1]; /* "power" or "energy" */
+  var _lcm=useState("pulsed"),laserMode=_lcm[0],setLaserMode=_lcm[1]; /* "pulsed" | "cw" */
+  var _epS=useState(""),epS=_epS[0],setEpS=_epS[1];
+  var _vs=useState("100"),vS=_vs[0],setVS=_vs[1]; var _vn=useState(100),vel=_vn[0],setVel=_vn[1];
+  var _vMode=useState("ascans"),velMode=_vMode[0],setVelMode=_vMode[1]; /* "ascans"|"velocity"|"dwell"|"scanrate"|"framerate" */
+  var _dw=useState("10"),dwellS=_dw[0],setDwellS=_dw[1]; var _dwN=useState(10),dwellN=_dwN[0],setDwellN=_dwN[1]; /* µs per spot */
+  var _sr=useState("5"),srateS=_sr[0],setSrateS=_sr[1]; var _srN=useState(5),srateN=_srN[0],setSrateN=_srN[1]; /* lines/s */
+  var _fr=useState("1"),frateS=_fr[0],setFrateS=_fr[1]; var _frN=useState(1),frateN=_frN[0],setFrateN=_frN[1]; /* fps */
+  var _pat=useState("raster"),pat=_pat[0],setPat=_pat[1];
+  var _lL=useState("6"),lLS=_lL[0],setLLS=_lL[1]; var _lLn=useState(6),lineL=_lLn[0],setLineL=_lLn[1]; /* scan width = B-scan length */
+  var _sH=useState("6"),scanHS=_sH[0],setScanHS=_sH[1]; var _sHn=useState(6),scanHN=_sHn[0],setScanHN=_sHn[1]; /* slow-axis range */
+  var _nL=useState("500"),nLS=_nL[0],setNLS=_nL[1]; var _nLn=useState(500),nLines=_nLn[0],setNLines=_nLn[1]; /* B-scans per volume */
+  var _htn=useState(6/499),hatch=_htn[0],setHatch=_htn[1]; /* derived: scanHN/(nLines-1) */
+  /* ── OCT-specific state ── */
+  var _bw=useState("100"),bwS=_bw[0],setBwS=_bw[1]; var _bwn=useState(100),bw=_bwn[0],setBw=_bwn[1]; /* spectral FWHM bandwidth (nm) */
+  var _dc=useState("1.0"),dcS=_dc[0],setDcS=_dc[1]; var _dcn=useState(1.0),dc=_dcn[0],setDc=_dcn[1]; /* sweep duty cycle (1.0 = continuous) */
+  var _nBM=useState("1"),nBMS=_nBM[0],setNBMS=_nBM[1]; var _nBMn=useState(1),nBM=_nBMn[0],setNBM=_nBMn[1]; /* BM-scan repetitions per location */
+  var _nA=useState("500"),nAS=_nA[0],setNAS=_nA[1]; var _nAn=useState(500),nA=_nAn[0],setNA=_nAn[1]; /* A-scans per B-scan */
+  var _preset=useState("ss-skin"),preset=_preset[0],setPreset=_preset[1]; /* "sd-840" | "ss-1060" | "ss-skin" */
+  var _advOpen=useState(false),advOpen=_advOpen[0],setAdvOpen=_advOpen[1];
+
+  var _ppd=useState(8),ppd=_ppd[0],setPpd=_ppd[1];
+  var _dwm=useState("gaussian"),dwm=_dwm[0],setDwm=_dwm[1];
+  var _blk=useState(false),blk=_blk[0],setBlk=_blk[1];
+  var _res=useState(null),res=_res[0],setRes=_res[1];
+  var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
+  var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
+
+  /* Scan visualization feature toggles */
+  var _svGrid=useState(true),svGrid=_svGrid[0],setSvGrid=_svGrid[1];
+  var _svBeam=useState(true),svBeam=_svBeam[0],setSvBeam=_svBeam[1];
+  var _svFlyback=useState(true),svFlyback=_svFlyback[0],setSvFlyback=_svFlyback[1];
+  var _svAnts=useState(false),svAnts=_svAnts[0],setSvAnts=_svAnts[1];
+  var _antOff=useState(0),antOff=_antOff[0],setAntOff=_antOff[1];
+  useEffect(function(){
+    if(!svAnts)return;
+    var f;var tick=function(){setAntOff(function(p){return(p+0.5)%20;});f=requestAnimationFrame(tick);};
+    f=requestAnimationFrame(tick);
+    return function(){cancelAnimationFrame(f);};
+  },[svAnts]);
+
+  var lb={display:"block",fontSize:11,fontWeight:500,color:T.tm,marginBottom:3,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
+  var ip={width:"100%",padding:"6px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var secH={fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.td,marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+T.bd,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
+  var thS={padding:"5px 8px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:700};
+  var tdS={padding:"5px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace"};
+
+  function upN(setS,setN,s){setS(s);var v=Number(s);if(isFinite(v))setN(v);setDirty(true);}
+  function upTau(s){setTauS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<DUR_UNITS.length;i++){if(DUR_UNITS[i].id===tauU)m=DUR_UNITS[i].toS;}setTau(v*m);}setDirty(true);}
+  function upPrf(s){setPrfS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<FREQ_UNITS.length;i++){if(FREQ_UNITS[i].id===prfU)m=FREQ_UNITS[i].toHz;}setPrf(v*m);}setDirty(true);}
+  /* Power/energy toggle helpers */
+  function upPw(s){setPwS(s);var v=Number(s);if(isFinite(v)&&v>0){setPw(v);if(prf>0)setEpS((v/prf).toExponential(4));}setDirty(true);}
+  function upEp(s){setEpS(s);var v=Number(s);if(isFinite(v)&&v>0&&prf>0){var P=v*prf;setPw(P);setPwS(P.toPrecision(4));}setDirty(true);}
+  /* When PRF changes and mode is energy, recompute power */
+  useEffect(function(){if(pwMode==="energy"&&prf>0){var v=Number(epS);if(isFinite(v)&&v>0){setPw(v*prf);setPwS((v*prf).toPrecision(4));}}},[prf,pwMode,epS]);
+  /* When PRF changes and mode is power, update displayed Ep */
+  useEffect(function(){if(pwMode==="power"&&prf>0&&pw>0){setEpS((pw/prf).toExponential(4));}},[prf,pw,pwMode]);
+  /* Keep hatch in sync with scan height and scan line count */
+  useEffect(function(){
+    if((pat==="raster"||pat==="bidi")&&scanHN>0&&nLines>=1)setHatch(nLines>1?scanHN/(nLines-1):scanHN);
+  },[pat,scanHN,nLines]);
+  /* Keep vel in sync for all derived velocity input modes */
+  useEffect(function(){
+    var v=0;
+    if(velMode==="ascans"&&nA>0&&lineL>0&&prf>0) v=lineL*prf/nA;
+    else if(velMode==="dwell"&&dwellN>0&&dia>0) v=dia/(dwellN*1e-6);
+    else if(velMode==="scanrate"&&srateN>0&&lineL>0) v=srateN*lineL;
+    else if(velMode==="framerate"&&frateN>0&&lineL>0) v=lineL*(pat==="linear"?1:nLines)*frateN;
+    if(v>0&&isFinite(v)){setVel(v);setVS(v.toPrecision(4));}
+  },[velMode,nA,prf,dwellN,srateN,frateN,lineL,nLines,dia,pat]);
+
+  /* Selected point for timing diagram (null = worst-case) */
+  var _selPt=useState(null),selPt=_selPt[0],setSelPt=_selPt[1];
+  var _svHov=useState(null),svHov=_svHov[0],setSvHov=_svHov[1];
+  var _selXS=useState(""),selXS=_selXS[0],setSelXS=_selXS[1];
+  var _selYS=useState(""),selYS=_selYS[0],setSelYS=_selYS[1];
+  var svRef=useRef(null);
+
+  var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
+  var _workerRef=useRef(null);
+
+  /* ── Web Worker: runs scanning computation off the main thread ── */
+  function getWorker(){
+    if(_workerRef.current)return _workerRef.current;
+    if(typeof __ENGINE_SOURCE__==="undefined")return null;
+    var workerCode=__ENGINE_SOURCE__+"\n"+[
+      "self.onmessage=function(e){",
+      "  var p=e.data;",
+      "  MPEEngine.loadStandard(p.std);",
+      "  var E=MPEEngine;",
+      "  var isCW=p.prf===0&&p.tau===0;",
+      "  var Ep=p.prf>0?p.pw/p.prf:0;",
+      "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
+      "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
+      "  /* Segment-superposition framework: create scan params for all patterns */",
+      "  var sepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,avg_power_W:p.pw,v_scan_mm_s:p.vel,",
+      "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
+      "     pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:p.vel*5};",
+      "  /* Only build segments if separable path not available */",
+      "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d,bl){",
+      "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);",
+      "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);}",
+      "  var segs=sepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia,p.blk);",
+      "  var cr=E.computeScanFluence(beam,segs,p.effPpd,sepP);",
+      "  if(!cr){self.postMessage({error:'Computation returned null'});return;}",
+      "  var eg=cr.grid,s=cr.stats;",
+      "  var minV=isCW?(s.min_velocity||p.vel):0;",
+      "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW,pulse_energy_J:Ep,prf_hz:p.prf,avg_power_W:p.pw};",
+      "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV,{v_mm_s:p.vel,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});",
+      "  /* Max permissible power */",
+      "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
+      "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};",
+      "  var unitSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,v_scan_mm_s:p.vel,",
+      "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
+      "     pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:p.vel*5};",
+      "  var ucr=E.computeScanFluence(unitBeam,sepP?[]:segs,p.auxPpd,unitSepP);",
+      "  var maxP=Infinity;",
+      "  if(ucr){var upF=0;for(var i=0;i<ucr.grid.fluence.length;i++)if(ucr.grid.fluence[i]>upF)upF=ucr.grid.fluence[i];",
+      "    var mpeT=E.skinMPE(p.wl,ucr.stats.total_time_s||s.total_time_s);",
+      "    if(upF>0)maxP=mpeT/upF;",
+      "    if(!isCW&&p.prf>0){var w2=p.dia/Math.sqrt(2);var maxPr1=E.skinMPE(p.wl,p.tau)*p.prf*Math.PI*w2*w2/(2*100);",
+      "      if(maxPr1<maxP)maxP=maxPr1;}}",
+      "  /* Min safe velocity bisection */",
+      "  var minVel=0;",
+      "  function testV(tv){",
+      "    var tSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,avg_power_W:p.pw,v_scan_mm_s:tv,",
+      "       x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
+      "       pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:tv*5};",
+      "    var ts2=tSepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia,p.blk);",
+      "    var tb={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
+      "    var tcr=E.computeScanFluence(tb,ts2,p.auxPpd,tSepP);",
+      "    if(!tcr)return true;",
+      "    var tmv=isCW?(tcr.stats.min_velocity||tv):0;",
+      "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv,{v_mm_s:tv,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});",
+      "    return tsf.safe;}",
+      "  if(testV(1e6)){var vLo=0.01,vHi=1e6;",
+      "    for(var bi=0;bi<p.maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}",
+      "    minVel=vHi;}else{minVel=Infinity;}",
+      "  /* Pulse positions for visualization (generated from scan params, not segments) */",
+      "  var pulseArr=[];",
+      "  if(!isCW&&p.prf>0){",
+      "    var maxSP=5000;",
+      "    var ps_mm=p.vel/p.prf;",
+      "    var nPulsesLine=Math.max(1,Math.floor((p.lineL/p.vel)*p.prf));",
+      "    var totalEst=nPulsesLine*(p.nLines||1);",
+      "    var pStride=Math.max(1,Math.ceil(totalEst/maxSP));",
+      "    var nL=p.nLines||1,hh=p.hatch||0,tAcc=0;",
+      "    for(var li=0;li<nL&&pulseArr.length<maxSP;li++){",
+      "      var ly=li*hh;",
+      "      var scanDir=1; /* raster scans are unidirectional */",
+      "      var xStart=scanDir===1?0:p.lineL;",
+      "      for(var ki=0;ki<nPulsesLine&&pulseArr.length<maxSP;ki+=pStride){",
+      "        var px=xStart+scanDir*ki*ps_mm;",
+      "        pulseArr.push({t:tAcc+ki/p.prf,x:px,y:ly,si:li});",
+      "      }",
+      "      tAcc+=p.lineL/p.vel;",
+      "      if(li<nL-1)tAcc+=hh/(p.vel*5);",
+      "    }",
+      "    if(pulseArr.length>=maxSP)p.notes.push('Showing '+maxSP+' of ~'+Math.round(totalEst)+' pulses');",
+      "  }",
+      "  /* Coarse segment array for scan path visualization only */",
+      "  var vizSegs=[];",
+      "  var MAX_VIZ_SEGS=5000;",
+      "  var nL2=p.nLines||1;",
+      "  var ptsPerLine=Math.ceil(p.lineL/p.dia);",
+      "  /* Budget: distribute MAX_VIZ_SEGS across lines, skip lines if too many */",
+      "  var lineStride=Math.max(1,Math.ceil(nL2*Math.min(ptsPerLine,200)/MAX_VIZ_SEGS));",
+      "  var vizStep=Math.max(1,Math.ceil(ptsPerLine/Math.min(200,Math.floor(MAX_VIZ_SEGS/Math.ceil(nL2/lineStride)))));",
+      "  for(var vli=0;vli<nL2&&vizSegs.length<MAX_VIZ_SEGS;vli+=lineStride){",
+      "    var vly=vli*(p.hatch||0);",
+      "    var vDir=1; /* raster is unidirectional */",
+      "    var vx0=vDir===1?0:p.lineL;",
+      "    var nVizPts=Math.ceil(ptsPerLine/vizStep);",
+      "    for(var vsi=0;vsi<=nVizPts&&vizSegs.length<MAX_VIZ_SEGS;vsi++){",
+      "      vizSegs.push({x:vx0+vDir*vsi*vizStep*p.dia,y:vly,a:vDir===1?0:Math.PI,v:p.vel});",
+      "    }",
+      "  }",
+      "  /* Transfer TypedArrays for zero-copy performance */",
+      "  var result={",
+      "    g:{nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm},",
+      "    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,",
+      "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity,stride:s.stride||1},",
+      "    sf:{safe:sf.safe,wr:sf.worst_ratio,wx:sf.worst_x_mm,wy:sf.worst_y_mm,",
+      "      br:sf.binding_rule,sm:sf.safety_margin,mt:sf.mpe_tau,mT:sf.mpe_T,",
+      "      pF:sf.peak_fluence,ppM:sf.peak_pulse_H_max,mP:sf.max_pulses,",
+      "      r1m:sf.rule1_max_ratio,r2m:sf.rule2_max_ratio,",
+      "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate,",
+      "      anPeak:sf.analytical_peak,anUsed:sf.analytical_used},",
+      "    maxP:maxP,minVel:minVel,pulseArr:pulseArr,segs:vizSegs,notes:p.notes};",
+      "  self.postMessage(result,[eg.fluence.buffer,eg.pulse_count.buffer,eg.peak_pulse_H.buffer,eg.last_visit_t.buffer,eg.min_revisit_s.buffer]);",
+      "};"
+    ].join("\n");
+    try{
+      var blob=new Blob([workerCode],{type:"application/javascript"});
+      _workerRef.current=new Worker(URL.createObjectURL(blob));
+    }catch(err){
+      if(typeof console!=="undefined")console.warn("Web Worker creation failed:",err);
+      _workerRef.current=null;
+    }
+    return _workerRef.current;
+  }
+
+  var SCAN_WORKER_TIMEOUT_MS = 60000; // 60-second safety timeout
+  var _workerTimeout = useRef(null);
+
+  // Clean up Worker and timeout when ScanTab unmounts (e.g., standard change via key={stdVer})
+  useEffect(function(){
+    return function(){
+      if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
+      if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+    };
+  },[]);
+
+  function calculate(){
+    // ── Input validation (safety-critical) ──
+    if(!isFinite(wl)||wl<180||wl>1e6){alert("Wavelength must be 180–1,000,000 nm");return;}
+    if(!isFinite(dia)||dia<=0){alert("Beam diameter must be > 0");return;}
+    if(!isFinite(pw)||pw<=0){alert(pwMode==="energy"?"Pulse energy must be > 0 (and PRF must be > 0 to compute average power)":"Average power must be > 0");return;}
+    if(laserMode==="pulsed"){
+      if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
+      if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
+    }
+    // Scan area
+    if(!isFinite(lineL)||lineL<=0){alert(pat!=="linear"?"Scan width must be > 0":"Scan length must be > 0");return;}
+    if(pat!=="linear"){
+      if(!isFinite(scanHN)||scanHN<=0){alert("Scan height must be > 0");return;}
+      if(!isFinite(nLines)||nLines<1){alert("Number of scan lines must be ≥ 1");return;}
+    }
+    // Effective scan parameters (nLines and hatch are kept in sync via useEffect)
+    var effNLines=pat!=="linear"?Math.max(1,nLines):1;
+    var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
+    // Effective scan velocity from selected input mode
+    var effVel;
+    if(velMode==="ascans"){
+      if(!isFinite(nA)||nA<=0){alert("A-scans per B-scan must be > 0");return;}
+      if(prf<=0||lineL<=0){alert("A-scan rate and B-scan width must be > 0");return;}
+      effVel=lineL*prf/nA;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid A-scan rate or B-scan width");return;}
+    }else if(velMode==="velocity"){
+      if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
+      effVel=vel;
+    }else if(velMode==="dwell"){
+      if(!isFinite(dwellN)||dwellN<=0){alert("Dwell time must be > 0");return;}
+      effVel=dia/(dwellN*1e-6);
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid dwell time — check beam diameter");return;}
+    }else if(velMode==="scanrate"){
+      if(!isFinite(srateN)||srateN<=0){alert("Line scan rate must be > 0");return;}
+      effVel=srateN*lineL;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid line scan rate or scan width");return;}
+    }else{
+      if(!isFinite(frateN)||frateN<=0){alert("Frame rate must be > 0");return;}
+      effVel=lineL*(pat==="linear"?1:nLines)*frateN;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid frame rate or scan parameters");return;}
+    }
+    setCmp(true);setDirty(false);setPerfNote("");
+
+    // ── Performance estimation ──
+    // For separable-eligible scans, compute estimates from params directly
+    // (avoids OOM from segment construction for micro-beams)
+    var calcPrf=laserMode==="cw"?0:prf;
+    var calcTau=laserMode==="cw"?0:tau;
+    var isCWEst=laserMode==="cw";
+    /* OCT: effective avg power = entered avg power × sweep duty cycle (default dc=1.0).
+       Duty cycle is ignored in CW mode because CW lasers emit continuously. */
+    var dcEff=isCWEst?1.0:(isFinite(dc)&&dc>0&&dc<=1?dc:1.0);
+    var pwEff=pw*dcEff;
+    var canSep=((!isCWEst&&calcPrf>0)||(isCWEst&&pwEff>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+    var segsEst=canSep?[]:null;
+    var estTime,estPulses;
+    if(canSep){
+      var lineDurEst=lineL/effVel;
+      var nLEst=pat==="linear"?1:effNLines;
+      var jumpVEst=effVel*5;
+      var hatchEst=pat==="linear"?0:(effHatch||dia);
+      var flybackEst=pat==="linear"?0:(pat==="bidi"?(hatchEst/jumpVEst):(lineL/jumpVEst+hatchEst/jumpVEst));
+      estTime=nLEst*lineDurEst+(nLEst-1)*flybackEst;
+      estPulses=calcPrf*nLEst*lineDurEst;
+    }else{
+      /* Non-separable (CW): guard against huge nLines — use analytical estimation if >10000 lines */
+      if(effNLines>10000){
+        var lineDurEst2=lineL/effVel;
+        var jumpVEst2=effVel*5;
+        var hatchEst2=pat==="linear"?0:(effHatch||dia);
+        var flybackEst2=pat==="linear"?0:(pat==="bidi"?(hatchEst2/jumpVEst2):(lineL/jumpVEst2+hatchEst2/jumpVEst2));
+        estTime=effNLines*lineDurEst2+(effNLines-1)*flybackEst2;
+        estPulses=0; /* CW — no discrete pulses */
+        segsEst=[];
+      }else{
+        if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,effVel,dia);
+        else segsEst=scanBuildRaster(0,0,lineL,effNLines,effHatch,effVel,effVel*5,dia,blk);
+        estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
+        estPulses=calcPrf*estTime;
+      }
+    }
+    var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
+    var trunc=Math.ceil(3*sigma/estDx);
+    var estOps=canSep?0:estPulses*Math.PI*trunc*trunc; // separable path doesn't scale with ops
+    var effPpd=ppd,notes=[];
+    if(!canSep&&estOps>_E.OP_BUDGET&&ppd>3){
+      for(effPpd=ppd-1;effPpd>=3;effPpd--){
+        var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
+        if(estPulses*Math.PI*tr2*tr2<_E.OP_BUDGET)break;
+      }
+      effPpd=Math.max(3,effPpd);
+      notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses");
+    }
+    /* separable engine note removed — implementation detail not shown to user */
+    else if(estPulses>_E.DEFAULT_MAX_COMPUTE_PULSES){
+      var estStride=Math.ceil(estPulses/_E.DEFAULT_MAX_COMPUTE_PULSES);
+      notes.push("Pulse subsampling active (stride="+estStride+"): computing 1 in every "+estStride+" pulses for "+Math.round(estPulses/1000)+"k total");
+    }
+    var auxPpd=Math.min(effPpd,3);
+    var maxBisect=canSep?3:(estPulses>100000?6:estPulses>10000?8:15);
+
+    // ── Try Web Worker (off main thread) ──
+    var worker=getWorker();
+    if(worker){
+      var params={std:_std,wl:wl,dia:dia,tau:calcTau,prf:calcPrf,pw:pwEff,
+        pat:pat,lineL:lineL,nLines:effNLines,hatch:effHatch,vel:effVel,dwm:dwm,blk:blk,
+        effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
+      // Safety timeout: kill Worker if it takes too long
+      if(_workerTimeout.current)clearTimeout(_workerTimeout.current);
+      _workerTimeout.current=setTimeout(function(){
+        if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
+        setPerfNote("Computation timed out after 60 seconds. Try reducing line count, increasing hatch spacing, or lowering PRF.");
+        setCmp(false);
+      },SCAN_WORKER_TIMEOUT_MS);
+      worker.onmessage=function(ev){
+        if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+        var r=ev.data;
+        if(r.error){if(typeof console!=="undefined")console.error("Worker error:",r.error);setCmp(false);return;}
+        /* Reconstruct grid with transferred TypedArrays */
+        var g={nx:r.g.nx,ny:r.g.ny,dx:r.g.dx,xn:r.g.xn,yn:r.g.yn,
+          flu:r.flu,pc:r.pc,ppH:r.ppH,lvt:r.lvt,mrv:r.mrv};
+        var isCW2=laserMode==="cw";
+        var dcEff2=isCW2?1.0:(isFinite(dc)&&dc>0&&dc<=1?dc:1.0);
+        var pwEff2=pw*dcEff2;
+        var beam2={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?pwEff2/calcPrf:0,P:pwEff2,cw:isCW2};
+        if(r.notes&&r.notes.length>0)setPerfNote(r.notes.join(". ")+".");
+        /* OCT: scale cumulative quantities by BM-scan repetitions
+           — peak fluence and pulse count scale linearly with N_BM,
+             but the cumulative MPE must be recomputed at the new total exposure time
+             because skinMPE(wl,t) has a t-dependent regime structure
+             (e.g., t^0.25 in 100ns–10s, plateau above 10s). */
+        var nBMm=Math.max(1,Math.round(nBM));
+        var sfAdj=r.sf;
+        var stAdj=Object.assign({},r.st,{tt:r.st.tt*nBMm});
+        if(nBMm>1){
+          var T_total_oct=r.st.tt*nBMm;
+          var newMPE_T_oct=skinMPE(wl,T_total_oct);
+          var newPF_oct=r.sf.pF*nBMm;
+          sfAdj=Object.assign({},r.sf);
+          sfAdj.pF=newPF_oct;
+          sfAdj.mT=newMPE_T_oct;
+          sfAdj.r2m=isFinite(newMPE_T_oct)&&newMPE_T_oct>0?(newPF_oct/newMPE_T_oct):Infinity;
+          sfAdj.mP=r.sf.mP*nBMm;
+          sfAdj.safe=Math.max(sfAdj.r1m,sfAdj.r2m)<=1;
+          sfAdj.sm=1-Math.max(sfAdj.r1m,sfAdj.r2m);
+          sfAdj.br=sfAdj.r1m>=sfAdj.r2m?"Rule 1":"Rule 2";
+        }
+        setRes({g:g,st:stAdj,sf:sfAdj,segs:r.segs,beam:beam2,maxP:r.maxP,minV:r.minVel,
+          pulses:r.pulseArr,effPpd:effPpd,effNLines:effNLines,effHatch:effHatch,effVel:effVel,nBM:nBMm});
+        setCmp(false);
+      };
+      worker.onerror=function(err){
+        if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+        if(typeof console!=="undefined")console.error("Worker error:",err);
+        /* Fall back to main-thread computation */
+        calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);
+      };
+      worker.postMessage(params);
+      return;
+    }
+
+    // ── Fallback: main-thread computation ──
+    setTimeout(function(){calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);},60);
+  }
+
+  function calculateMainThread(segs,effPpd,auxPpd,maxBisect,notes){
+    try{
+      var calcPrf=laserMode==="cw"?0:prf;
+      var calcTau=laserMode==="cw"?0:tau;
+      var isCW=laserMode==="cw";
+      /* OCT: effective avg power = entered avg power × sweep duty cycle.
+         Duty cycle is ignored in CW mode (CW lasers emit continuously). */
+      var dcEff=isCW?1.0:(isFinite(dc)&&dc>0&&dc<=1?dc:1.0);
+      var pwEff=pw*dcEff;
+      var Ep=calcPrf>0?pwEff/calcPrf:0;
+      var beam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pwEff,cw:isCW};
+
+      // Derive effective scan params (same logic as calculate())
+      var effNLines=pat!=="linear"?Math.max(1,nLines):1;
+      var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
+      var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
+
+      // Build separable params if applicable (same logic as Worker)
+      var canSep=((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      function mkSepP(vv,ep,optP){
+        if(!canSep)return null;
+        return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,avg_power_W:optP!==undefined?optP:pw,v_scan_mm_s:vv,
+          x0:0,y0:0,line_length_mm:lineL,n_lines:pat==="linear"?1:effNLines,
+          hatch_mm:pat==="linear"?0:effHatch,pattern:pat,blanking:blk,is_cw:isCW,v_jump_mm_s:vv*5};
+      }
+
+      var cr=scanCompute(beam,canSep?[]:segs,effPpd,mkSepP(effVel));
+      if(cr){
+        var minV=isCW?(cr.st.mv||effVel):0;
+        var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:effVel,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
+        var unitBeam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?1/calcPrf:0,P:1,cw:isCW};
+        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(effVel,calcPrf>0?1/calcPrf:0,1));
+        var maxP=Infinity;
+        if(unitCr){
+          var upF=0;for(var ui=0;ui<unitCr.g.nx*unitCr.g.ny;ui++)if(unitCr.g.flu[ui]>upF)upF=unitCr.g.flu[ui];
+          var mpeT=skinMPE(wl,unitCr.st.tt||cr.st.tt);
+          if(upF>0)maxP=mpeT/upF;
+          if(!isCW&&calcPrf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,calcTau)*calcPrf*Math.PI*w22*w22/(2*100);
+            if(maxPr1<maxP)maxP=maxPr1;}
+        }
+        var minVel=0;
+        if(!canSep&&effNLines<=10000){
+          // Only run bisection on the main thread for brute-force paths
+          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
+          function testV(tv){
+            var ts;
+            if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
+            else ts=scanBuildRaster(0,0,lineL,effNLines,effHatch,tv,tv*5,dia,blk);
+            var tb={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pwEff,cw:isCW};
+            var tcr2=scanCompute(tb,ts,auxPpd);
+            if(!tcr2)return true;
+            var tmv=isCW?(tcr2.st.mv||tv):0;
+            var tsf2=scanSafety(tcr2.g,tb,tcr2.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
+            return tsf2.safe;
+          }
+          if(testV(1e6)){var vLo=0.01,vHi=1e6;
+            for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}
+            minVel=vHi;}else{minVel=Infinity;}
+        }
+
+        // Generate pulse positions and viz segments from scan params (not from segment array)
+        var pulseArr=[];
+        if(!isCW&&calcPrf>0){
+          var maxSP2=5000,ps_mm2=effVel/calcPrf;
+          var nPL2=Math.max(1,Math.floor((lineL/effVel)*calcPrf));
+          var nLV=pat==="linear"?1:effNLines;
+          var totalEst2=nPL2*nLV;
+          var pStride2=Math.max(1,Math.ceil(totalEst2/maxSP2));
+          var tAcc2=0;
+          for(var li2=0;li2<nLV&&pulseArr.length<maxSP2;li2++){
+            var ly2=li2*(pat==="linear"?0:effHatch);
+            for(var ki2=0;ki2<nPL2&&pulseArr.length<maxSP2;ki2+=pStride2){
+              pulseArr.push({t:tAcc2+ki2/calcPrf,x:ki2*ps_mm2,y:ly2,si:li2});
+            }
+            tAcc2+=lineL/effVel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:effHatch)/(effVel*5);
+          }
+        }
+        // Capped viz segments
+        var vizSegs2=[];
+        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:effNLines;
+        var ppl2=Math.ceil(lineL/dia);
+        var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
+        var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
+        for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
+          var vly2=vl2*(pat==="linear"?0:effHatch);
+          var nVP2=Math.ceil(ppl2/vStp2);
+          for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
+            vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+          }
+        }
+
+        if(notes.length>0)setPerfNote(notes.join(". ")+".");
+        /* OCT: scale cumulative quantities by BM-scan repetitions
+           (see worker-callback variant for the MPE-recomputation rationale) */
+        var nBMm2=Math.max(1,Math.round(nBM));
+        var sfMt=sf;
+        var stMt=Object.assign({},cr.st,{tt:cr.st.tt*nBMm2});
+        if(nBMm2>1){
+          var T_total_oct2=cr.st.tt*nBMm2;
+          var newMPE_T_oct2=skinMPE(wl,T_total_oct2);
+          var newPF_oct2=sf.pF*nBMm2;
+          sfMt=Object.assign({},sf);
+          sfMt.pF=newPF_oct2;
+          sfMt.mT=newMPE_T_oct2;
+          sfMt.r2m=isFinite(newMPE_T_oct2)&&newMPE_T_oct2>0?(newPF_oct2/newMPE_T_oct2):Infinity;
+          sfMt.mP=sf.mP*nBMm2;
+          sfMt.safe=Math.max(sfMt.r1m,sfMt.r2m)<=1;
+          sfMt.sm=1-Math.max(sfMt.r1m,sfMt.r2m);
+          sfMt.br=sfMt.r1m>=sfMt.r2m?"Rule 1":"Rule 2";
+        }
+        setRes({g:cr.g,st:stMt,sf:sfMt,segs:vizSegs2,beam:beam,maxP:maxP,minV:minVel,
+          pulses:pulseArr,effPpd:effPpd,effNLines:effNLines,effHatch:effHatch,effVel:effVel,nBM:nBMm2});
+      }
+    }catch(err){if(typeof console!=="undefined")console.error("Calculation error:",err);}
+    setCmp(false);
+  }
+
+  /* ── ECharts theme config (Paul Tol High-Contrast) ── */
+  var ec=useMemo(function(){
+    var dk=theme==="dark";
+    return {
+      bg:dk?"#14171A":"#FAFAFA",
+      panel:dk?"#1E1E1E":"#FFFFFF",
+      grid:dk?"#2E2E2E":"#E8E8E8",
+      spine:dk?"#AAAAAA":"#444444",
+      tick:dk?"#9CA3AF":"#555555",
+      title:dk?"#E0E0E0":"#222222",
+      stem:dk?"#6CB3FF":"#004488",
+      stemShaft:dk?"rgba(187,187,187,0.55)":"rgba(136,136,136,0.55)",
+      cumLine:dk?"#EE99AA":"#BB5566",
+      mpe:dk?"#DDAA33":"#DDAA33",
+      sub:dk?"#888888":"#777777",
+      navBg:dk?"#252525":"#F0F0F0",
+      navWin:dk?"rgba(108,179,255,0.12)":"rgba(0,68,136,0.08)",
+      navBorder:dk?"rgba(108,179,255,0.4)":"rgba(0,68,136,0.35)"
+    };
+  },[theme]);
+
+  var ptTimRef=useRef(null);
+  var _chartRef=useRef(null);
+
+  /* Reset selPt when new results arrive */
+  useEffect(function(){setSelPt(null);},[res]);
+
+  /* ── Dispose ECharts instance on unmount ── */
+  useEffect(function(){
+    return function(){
+      if(_chartRef.current){_chartRef.current.dispose();_chartRef.current=null;}
+    };
+  },[]);
+
+  /* ── Point Timing Diagram: pulse arrivals + cumulative fluence at a point ── */
+  useEffect(function(){
+    if(!res||!ptTimRef.current||typeof echarts==="undefined")return;
+    if(prf<=0||pw<=0)return;
+
+    var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
+    /* OCT: per-sweep energy uses duty-cycle-corrected average power.
+       In CW mode the timing diagram should not appear (no discrete pulses), but
+       defensively short-circuit dcSafe to 1.0 if somehow reached. */
+    var dcSafe=(laserMode==="cw")?1.0:(isFinite(dc)&&dc>0&&dc<=1?dc:1.0);
+    var Ep=(pw*dcSafe)/prf;
+    var H0=2*Ep/(Math.PI*w2)*100; // J/cm\u00b2
+    var ps=vel/prf; // pulse spacing mm
+    var trunc=3*sigma;
+    var trunc2=trunc*trunc;
+    var nPL=Math.max(1,Math.floor((lineL/vel)*prf));
+    var lineDur=lineL/vel;
+    var nL=pat==="linear"?1:(res.effNLines||1);
+    var hh=pat==="linear"?0:(res.effHatch||hatch);
+    var jumpV=vel*5;
+    var flybackTime=(pat==="linear"||nL<=1)?0:(lineL/jumpV+hh/jumpV);
+
+    // Determine observation point
+    var obsX,obsY;
+    if(selPt){obsX=selPt.x;obsY=selPt.y;}
+    else{
+      var g=res.g,maxF=0,maxIdx=0;
+      for(var gi=0;gi<g.nx*g.ny;gi++){if(g.flu[gi]>maxF){maxF=g.flu[gi];maxIdx=gi;}}
+      var giy=Math.floor(maxIdx/g.nx),gix=maxIdx-giy*g.nx;
+      obsX=g.xn+gix*g.dx;obsY=g.yn+giy*g.dx;
+    }
+
+    // Collect pulse contributions at the observation point
+    var events=[];
+    var tLineStart=0;
+    for(var li=0;li<nL;li++){
+      var yLine=li*hh;
+      var dy=obsY-yLine;
+      var dy2=dy*dy;
+      if(dy2>trunc2){tLineStart+=lineDur+(li<nL-1?flybackTime:0);continue;}
+      var crossAtt=Math.exp(-2*dy2/w2);
+      var scanDir=1;
+      var xStart=scanDir===1?0:lineL;
+      var kCenter=(obsX-xStart)/(scanDir*ps);
+      var kRange=trunc/ps;
+      var kMin=Math.max(0,Math.ceil(kCenter-kRange));
+      var kMax=Math.min(nPL-1,Math.floor(kCenter+kRange));
+      for(var k=kMin;k<=kMax;k++){
+        var xPulse=xStart+scanDir*k*ps;
+        var dx=obsX-xPulse;
+        var dx2=dx*dx;
+        if(dx2>trunc2)continue;
+        var alongAtt=Math.exp(-2*dx2/w2);
+        var Hdep=H0*alongAtt*crossAtt;
+        if(Hdep<H0*1e-6)continue;
+        var tPulse=tLineStart+k/prf;
+        events.push({t:tPulse,H:Hdep});
+      }
+      tLineStart+=lineDur+(li<nL-1?flybackTime:0);
+    }
+
+    events.sort(function(a,b){return a.t-b.t;});
+    var totalTime=res.st.tt;
+    var mpeVal=skinMPE(wl,totalTime);
+
+    // Build cumulative step data and impulse data
+    var cumData=[];
+    var impulseData=[];
+    var cumH=0;
+    cumData.push([0,0]);
+    for(var ei=0;ei<events.length;ei++){
+      var ev=events[ei];
+      cumData.push([ev.t,cumH]);
+      cumH+=ev.H;
+      cumData.push([ev.t,cumH]);
+      impulseData.push([ev.t,ev.H]);
+    }
+    cumData.push([totalTime,cumH]);
+
+    // Scale time for readability
+    var tScale=1,tUnit="s";
+    if(totalTime<0.01){tScale=1e6;tUnit="\u00b5s";}
+    else if(totalTime<10){tScale=1e3;tUnit="ms";}
+
+    var cumScaled=cumData.map(function(p){return [p[0]*tScale,p[1]];});
+    var impulseScaled=impulseData.map(function(p){return [p[0]*tScale,p[1]];});
+
+    var safetyRatio=cumH/mpeVal;
+
+    // ── ECharts rendering ──
+    if(_chartRef.current){_chartRef.current.dispose();_chartRef.current=null;}
+    var chart=echarts.init(ptTimRef.current,null,{renderer:"canvas"});
+    _chartRef.current=chart;
+
+    var fontFamily="'IBM Plex Sans', system-ui, -apple-system, sans-serif";
+
+    var option={
+      backgroundColor:"transparent",
+      animation:false,
+      textStyle:{fontFamily:fontFamily},
+
+      /* Panel labels: (a) and (b) per COMSOL/Optica convention */
+      title:[
+        {text:"(a) Per-pulse fluence",left:68,top:4,
+         textStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:600,color:ec.title}},
+        {text:"(b) Cumulative fluence",left:68,top:"39%",
+         textStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:600,color:ec.title}}
+      ],
+
+      /* Two stacked grids with room for panel labels and legends */
+      grid:[
+        {left:68,right:20,top:24,height:"22%"},
+        {left:68,right:20,top:"48%",height:"38%"}
+      ],
+
+      xAxis:[
+        {type:"value",gridIndex:0,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{show:false},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         min:0,max:totalTime*tScale},
+        {type:"value",gridIndex:1,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{show:true,fontFamily:fontFamily,fontSize:10,color:ec.tick,
+           formatter:function(v){return v%1===0?String(v):v.toFixed(1);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         name:"Time ("+tUnit+")",nameLocation:"middle",nameGap:28,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0,max:totalTime*tScale}
+      ],
+
+      yAxis:[
+        {type:"value",gridIndex:0,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{fontFamily:fontFamily,fontSize:10,color:ec.tick,
+           formatter:function(v){return v<0.001&&v>0?v.toExponential(1):numFmt(v,2);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         name:"Fluence (J/cm\u00b2)",nameLocation:"middle",nameGap:52,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0},
+        {type:"value",gridIndex:1,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{fontFamily:fontFamily,fontSize:10,color:ec.tick,
+           formatter:function(v){return v<0.001&&v>0?v.toExponential(1):numFmt(v,3);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         name:"Fluence (J/cm\u00b2)",nameLocation:"middle",nameGap:52,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0}
+      ],
+
+      toolbox:{show:false},
+
+      /* Per-panel legends — each panel gets its own legend inside the plot area (COMSOL/MATLAB convention) */
+      legend:[
+        {data:["Per-pulse fluence"],
+         top:24,right:28,orient:"vertical",
+         itemWidth:20,itemHeight:3,
+         icon:"roundRect",
+         textStyle:{fontFamily:fontFamily,fontSize:10,color:ec.tick},
+         backgroundColor:"rgba(255,255,255,0.88)",
+         borderColor:ec.grid,borderWidth:1,
+         padding:[4,8]},
+        {data:["Cumulative fluence","MPE limit"],
+         top:"48%",right:28,orient:"vertical",
+         itemWidth:20,itemHeight:3,itemGap:8,
+         textStyle:{fontFamily:fontFamily,fontSize:10,color:ec.tick},
+         backgroundColor:"rgba(255,255,255,0.88)",
+         borderColor:ec.grid,borderWidth:1,
+         padding:[4,8]}
+      ],
+
+      /* Linked axis pointers across panels — COMSOL/MATLAB synchronized cursor convention */
+      axisPointer:{link:[{xAxisIndex:"all"}]},
+
+      tooltip:{
+        trigger:"axis",
+        axisPointer:{type:"line",lineStyle:{color:ec.spine,width:1,type:"dashed"}},
+        textStyle:{fontFamily:fontFamily,fontSize:11},
+        formatter:function(params){
+          if(!params||!params.length)return "";
+          var t=params[0].value[0];
+          var out=["<b>t = "+numFmt(t,4)+" "+tUnit+"</b>"];
+          for(var pi=0;pi<params.length;pi++){
+            var p=params[pi];
+            if(p.seriesName==="MPE limit")continue;
+            out.push(p.marker+" "+p.seriesName+": "+numFmt(p.value[1],4)+" J/cm\u00b2");
+          }
+          return out.join("<br>");
+        }
+      },
+
+      series:[
+        {name:"Per-pulse fluence",type:"bar",xAxisIndex:0,yAxisIndex:0,
+         data:impulseScaled,
+         barWidth:Math.max(1,Math.min(3,400/Math.max(1,impulseScaled.length))),
+         itemStyle:{color:ec.stem},
+         emphasis:{itemStyle:{color:ec.stem}},
+         large:true,largeThreshold:500},
+
+        {name:"Cumulative fluence",type:"line",xAxisIndex:1,yAxisIndex:1,
+         data:cumScaled,
+         step:false,
+         lineStyle:{color:ec.cumLine,width:2,type:"solid"},
+         areaStyle:{color:ec.cumLine,opacity:0.04},
+         symbol:"none",
+         emphasis:{disabled:true}},
+
+        {name:"MPE limit",type:"line",xAxisIndex:1,yAxisIndex:1,
+         data:[[0,mpeVal],[totalTime*tScale,mpeVal]],
+         lineStyle:{color:ec.mpe,width:1.5,type:"dashed"},
+         symbol:"none",
+         emphasis:{disabled:true},
+         /* Mark the MPE value with a label on the line */
+         markPoint:{
+           symbol:"rect",symbolSize:[1,1],
+           label:{show:true,position:"insideRight",
+             formatter:function(){return "MPE = "+numFmt(mpeVal,4)+" J/cm\u00b2";},
+             fontFamily:fontFamily,fontSize:9,fontWeight:600,color:ec.mpe,
+             backgroundColor:"rgba(255,255,255,0.88)",
+             borderColor:ec.mpe,borderWidth:0.5,borderRadius:4,
+             padding:[2,6]},
+           data:[{coord:[totalTime*tScale*0.02,mpeVal]}]
+         }}
+      ]
+    };
+
+    chart.setOption(option);
+
+    var onResize=function(){chart.resize();};
+    window.addEventListener("resize",onResize);
+
+    return function(){
+      window.removeEventListener("resize",onResize);
+    };
+  },[res,ec,dia,wl,pw,dc,prf,vel,lineL,pat,hatch,scanHN,selPt]);
+
+  /* ── Scan pattern visualization: pre-computed values ──────────── */
+  /* Engineering notation for dimension labels */
+  function svFmtDim(val){
+    if(!isFinite(val)||val===0)return "0 mm";
+    var av=Math.abs(val);
+    if(av>=1e6)return (val/1e6).toPrecision(4)+" km";
+    if(av>=1e3)return (val/1e3).toPrecision(4)+" m";
+    if(av>=0.1)return +val.toPrecision(4)+" mm";
+    if(av>=1e-4)return (val*1e3).toPrecision(4)+" \u00b5m";
+    if(av>=1e-7)return (val*1e6).toPrecision(4)+" nm";
+    return val.toExponential(2)+" mm";
+  }
+  /* Scan pattern visualization: pre-computed values */
+  var _isLt=theme==="light";
+  var vc={
+    mark:_isLt?"#334155":"#94A3B8", jump:_isLt?"#94A3B8":"#64748B",
+    dimAct:_isLt?"#64748B":"#94A3B8", dimDer:_isLt?"#94A3B8":"#64748B",
+    canvas:_isLt?"#FAFBFC":"#1A1F27", canvasBd:_isLt?"rgba(15,23,42,0.08)":"rgba(255,255,255,0.08)",
+    gridMin:_isLt?"#E8ECF0":"#252D38", gridMaj:_isLt?"#E0E4EA":"#2A3340",
+    area:_isLt?"none":"none",
+    areaBd:_isLt?"#CBD5E1":"#475569",
+    lbl:_isLt?"#475569":"#94A3B8", legTx:_isLt?"#475569":"#94A3B8",
+    lbl2:_isLt?"#334155":"#CBD5E1",
+    corr:_isLt?0.04:0.06,
+    hc:_isLt?"#64748B":"#94A3B8",
+    axX:"#94A3B8", axY:"#94A3B8"
+  };
+  var svBtnBg=_isLt?"#F1F5F9":"#1E293B";
+  var svBtnBd=_isLt?"#CBD5E1":"#475569";
+  var svIc=_isLt?"#64748B":"#94A3B8";
+  /* Fixed canvas — wider left padding for hatch callout */
+  var svW_c=460,svH_c=260;
+  var svPd_t=24,svPd_r=44,svPd_b=36,svPd_l=80;
+  var svPlW=svW_c-svPd_l-svPd_r, svPlH=svH_c-svPd_t-svPd_b;
+  /* Independent x/y scaling */
+  var svPatW=Math.max(lineL,0.001);
+  var svPatH=pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001);
+  var svScX=(svPlW*0.85)/svPatW;
+  var svScY=(svPlH*0.85)/svPatH;
+  var svOx=svPd_l+(svPlW-svPatW*svScX)/2;
+  var svOy=svPd_t+(svPlH-svPatH*svScY)/2;
+  var svRW=svPatW*svScX, svRH=svPatH*svScY;
+  var svBSc=Math.min(svScX,svScY);
+  var svBeamR=Math.max((dia/Math.sqrt(2))*svBSc,1.5);
+  svBeamR=Math.min(svBeamR,Math.min(svRW,svRH)/2);
+  /* Fix 1: beam suppression when beam >> scan area */
+  var svBeamOwl=dia>Math.max(lineL,scanHN||0)*2;
+  var svRenderBeam=svBeam&&!svBeamOwl;
+  /* Fix 2: line decimation */
+  var svHtVis=(nLines>1&&scanHN>0)?scanHN/(nLines-1):0;
+  var svLinePx=svHtVis*svScY;
+  var svTooMany=pat!=="linear"&&nLines>1&&svLinePx<4;
+  var svDecIndices=null;
+  if(svTooMany){
+    var svMaxShow=12;
+    var sdSet={};sdSet[0]=true;sdSet[nLines-1]=true;
+    for(var sdi=1;sdi<svMaxShow-1;sdi++){sdSet[Math.round(sdi*(nLines-1)/(svMaxShow-1))]=true;}
+    svDecIndices=[];for(var sdk in sdSet){if(sdSet.hasOwnProperty(sdk))svDecIndices.push(Number(sdk));}
+    svDecIndices.sort(function(a,b){return a-b;});
+  }
+  var svDecCount=svDecIndices?svDecIndices.length:0;
+  var svMarks=[],svJumps=[];
+  if(pat==="linear"){
+    svMarks.push({x1:svOx,y1:svOy+svRH/2,x2:svOx+svRW,y2:svOy+svRH/2,idx:0});
+  }else if(svTooMany){
+    /* Decimated: iterate only over the small set of indices (never over all nLines) */
+    for(var svdi=0;svdi<svDecIndices.length;svdi++){
+      var svIdx=svDecIndices[svdi];
+      var svLy=svOy+svIdx*svHtVis*svScY;
+      var svLtr=pat==="bidi"?(svIdx%2===0):true;
+      svMarks.push({x1:svLtr?svOx:svOx+svRW,y1:svLy,x2:svLtr?svOx+svRW:svOx,y2:svLy,idx:svIdx});
+    }
+    for(var svmi=0;svmi<svMarks.length-1;svmi++){
+      var svCur=svMarks[svmi],svNxt=svMarks[svmi+1];
+      var svCurLtr=pat==="bidi"?(svCur.idx%2===0):true;
+      var svCurEx=svCurLtr?svOx+svRW:svOx;
+      if(pat==="bidi")svJumps.push({x1:svCurEx,y1:svCur.y1,x2:svCurEx,y2:svNxt.y1});
+      else svJumps.push({x1:svOx+svRW,y1:svCur.y1,x2:svOx,y2:svNxt.y1});
+    }
+  }else{
+    var svNVis=Math.min(nLines,200);
+    for(var svi=0;svi<svNVis;svi++){
+      var svLy2=svOy+svi*svHtVis*svScY;
+      var svLtr2=pat==="bidi"?(svi%2===0):true;
+      svMarks.push({x1:svLtr2?svOx:svOx+svRW,y1:svLy2,x2:svLtr2?svOx+svRW:svOx,y2:svLy2,idx:svi});
+    }
+    for(var svmi2=0;svmi2<svMarks.length-1;svmi2++){
+      var svCur2=svMarks[svmi2],svNxt2=svMarks[svmi2+1];
+      var svCurLtr2=pat==="bidi"?(svCur2.idx%2===0):true;
+      var svCurEx2=svCurLtr2?svOx+svRW:svOx;
+      if(pat==="bidi")svJumps.push({x1:svCurEx2,y1:svCur2.y1,x2:svCurEx2,y2:svNxt2.y1});
+      else svJumps.push({x1:svOx+svRW,y1:svCur2.y1,x2:svOx,y2:svNxt2.y1});
+    }
+  }
+  /* Hatch callout geometry — left margin */
+  var svShowHC=pat!=="linear"&&nLines>1&&svHtVis>0;
+  var svHcY1=svOy,svHcY2=svOy+svHtVis*svScY;
+  var svHcGap=svHcY2-svHcY1;
+  var svHcBX=svOx-12;
+  var svHcInline=svHcGap>=8;
+  var svHcInset=svHcGap<8;
+  var svHcLabel=svFmtDim(svHtVis);
+  /* Formatted dimension labels */
+  var svWLabel=svFmtDim(lineL);
+  var svHLabel=svFmtDim(scanHN);
+  var svGridMinP="",svGridMajP="";
+  if(svGrid){
+    for(var sgx=0;sgx<=svW_c;sgx+=10){if(sgx%50===0)svGridMajP+="M"+sgx+",0V"+svH_c+" ";else svGridMinP+="M"+sgx+",0V"+svH_c+" ";}
+    for(var sgy=0;sgy<=svH_c;sgy+=10){if(sgy%50===0)svGridMajP+="M0,"+sgy+"H"+svW_c+" ";else svGridMinP+="M0,"+sgy+"H"+svW_c+" ";}
+  }
+  /* SVG click → scan coordinate conversion */
+  function svClickToScan(e){
+    if(!svRef.current)return null;
+    var rect=svRef.current.getBoundingClientRect();
+    var sx=(e.clientX-rect.left)/rect.width*svW_c;
+    var sy=(e.clientY-rect.top)/rect.height*svH_c;
+    var scanX=(sx-svOx)/svScX;
+    var scanY=(sy-svOy)/svScY;
+    if(scanX<0||scanX>lineL||scanY<0||scanY>(scanHN||0))return null;
+    return{x:Math.max(0,Math.min(lineL,scanX)),y:Math.max(0,Math.min(scanHN||0,scanY))};
+  }
+  function svHandleClick(e){
+    var pt=svClickToScan(e);
+    if(pt){setSelPt(pt);setSelXS(pt.x.toFixed(3));setSelYS(pt.y.toFixed(3));}
+  }
+  function svHandleMove(e){setSvHov(svClickToScan(e));}
+  function svHandleLeave(){setSvHov(null);}
+  function svCoordGo(){
+    var x=parseFloat(selXS),y=parseFloat(selYS);
+    if(isFinite(x)&&isFinite(y)&&x>=0&&x<=lineL&&y>=0&&y<=(scanHN||0)){
+      setSelPt({x:x,y:y});
+    }
+  }
+  /* Convert scan point to SVG pixel coordinates */
+  function svPtToSvg(pt){return pt?{sx:svOx+pt.x*svScX,sy:svOy+pt.y*svScY}:null;}
+  var svSelS=svPtToSvg(selPt);
+  var svHovS=svPtToSvg(svHov);
+  /* Tooltip positioning — avoid clipping edges */
+  var svTipW=96,svTipH=18;
+  function svTipPos(sx,sy){
+    var tx=sx+12,ty=sy-22;
+    if(tx+svTipW>svW_c-4)tx=sx-svTipW-12;
+    if(ty<4)ty=sy+12;
+    if(ty+svTipH>svH_c-4)ty=svH_c-svTipH-4;
+    return{tx:tx,ty:ty};
+  }
+
+  return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Region 1: Configuration ═══ */}
+    <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
+    {/* ── Inputs: 2-column layout ── */}
+    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+        <div style={secH}>OCT Source</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div>
+            <label style={lb}>Preset</label>
+            <select value={preset} onChange={function(e){
+              var v=e.target.value; setPreset(v);
+              /* "custom" is a passive label triggered by manual field edits;
+                 selecting it from the dropdown should preserve current state, not reset. */
+              if(v==="custom"){ setDirty(true); return; }
+              if(v==="sd-840"){
+                setWlS("840");setWl(840);setBwS("50");setBw(50);
+                setTauS("11");setTau(11e-6);setTauU("us");
+                setPrfS("70");setPrf(70000);setPrfU("kHz");
+                setPwS("0.0018");setPw(0.0018);
+                setDS("0.025");setDia(0.025);
+                setDcS("1.0");setDc(1.0);
+              } else if(v==="ss-1060"){
+                setWlS("1060");setWl(1060);setBwS("100");setBw(100);
+                setTauS("5");setTau(5e-6);setTauU("us");
+                setPrfS("100");setPrf(100000);setPrfU("kHz");
+                setPwS("0.0035");setPw(0.0035);
+                setDS("0.020");setDia(0.020);
+                setDcS("1.0");setDc(1.0);
+              } else if(v==="ss-skin"){
+                setWlS("1310");setWl(1310);setBwS("100");setBw(100);
+                setTauS("6.5");setTau(6.5e-6);setTauU("us");
+                setPrfS("100");setPrf(100000);setPrfU("kHz");
+                setPwS("0.010");setPw(0.010);
+                setDS("0.020");setDia(0.020);
+                setDcS("1.0");setDc(1.0);
+              }
+              setDirty(true);
+            }} style={{...ip,cursor:"pointer"}}>
+              <option value="ss-skin">SS-OCT 1310 nm — skin / IV-OCT</option>
+              <option value="ss-1060">SS-OCT 1060 nm — deep tissue</option>
+              <option value="sd-840">SD-OCT 840 nm — surface</option>
+              <option value="custom">Custom — user-edited</option>
+            </select>
           </div>
-          <div style={{fontSize:10,color:T.td,marginTop:8,fontStyle:"italic"}}>Content is under development.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <div><label htmlFor="scan-wl" style={lb}>Center Wavelength (nm)</label><input id="scan-wl" type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value);setPreset("custom");}} style={ip}/></div>
+            <div><label htmlFor="scan-bw" style={lb}>FWHM Bandwidth (nm)</label><input id="scan-bw" type="text" value={bwS} onChange={function(e){upN(setBwS,setBw,e.target.value);setPreset("custom");}} style={ip}/></div>
+          </div>
+          <div><label htmlFor="scan-dia" style={lb}>Beam 1/e² at Sample (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value);setPreset("custom");}} style={ip}/></div>
+          <div>
+            <label style={lb}>Laser Mode</label>
+            <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
+              {[["pulsed","Pulsed"],["cw","CW"]].map(function(m){
+                return <button key={m[0]} onClick={function(){
+                  setLaserMode(m[0]);
+                  if(m[0]==="cw")setPwMode("power");
+                  setDirty(true);
+                }} style={{flex:1,padding:"4px 10px",fontSize:12,fontWeight:laserMode===m[0]?500:400,
+                  background:laserMode===m[0]?T.card:"transparent",
+                  color:laserMode===m[0]?T.tx:T.tm,
+                  border:"none",
+                  borderBottom:laserMode===m[0]?"2px solid "+T.ac:"2px solid transparent",
+                  cursor:"pointer"}}>{m[1]}</button>;
+              })}
+            </div>
+          </div>
+          {laserMode==="pulsed"?<div>
+            <label style={lb}>Sweep Duration</label>
+            <div style={{display:"flex",gap:4}}>
+              <input type="text" value={tauS} onChange={function(e){upTau(e.target.value);setPreset("custom");}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            </div>
+          </div>:null}
+          {laserMode==="pulsed"?<div>
+            <label style={lb}>A-scan Rate</label>
+            <div style={{display:"flex",gap:4}}>
+              <input type="text" value={prfS} onChange={function(e){upPrf(e.target.value);setPreset("custom");}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            </div>
+          </div>:null}
+          <div>
+            <label style={lb}>Power Input</label>
+            <select value={pwMode} onChange={function(e){
+              var m=e.target.value;setPwMode(m);setDirty(true);
+              if(m==="energy"&&prf>0&&pw>0)setEpS((pw/prf).toExponential(4));
+            }} disabled={laserMode==="cw"} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:laserMode==="cw"?"default":"pointer",opacity:laserMode==="cw"?0.6:1,boxSizing:"border-box"}}>
+              <option value="power">Sample-arm Power (W)</option>
+              <option value="energy">Energy / Sweep (J)</option>
+            </select>
+            {pwMode==="power"?
+              <div>
+                <input id="scan-pw" type="text" value={pwS} onChange={function(e){upPw(e.target.value);setPreset("custom");}} style={ip}/>
+                {laserMode==="pulsed"&&prf>0&&pw>0?(function(){
+                  /* clamp dc for display: invalid or CW values display as 1.0 */
+                  var dcD=(laserMode==="cw"||!isFinite(dc)||dc<=0||dc>1)?1.0:dc;
+                  return <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{"Ep = "+((pw*dcD)/prf).toExponential(3)+" J/sweep"+(dcD<1?" (dc-corrected)":"")}</div>;
+                })():null}
+              </div>
+            :
+              <div>
+                <input type="text" value={epS} onChange={function(e){upEp(e.target.value);setPreset("custom");}} placeholder="e.g. 50e-6" style={ip}/>
+                {prf>0&&pw>0?<div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{"P_avg = "+pw.toPrecision(3)+" W"}</div>:null}
+              </div>
+            }
+          </div>
+          <div>
+            <label htmlFor="scan-dc" style={lb}>Sweep Duty Cycle (0-1)</label>
+            <input id="scan-dc" type="text" value={dcS} onChange={function(e){upN(setDcS,setDc,e.target.value);setPreset("custom");}} style={ip}/>
+            {(function(){
+              /* clamp dc for display: invalid values display as 1.0; CW mode shows special note */
+              var dcD=(laserMode==="cw"||!isFinite(dc)||dc<=0||dc>1)?1.0:dc;
+              var note=laserMode==="cw"?"CW mode: duty cycle ignored (laser is continuous)":(dcD<1?"Effective avg power: "+(pw*dcD*1000).toPrecision(3)+" mW":"Time-averaged power as entered");
+              return <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{note}</div>;
+            })()}
+          </div>
+        </div>
+
+          {/* Divider */}
+          <div style={{borderTop:"1px solid "+T.bd,margin:"4px 0"}}/>
+          {/* Dwell time + flyback (merged from Settings) */}
+          <div>
+            <label style={lb}>Dwell Time Definition</label>
+            <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
+              {[["gaussian","Gaussian"],["geometric","Geometric"]].map(function(dm){
+                return <button key={dm[0]} onClick={function(){setDwm(dm[0])}} style={{flex:1,padding:"4px 10px",fontSize:11,fontWeight:dwm===dm[0]?500:400,background:dwm===dm[0]?T.card:"transparent",color:dwm===dm[0]?T.tx:T.tm,border:"none",borderBottom:dwm===dm[0]?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer"}}>{dm[1]}</button>;
+              })}
+            </div>
+          </div>
+          {pat!=="linear"?<div>
+            <label style={{...lb,marginBottom:6}}>Galvo Flyback Blanking</label>
+            <label style={{display:"flex",alignItems:"flex-start",gap:6,cursor:"pointer",fontSize:11,color:T.tx}}>
+              <input type="checkbox" checked={blk} onChange={function(){setBlk(!blk);setDirty(true);}} style={{accentColor:T.ac,width:14,height:14,marginTop:2}}/>
+              <span style={{lineHeight:1.3}}>{blk?"Laser blanked during flyback/jumps":"Laser fires during flyback (conservative)"}</span>
+            </label>
+            <div style={{fontSize:8,color:T.td,marginTop:2,marginLeft:20}}>OCT systems typically blank during galvo return</div>
+          </div>:null}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",padding:14}}>
+        {/* Header: title + toggle toolbar */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={secH}>Scan Pattern</div>
+          <div style={{display:"flex",gap:2}}>
+            <button onClick={function(){setSvGrid(!svGrid);}} title="Grid" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svGrid?svBtnBg:"transparent",border:svGrid?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svGrid?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.4" strokeLinecap="round"><line x1="5" y1="1" x2="5" y2="15"/><line x1="11" y1="1" x2="11" y2="15"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="1" y1="11" x2="15" y2="11"/></svg></button>
+            <button onClick={function(){setSvBeam(!svBeam);}} title="Beam spot" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svBeam?svBtnBg:"transparent",border:svBeam?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svBeam?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3"><circle cx="8" cy="8" r="5" strokeDasharray="2.5 2"/><circle cx="8" cy="8" r="1.5" fill={svIc} stroke="none"/></svg></button>
+            <button onClick={function(){setSvFlyback(!svFlyback);}} title="Flyback paths" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svFlyback?svBtnBg:"transparent",border:svFlyback?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svFlyback?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3" strokeLinecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="12" x2="14" y2="12"/><path d="M14,4 C16,4 16,12 14,12" strokeDasharray="2 2" opacity="0.6"/></svg></button>
+            <button onClick={function(){setSvAnts(!svAnts);}} title="Scan animation" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svAnts?svBtnBg:"transparent",border:svAnts?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svAnts?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.5" strokeLinecap="round"><line x1="2" y1="8" x2="12" y2="8" strokeDasharray="2.5 3"/><polygon points="11,5.5 15,8 11,10.5" fill={svIc} stroke="none" opacity="0.5"/></svg></button>
+          </div>
+        </div>
+        {/* Pattern selector */}
+        <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",marginBottom:8}}>
+          {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
+            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"5px 10px",fontSize:12,fontWeight:pat===pt[0]?500:400,background:pat===pt[0]?T.card:"transparent",color:pat===pt[0]?T.tx:T.tm,border:"none",borderBottom:pat===pt[0]?"2px solid "+T.ac:"2px solid transparent",borderRight:pt[0]!=="bidi"?"1px solid "+T.bd:"none",cursor:"pointer"}}>{pt[1]}</button>;
+          })}
+        </div>
+        {/* SVG Visualization — all fixes */}
+        <div style={{borderRadius:4,overflow:"hidden",border:"1px solid "+vc.canvasBd,marginBottom:10}}>
+          <svg ref={svRef} viewBox={"0 0 "+svW_c+" "+svH_c} style={{width:"100%",height:"auto",display:"block",background:vc.canvas,cursor:pat!=="linear"?"crosshair":"default"}} xmlns="http://www.w3.org/2000/svg" shapeRendering="geometricPrecision" onClick={pat!=="linear"?svHandleClick:null} onMouseMove={pat!=="linear"?svHandleMove:null} onMouseLeave={pat!=="linear"?svHandleLeave:null}>
+            <defs>
+              <clipPath id="sv-clip"><rect x={svOx-2} y={svOy-2} width={svRW+4} height={svRH+4}/></clipPath>
+              <marker id="sv-arr" markerWidth="8" markerHeight="5" refX="7.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,2.5 L0,5 z" fill={vc.dimAct}/></marker>
+              <marker id="sv-arr2" markerWidth="8" markerHeight="5" refX="0.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,0 L0,2.5 L8,5 z" fill={vc.dimAct}/></marker>
+              <marker id="sv-hc1" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0.5 L4,2 L0,3.5 z" fill={vc.hc}/></marker>
+              <marker id="sv-hc2" markerWidth="4" markerHeight="4" refX="0.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M4,0.5 L0,2 L4,3.5 z" fill={vc.hc}/></marker>
+            </defs>
+            {svGrid?<g><path d={svGridMinP} fill="none" stroke={vc.gridMin} strokeWidth="0.5" opacity="0.5"/><path d={svGridMajP} fill="none" stroke={vc.gridMaj} strokeWidth="0.5" opacity="0.6"/></g>:null}
+            {svGrid?<g>
+              <line x1={svOx-14} y1={svOy+svRH} x2={svOx+22} y2={svOy+svRH} stroke={vc.axX} strokeWidth="0.8" opacity="0.4"/>
+              <line x1={svOx} y1={svOy+svRH+14} x2={svOx} y2={svOy+svRH-22} stroke={vc.axY} strokeWidth="0.8" opacity="0.4"/>
+              <text x={svOx+24} y={svOy+svRH+3} fill={vc.axX} fontSize="7.5" fontFamily="'IBM Plex Mono', monospace" opacity="0.4" fontWeight="400">x</text>
+              <text x={svOx+3} y={svOy+svRH-24} fill={vc.axY} fontSize="7.5" fontFamily="'IBM Plex Mono', monospace" opacity="0.4" fontWeight="400">y</text>
+              <circle cx={svOx} cy={svOy+svRH} r="1.8" fill="none" stroke={vc.lbl} strokeWidth="0.6"/>
+            </g>:null}
+            <rect x={svOx} y={svOy} width={svRW} height={svRH} fill="none" stroke={vc.areaBd} strokeWidth="0.75"/>
+            {svRenderBeam?<g clipPath="url(#sv-clip)">{svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,len=Math.sqrt(dx*dx+dy*dy),ang=Math.atan2(dy,dx)*180/Math.PI;return <rect key={"c"+i} x={-len/2} y={-svBeamR} width={len} height={svBeamR*2} rx={svBeamR} transform={"translate("+((s.x1+s.x2)/2)+","+((s.y1+s.y2)/2)+") rotate("+ang+")"} fill={vc.mark} opacity={vc.corr}/>;})}</g>:null}
+            {svFlyback?svJumps.map(function(s,i){var vert=Math.abs(s.x1-s.x2)<1;var d=vert?"M"+s.x1+","+s.y1+"L"+s.x2+","+s.y2:"M"+s.x1+","+s.y1+"C"+(s.x1+(s.x2>s.x1?25:-25))+","+s.y1+" "+(s.x2+(s.x1>s.x2?25:-25))+","+s.y2+" "+s.x2+","+s.y2;return <path key={"j"+i} d={d} fill="none" stroke={vc.jump} strokeWidth="0.6" strokeDasharray="4,2" opacity="0.5"/>;}):null}
+            {svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,mx=(s.x1+s.x2)/2,my=(s.y1+s.y2)/2,ang=Math.atan2(dy,dx)*180/Math.PI;return <g key={"m"+i}><line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.mark} strokeWidth="1.0"/>{svAnts?<line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.canvas} strokeWidth="1.0" strokeDasharray="3,7" strokeDashoffset={-antOff} opacity="0.45"/>:null}<polygon points="0,-2.5 5,0 0,2.5" fill={vc.mark} opacity="0.65" transform={"translate("+mx+","+my+") rotate("+ang+")"}/><circle cx={s.x1} cy={s.y1} r="1.4" fill={vc.mark} opacity="0.35"/></g>;})}
+            {svRenderBeam&&svMarks.length>0?<g><circle cx={svMarks[0].x1} cy={svMarks[0].y1} r={svBeamR} fill="none" stroke={vc.mark} strokeWidth="0.75" strokeDasharray="2.5,2" opacity="0.3"/></g>:null}
+            {/* Inline hatch callout — bracket in left margin */}
+            {svShowHC&&svHcInline?<g>
+              <line x1={svHcBX-5} y1={svHcY1} x2={svOx-4} y2={svHcY1} stroke={vc.hc} strokeWidth="0.4"/>
+              <line x1={svHcBX-5} y1={svHcY2} x2={svOx-4} y2={svHcY2} stroke={vc.hc} strokeWidth="0.4"/>
+              <line x1={svHcBX} y1={svHcY1} x2={svHcBX} y2={svHcY2} stroke={vc.hc} strokeWidth="0.5" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2-1} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="9" fontFamily="'IBM Plex Mono', monospace" fontWeight="500">{"Δh"}</text>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2+10} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="8.5" fontFamily="'IBM Plex Mono', monospace" fontWeight="500">{svHcLabel}</text>
+            </g>:null}
+            {/* Inset hatch callout — for sub-pixel spacing */}
+            {svShowHC&&svHcInset?<g>
+              <rect x="3" y={svPd_t-2} width={svPd_l-8} height="62" rx="3" fill={_isLt?"white":"#2A2A30"} stroke={vc.hc} strokeWidth="0.8"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+11} textAnchor="middle" fill={vc.hc} fontSize="9" fontFamily="'IBM Plex Sans', system-ui, sans-serif" fontWeight="700" letterSpacing="0.04em">LINE SPACING</text>
+              <line x1="10" y1={svPd_t+24} x2={svPd_l-22} y2={svPd_t+24} stroke={vc.mark} strokeWidth="1.0"/>
+              <line x1="10" y1={svPd_t+44} x2={svPd_l-22} y2={svPd_t+44} stroke={vc.mark} strokeWidth="1.0"/>
+              <line x1={svPd_l-16} y1={svPd_t+24} x2={svPd_l-16} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.5" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <line x1={svPd_l-20} y1={svPd_t+24} x2={svPd_l-12} y2={svPd_t+24} stroke={vc.hc} strokeWidth="0.7"/>
+              <line x1={svPd_l-20} y1={svPd_t+44} x2={svPd_l-12} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.7"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+57} textAnchor="middle" fill={vc.hc} fontSize="10.5" fontFamily="'IBM Plex Mono', monospace" fontWeight="700">{svHcLabel}</text>
+            </g>:null}
+            {/* Width dimension */}
+            <g><line x1={svOx} y1={svOy+svRH+3} x2={svOx} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW} y1={svOy+svRH+3} x2={svOx+svRW} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx} y1={svOy+svRH+18} x2={svOx+svRW} y2={svOy+svRH+18} stroke={vc.dimAct} strokeWidth="0.4" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW/2} y={svOy+svRH+32} textAnchor="middle" fill={vc.dimAct} fontSize="10" fontFamily="'IBM Plex Mono', monospace" fontWeight="600">{svWLabel}</text></g>
+            {/* Height dimension */}
+            {pat!=="linear"?<g><line x1={svOx+svRW+3} y1={svOy} x2={svOx+svRW+24} y2={svOy} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW+3} y1={svOy+svRH} x2={svOx+svRW+24} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW+18} y1={svOy} x2={svOx+svRW+18} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.4" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW+28} y={svOy+svRH/2} dominantBaseline="middle" fill={vc.dimAct} fontSize="10" fontFamily="'IBM Plex Mono', monospace" fontWeight="600">{svHLabel}</text></g>:null}
+            {/* Pattern label — above scan area */}
+            <text x={svPd_l} y="16" fill={vc.lbl} fontSize="9.5" fontWeight="600" fontFamily="'IBM Plex Sans', system-ui, sans-serif" letterSpacing="0.08em">{pat==="linear"?"LINEAR":pat==="bidi"?"BIDIRECTIONAL RASTER":"UNIDIRECTIONAL RASTER"}</text>
+            {pat!=="linear"?<text x={svW_c-8} y="16" textAnchor="end" fill={vc.lbl} fontSize="9" fontFamily="'IBM Plex Mono', monospace">{nLines+" lines"}</text>:null}
+            {/* Decimation notice — below width dim */}
+            {svTooMany?<text x={svOx+svRW/2} y={svOy+svRH+42} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="'IBM Plex Mono', monospace" fontStyle="italic">{"showing "+svDecCount+" of "+nLines.toLocaleString()+" lines"}</text>:null}
+            {/* Beam suppression notice — above scan area */}
+            {svBeamOwl&&svBeam?<text x={svOx+svRW/2} y={svOy-8} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="'IBM Plex Mono', monospace">{"beam ("+svFmtDim(dia)+") \u226B scan area"}</text>:null}
+            {/* Legend — bottom right, outside scan area */}
+            <g transform={"translate("+(svW_c-8)+","+(svH_c-16)+")"}><line x1="-58" y1="0" x2="-44" y2="0" stroke={vc.mark} strokeWidth="1.0"/><text x="-41" y="0.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="'IBM Plex Mono', monospace">mark</text>{svFlyback?<g><line x1="-58" y1="-14" x2="-44" y2="-14" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="3,2"/><text x="-41" y="-13.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="'IBM Plex Mono', monospace">flyback</text></g>:null}</g>
+            {/* Hover crosshairs — neutral grey, colorblind safe */}
+            {svHovS&&!selPt&&pat!=="linear"?<g opacity="0.4">
+              <line x1={svHovS.sx} y1={svOy} x2={svHovS.sx} y2={svOy+svRH} stroke={vc.lbl} strokeWidth="0.7" strokeDasharray="3,3"/>
+              <line x1={svOx} y1={svHovS.sy} x2={svOx+svRW} y2={svHovS.sy} stroke={vc.lbl} strokeWidth="0.7" strokeDasharray="3,3"/>
+              <circle cx={svHovS.sx} cy={svHovS.sy} r="4" fill="none" stroke={vc.lbl} strokeWidth="1"/>
+            </g>:null}
+            {/* Selected point marker — circle+cross for shape redundancy */}
+            {svSelS&&pat!=="linear"?<g>
+              <line x1={svSelS.sx} y1={svOy} x2={svSelS.sx} y2={svOy+svRH} stroke={T.no} strokeWidth="0.8" strokeDasharray="5,3" opacity="0.5"/>
+              <line x1={svOx} y1={svSelS.sy} x2={svOx+svRW} y2={svSelS.sy} stroke={T.no} strokeWidth="0.8" strokeDasharray="5,3" opacity="0.5"/>
+              <circle cx={svSelS.sx} cy={svSelS.sy} r="6" fill="none" stroke={T.no} strokeWidth="1.5"/>
+              <line x1={svSelS.sx-3} y1={svSelS.sy} x2={svSelS.sx+3} y2={svSelS.sy} stroke={T.no} strokeWidth="1.5"/>
+              <line x1={svSelS.sx} y1={svSelS.sy-3} x2={svSelS.sx} y2={svSelS.sy+3} stroke={T.no} strokeWidth="1.5"/>
+            </g>:null}
+            {/* Hover coordinate tooltip — dynamically positioned to avoid edge clipping */}
+            {svHov&&svHovS&&!selPt&&pat!=="linear"?(function(){var tp=svTipPos(svHovS.sx,svHovS.sy);return <g>
+              <rect x={tp.tx} y={tp.ty} width={svTipW} height={svTipH} rx="2" fill="rgba(31,41,51,0.88)"/>
+              <text x={tp.tx+6} y={tp.ty+13} fill="#E6EDF3" fontSize="10" fontFamily={"'IBM Plex Mono', monospace"}>{"("+svHov.x.toFixed(2)+", "+svHov.y.toFixed(2)+")"}</text>
+            </g>;})():null}
+            {/* Click instruction hint — below dimensions, clear of geometry */}
+            {!selPt&&pat!=="linear"?<text x={svOx+svRW/2} y={svH_c-4} textAnchor="middle" fill={vc.lbl} fontSize="8.5" fontFamily={"'IBM Plex Sans', system-ui, sans-serif"} fontWeight="400" opacity="0.5">Click anywhere in scan area to select observation point</text>:null}
+          </svg>
+        </div>
+        {/* Coordinate input bar */}
+        {pat!=="linear"?<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <span style={{fontSize:11,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Observation:</span>
+            {selPt?<span style={{fontFamily:"'IBM Plex Mono', monospace",fontSize:12,color:T.tx,fontWeight:500,fontVariantNumeric:"tabular-nums"}}>{"("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm"}</span>
+              :<span style={{fontSize:11,color:T.td,fontStyle:"italic",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>click scan area or enter coordinates</span>}
+            {selPt?<button onClick={function(){setSelPt(null);setSelXS("");setSelYS("");}} style={{fontSize:10,padding:"2px 8px",background:"transparent",border:"1px solid "+T.bd,borderRadius:4,cursor:"pointer",color:T.ac,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Reset to worst-case</button>:null}
+          </div>
+          <div style={{borderLeft:"1px solid "+T.bd,height:18}}/>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <span style={{fontSize:10,color:T.td}}>x</span>
+            <input type="text" value={selXS} onChange={function(e){setSelXS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:4,textAlign:"right",color:T.tx,outline:"none",background:T.card,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
+            <span style={{fontSize:10,color:T.td}}>y</span>
+            <input type="text" value={selYS} onChange={function(e){setSelYS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:4,textAlign:"right",color:T.tx,outline:"none",background:T.card,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
+            <span style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>mm</span>
+            <button onClick={svCoordGo} style={{height:24,padding:"0 10px",fontSize:10,fontWeight:500,background:T.ac,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Go</button>
+          </div>
+        </div>:null}
+        {/* Inputs — compact row */}
+        <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr 1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:8}}>
+          <div><label htmlFor="scan-sw" style={lb}>{pat==="linear"?"B-scan Length (mm)":"B-scan Width (mm)"}</label><input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/></div>
+          {pat!=="linear"?<div><label htmlFor="scan-sh" style={lb}>Slow-axis Range (mm)</label><input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/></div>:null}
+          {pat!=="linear"?<div><label htmlFor="scan-nl" style={lb}>B-scans / Volume</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/></div>:null}
+          <div><label htmlFor="scan-nbm" style={lb}>BM-scans / Loc.</label><input id="scan-nbm" type="text" value={nBMS} onChange={function(e){setNBMS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNBM(v);setDirty(true);}} style={ip}/></div>
+          <div>
+            <label style={lb}>Scan Speed</label>
+            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:4,fontSize:10,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="ascans">A-scans / B-scan</option><option value="velocity">Velocity (mm/s)</option><option value="dwell">Dwell (\u00b5s)</option><option value="scanrate">B-scan rate (Hz)</option><option value="framerate">Volume rate (Hz)</option></select>
+            {velMode==="ascans"?<input type="text" value={nAS} onChange={function(e){setNAS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNA(v);setDirty(true);}} style={ip}/>:velMode==="velocity"?<input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>:velMode==="dwell"?<input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>:velMode==="scanrate"?<input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>:<input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>}
+          </div>
+        </div>
+        {/* Derived readouts — single line below */}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:4}}>
+          {pat!=="linear"&&nLines>1&&scanHN>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"B-scan spacing: "+(scanHN/(nLines-1)*1000).toFixed(2)+" \u00b5m"}</div>:null}
+          {velMode==="ascans"&&nA>0&&prf>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(lineL*prf/nA).toFixed(2)+" mm/s ("+(prf/nA).toFixed(2)+" B-scans/s)"}</div>:null}
+          {velMode==="dwell"&&dwellN>0&&dia>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}
+          {velMode==="scanrate"&&srateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}
+          {velMode==="framerate"&&frateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"}</div>:null}
         </div>
       </div>
 
-      {/* ═══ Region 2: OCT Scan Safety Results ═══ */}
-      <div>
-        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>OCT Scan Safety Results</div>
-        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16,color:T.td,fontSize:11}}>
-          Results will appear here after OCT-specific content is implemented. The results structure will mirror General Scanning: Safety Verdict, Timing Diagram, OCT Acquisition Summary, and Permissible Ranges.
-        </div>
-      </div>
-
-      {/* ═══ Region 3: Safety Notice ═══ */}
-      <div style={{padding:"8px 12px",borderRadius:4,border:"1px solid "+T.bd,borderLeft:"3px solid #B45309",fontSize:9,color:T.td,lineHeight:1.6,background:T.bgI}}>
-        <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
-        This tool evaluates skin MPE per {STD_NAME}. OCT-specific defaults will be applied when available.{" "}
-        <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
       </div>
     </div>
-  );
+    <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+      <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
+    </div>
+    </div>
+
+    {/* ── Performance Note ── */}
+    {perfNote?<div style={{padding:"8px 12px",borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"'IBM Plex Mono', monospace",lineHeight:1.6}}>
+      {"\u26a1"} {perfNote}
+    </div>:null}
+
+    {/* ═══ Region 2: Results ═══ */}
+    <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Safety Results</div>
+    {/* ── Safety Results ── */}
+    {res?<div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
+      {/* Verdict bar + rules in single row */}
+      <div style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:12}}>
+        <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#E8F5F0":"#fbe9e7",borderRadius:4,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,minWidth:160}}>
+          <div><div style={{fontSize:8,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:res.sf.safe?"#00796B":"#bf360c",marginBottom:1}}>Safety Verdict{res.nBM>1?" · ×"+res.nBM+" BM":""}</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00796B":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div></div>
+          <div><div style={{fontSize:9,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00897B":"#d84315"}}>margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
+          <div style={{fontSize:9,color:res.sf.safe?"#26a69a":"#e64a19"}}>binding: {res.sf.br}</div></div>
+        </div>
+        <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,border:"1px solid "+T.bd,borderRadius:4}}>
+          <div style={{padding:"8px 12px",borderRight:"1px solid "+T.bd}}>
+            <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 1 — Single Pulse</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok}}>{numFmt(res.sf.ppM,4)}</span>
+              <span style={{fontSize:9,color:T.td}}>J/cm{"²"}</span>
+              <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok,marginLeft:"auto"}}>{res.sf.r1m.toFixed(3)}{"×"}</span>
+            </div>
+            <div style={{fontSize:8,color:T.td,marginTop:1}}>MPE({"τ"}) = {numFmt(res.sf.mt,4)} J/cm{"²"}</div>
+          </div>
+          <div style={{padding:"8px 12px"}}>
+            <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 2 — Cumulative</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok}}>{numFmt(res.sf.pF,4)}</span>
+              <span style={{fontSize:9,color:T.td}}>J/cm{"²"}</span>
+              <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok,marginLeft:"auto"}}>{res.sf.r2m.toFixed(3)}{"×"}</span>
+            </div>
+            <div style={{fontSize:8,color:T.td,marginTop:1}}>MPE(T={numFmt(res.st.tt,3)}s) = {numFmt(res.sf.mT,4)} J/cm{"²"}</div>
+          </div>
+        </div>
+      </div>
+      {/* ── Worst-case stationary advisory (galvo-stall fault mode) ── */}
+      {(function(){
+        var T_st=res.st.tt;
+        if(!isFinite(T_st)||T_st<=0)return null;
+        var w_cm=(dia/2)/10;
+        var denom=Math.PI*w_cm*w_cm;
+        if(denom<=0)return null;
+        var sRatio,sSafe,sBind,sH,sMPE;
+        if(laserMode==="cw"){
+          /* CW mode: duty cycle is ignored (CW means continuous emission). */
+          var I_peak=2*pw/denom;
+          sH=I_peak*T_st;
+          sMPE=skinMPE(wl,T_st);
+          sRatio=sH/sMPE;sSafe=sRatio<1;sBind="CW (T="+numFmt(T_st,3)+" s)";
+        }else if(prf>0){
+          var dcStatic=isFinite(dc)&&dc>0&&dc<=1?dc:1.0;
+          var H_pp=2*((pw*dcStatic)/prf)/denom;
+          var N_st=prf*T_st;
+          var H_total=H_pp*N_st;
+          var mpe1=skinMPE(wl,tau);
+          var mpeT2=skinMPE(wl,T_st);
+          var r1s=H_pp/mpe1;
+          var r2s=N_st>1?(H_total/mpeT2):r1s;
+          if(r1s>=r2s){sRatio=r1s;sBind="Rule 1 (single pulse)";sH=H_pp;sMPE=mpe1;}
+          else{sRatio=r2s;sBind="Rule 2 (cumulative)";sH=H_total;sMPE=mpeT2;}
+          sSafe=sRatio<1;
+        }else return null;
+        var bg=sSafe?"#E8F5F0":"#fff3e0";
+        var bd=sSafe?"#C4E5DF":"#ffe0b2";
+        var col=sSafe?"#00796B":"#e65100";
+        var note=sSafe?"tissue safe under galvo-stall fault":"fault-mode exceeds MPE \u2014 stall interlock recommended";
+        return <div style={{marginTop:10,padding:"6px 10px",background:bg,borderRadius:4,border:"1px solid "+bd,fontSize:10,color:col,fontFamily:"'IBM Plex Mono', monospace"}}>
+          {(sSafe?"\u2713":"\u26a0")+" Advisory \u2014 worst-case stationary: H = "+numFmt(sH,4)+" J/cm\u00b2 ("+sRatio.toFixed(3)+"\u00d7 MPE), binding "+sBind+" \u2014 "+note}
+        </div>;
+      })()}
+      {/* ── Bandwidth diagnostic (broadband-source band-boundary check) ── */}
+      {(function(){
+        if(!isFinite(bw)||bw<=0)return null;
+        var wlLo=wl-bw/2,wlHi=wl+bw/2;
+        if(wlLo<=0)return null;
+        var bands=[400,700,1050,1400,1500];
+        var straddles=null;
+        for(var bi=0;bi<bands.length;bi++){if(wlLo<bands[bi]&&wlHi>bands[bi]){straddles=bands[bi];break;}}
+        var mpeC=skinMPE(wl,tau);
+        var mpeLo=skinMPE(wlLo,tau);
+        var mpeHi=skinMPE(wlHi,tau);
+        /* Bail out if any band-edge MPE is invalid (e.g., wlLo below standard's range). */
+        if(!isFinite(mpeC)||mpeC<=0||!isFinite(mpeLo)||!isFinite(mpeHi))return null;
+        var mpeMin=Math.min(mpeC,mpeLo,mpeHi);
+        var ratio=mpeMin/mpeC;
+        if(!straddles&&ratio>=0.95)return null;
+        var msg=straddles
+          ?"Spectrum ["+wlLo.toFixed(0)+"–"+wlHi.toFixed(0)+" nm] crosses MPE band edge at "+straddles+" nm. Conservative MPE = "+numFmt(mpeMin,4)+" J/cm² ("+(ratio*100).toFixed(0)+"% of center)."
+          :"Spectrum ["+wlLo.toFixed(0)+"–"+wlHi.toFixed(0)+" nm]: per-pulse MPE varies "+(ratio*100).toFixed(0)+"% across band; verdict uses MPE at center.";
+        return <div style={{marginTop:10,padding:"6px 10px",background:"#fff8e1",borderRadius:4,border:"1px solid #ffe0b2",fontSize:10,color:"#bf6f00",fontFamily:"'IBM Plex Mono', monospace"}}>
+          {"ⓘ Broadband: "+msg}
+        </div>;
+      })()}
+      {/* Compact summary table — single table, essential info only */}
+      <div style={secH}>Scan Summary</div>
+      <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
+        ["Scan pattern",pat==="linear"?"Linear":pat==="bidi"?"Bidirectional raster":"Unidirectional raster","Scan velocity",vel.toPrecision(4)+" mm/s"],
+        ["Total scan time",numFmt(res.st.tt,4)+" s"+(res.nBM>1?" (×"+res.nBM+" BM)":""),"Grid",res.g.nx+"×"+res.g.ny+" ("+ppd+" pts/dia)"],
+        ["Peak fluence",numFmt(res.sf.pF,4)+" J/cm²"+(res.sf.anUsed?" (analytical)":""),"Max pulses at point",String(res.sf.mP)],
+        (function(){
+          var dcD=(laserMode==="cw"||!isFinite(dc)||dc<=0||dc>1)?1.0:dc;
+          var energyLabel=laserMode==="cw"?"Avg power":"Energy / sweep";
+          var energyValue=laserMode==="cw"?(numFmt(pw,4)+" W"):(numFmt((pw*dcD)/prf,4)+" J"+(dcD<1?" (dc-corrected)":""));
+          return [energyLabel,energyValue,"Dwell time ("+dwm+")",numFmt(dwm==="gaussian"?scanDwellGaussian(dia,vel):scanDwellGeometric(dia,vel),4)+" s"];
+        })(),
+        ["τᵣ (thermal)",numFmt(res.sf.tauR,4)+" s","Flyback blanking",pat==="linear"?"N/A":(blk?"Yes":"No (conservative)")],
+        ["BM-scans / loc.",String(Math.max(1,Math.round(nBM))),"Bandwidth (FWHM)",isFinite(bw)&&bw>0?bw.toFixed(0)+" nm":"—"],
+      ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bgI}}>
+        <td style={{padding:"3px 8px",fontSize:10,color:T.tm,width:"18%"}}>{row[0]}</td>
+        <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[1]}</td>
+        <td style={{padding:"3px 8px",fontSize:10,color:T.tm,width:"18%"}}>{row[2]}</td>
+        <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[3]}</td>
+      </tr>;})}</tbody></table>
+      {/* Thermal relaxation — inline if available */}
+      {isFinite(res.sf.minRv)?<div style={{marginTop:10,padding:"6px 10px",background:res.sf.rvOk?"#E8F5F0":"#fff3e0",borderRadius:4,border:"1px solid "+(res.sf.rvOk?"#C4E5DF":"#ffe0b2"),fontSize:10,color:res.sf.rvOk?"#00796B":"#e65100",fontFamily:"'IBM Plex Mono', monospace"}}>
+        {res.sf.rvOk?"✓":"⚠"}{" Thermal: τᵣ = "+numFmt(res.sf.tauR,3)+" s, min revisit = "+numFmt(res.sf.minRv,3)+" s ("+((res.sf.minRv/res.sf.tauR)).toFixed(2)+"× τᵣ) — "+(res.sf.rvOk?"tissue cools between passes":"thermal accumulation likely")}
+      </div>:null}
+      {/* Permissible limits — compact inline */}
+      {(function(){
+        var maxEp=scanMaxPulseEnergy(wl,dia,tau);
+        /* CW mode: duty cycle is ignored. */
+        var dcRange=(laserMode==="cw")?1.0:(isFinite(dc)&&dc>0&&dc<=1?dc:1.0);
+        var pwEffRange=pw*dcRange;
+        var minPRF=scanMinRepRate(wl,dia,tau,pwEffRange);
+        return <div style={{marginTop:10}}>
+          <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:4}}>Permissible Ranges</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+            {[
+              ["Max Ep",numFmt(maxEp,3)+" J",pwEffRange/prf<=maxEp*1.001],
+              ["Min PRF",numFmt(minPRF,3)+" Hz",prf>=minPRF*0.999],
+              ["Max power",numFmt(res.maxP||0,3)+" W",pwEffRange<=(res.maxP||Infinity)*1.001],
+              ["Min velocity",isFinite(res.minV)?numFmt(res.minV,3)+" mm/s":"—",isFinite(res.minV)?vel>=res.minV*0.999:true]
+            ].map(function(it,i){
+              return <div key={i} style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}}>
+                <span style={{color:T.td,fontSize:9}}>{it[0]}: </span>
+                <span style={{fontWeight:600,color:it[2]?T.ok:T.no}}>{it[1]}</span>
+              </div>;
+            })}
+          </div>
+        </div>;
+      })()}
+    </div>:null}
+
+    {/* ── Point Timing Visualization ── */}
+    <div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
+      <div style={secH}>Point Timing Diagram</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>
+          {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
+          {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
+        </div>
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+      </div>
+      {res&&prf>0?<div>
+        <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
+      </div>
+        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
+    </div>
+    </div>
+
+    {/* ═══ Region 3: Safety Notice ═══ */}
+    {/* Safety disclaimer — compact */}
+    <div style={{fontSize:9,color:T.td,lineHeight:1.6,padding:"8px 0"}}>
+      <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
+      This tool evaluates skin MPE per {STD_NAME} using Rules 1 and 2. OCT defaults assume SS-OCT 1310 nm at the tissue surface. For ophthalmic OCT, additional retinal MPE evaluation is required.{" "}
+      <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
+    </div>
+  </div>);
 }
 
-/* ═══════ PHOTOACOUSTICS SCANNING (placeholder) ═══════ */
+/* ═══════ PHOTOACOUSTICS SCANNING ═══════ */
 function PAScanContent(p){
-  var T=p.T;
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:16}}>
-      {/* ═══ Region 1: PA Scan Configuration ═══ */}
+  var T=p.T,theme=p.theme,msg=p.msg,setMsg=p.setMsg;
+  var _wl=useState("532"),wlS=_wl[0],setWlS=_wl[1]; var _wn=useState(532),wl=_wn[0],setWl=_wn[1];
+  var _d=useState("0.010"),dS=_d[0],setDS=_d[1]; var _dn=useState(0.010),dia=_dn[0],setDia=_dn[1];
+  var _tau=useState("5"),tauS=_tau[0],setTauS=_tau[1]; var _tn=useState(5e-9),tau=_tn[0],setTau=_tn[1];
+  var _tU=useState("ns"),tauU=_tU[0],setTauU=_tU[1];
+  var _prf=useState("100"),prfS=_prf[0],setPrfS=_prf[1]; var _pn=useState(100000),prf=_pn[0],setPrf=_pn[1];
+  var _pfU=useState("kHz"),prfU=_pfU[0],setPrfU=_pfU[1];
+  var _pw=useState("0.001"),pwS=_pw[0],setPwS=_pw[1]; var _pwn=useState(0.001),pw=_pwn[0],setPw=_pwn[1];
+  var _pwMode=useState("energy"),pwMode=_pwMode[0],setPwMode=_pwMode[1]; /* "power" or "energy" */
+  var _lcm=useState("pulsed"),laserMode=_lcm[0],setLaserMode=_lcm[1]; /* "pulsed" | "cw" */
+  var _epS=useState("10e-9"),epS=_epS[0],setEpS=_epS[1];
+  var _vs=useState("100"),vS=_vs[0],setVS=_vs[1]; var _vn=useState(100),vel=_vn[0],setVel=_vn[1];
+  var _vMode=useState("ascans"),velMode=_vMode[0],setVelMode=_vMode[1]; /* "ascans"|"velocity"|"dwell"|"scanrate"|"framerate" */
+  var _dw=useState("10"),dwellS=_dw[0],setDwellS=_dw[1]; var _dwN=useState(10),dwellN=_dwN[0],setDwellN=_dwN[1]; /* µs per spot */
+  var _sr=useState("5"),srateS=_sr[0],setSrateS=_sr[1]; var _srN=useState(5),srateN=_srN[0],setSrateN=_srN[1]; /* lines/s */
+  var _fr=useState("1"),frateS=_fr[0],setFrateS=_fr[1]; var _frN=useState(1),frateN=_frN[0],setFrateN=_frN[1]; /* fps */
+  var _pat=useState("raster"),pat=_pat[0],setPat=_pat[1];
+  var _lL=useState("1"),lLS=_lL[0],setLLS=_lL[1]; var _lLn=useState(1),lineL=_lLn[0],setLineL=_lLn[1]; /* B-scan width */
+  var _sH=useState("1"),scanHS=_sH[0],setScanHS=_sH[1]; var _sHn=useState(1),scanHN=_sHn[0],setScanHN=_sHn[1]; /* slow-axis range */
+  var _nL=useState("1000"),nLS=_nL[0],setNLS=_nL[1]; var _nLn=useState(1000),nLines=_nLn[0],setNLines=_nLn[1]; /* B-scans per volume */
+  var _htn=useState(1/999),hatch=_htn[0],setHatch=_htn[1]; /* derived: scanHN/(nLines-1) */
+  /* ── PA-specific state ── */
+  var _modality=useState("or-pam"),modality=_modality[0],setModality=_modality[1]; /* "or-pam" | "ar-pam" | "pact" */
+  var _nBM=useState("1"),nBMS=_nBM[0],setNBMS=_nBM[1]; var _nBMn=useState(1),nBM=_nBMn[0],setNBM=_nBMn[1]; /* averages per location */
+  var _nA=useState("1000"),nAS=_nA[0],setNAS=_nA[1]; var _nAn=useState(1000),nA=_nAn[0],setNA=_nAn[1]; /* A-lines per B-scan */
+  /* PACT-specific state (used when modality === "pact") */
+  var _pactA=useState("1.0"),pactAS=_pactA[0],setPactAS=_pactA[1]; var _pactAn=useState(1.0),pactA=_pactAn[0],setPactA=_pactAn[1]; /* illumination footprint cm² */
+  var _pactE=useState("20e-3"),pactES=_pactE[0],setPactES=_pactE[1]; var _pactEn=useState(20e-3),pactE=_pactEn[0],setPactE=_pactEn[1]; /* per-pulse energy J */
+  var _pactT=useState("10"),pactTS=_pactT[0],setPactTS=_pactT[1]; var _pactTn=useState(10),pactT=_pactTn[0],setPactT=_pactTn[1]; /* exposure duration s */
+
+  var _ppd=useState(8),ppd=_ppd[0],setPpd=_ppd[1];
+  var _dwm=useState("gaussian"),dwm=_dwm[0],setDwm=_dwm[1];
+  var _blk=useState(false),blk=_blk[0],setBlk=_blk[1];
+  var _res=useState(null),res=_res[0],setRes=_res[1];
+  var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
+  var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
+
+  /* Scan visualization feature toggles */
+  var _svGrid=useState(true),svGrid=_svGrid[0],setSvGrid=_svGrid[1];
+  var _svBeam=useState(true),svBeam=_svBeam[0],setSvBeam=_svBeam[1];
+  var _svFlyback=useState(true),svFlyback=_svFlyback[0],setSvFlyback=_svFlyback[1];
+  var _svAnts=useState(false),svAnts=_svAnts[0],setSvAnts=_svAnts[1];
+  var _antOff=useState(0),antOff=_antOff[0],setAntOff=_antOff[1];
+  useEffect(function(){
+    if(!svAnts)return;
+    var f;var tick=function(){setAntOff(function(p){return(p+0.5)%20;});f=requestAnimationFrame(tick);};
+    f=requestAnimationFrame(tick);
+    return function(){cancelAnimationFrame(f);};
+  },[svAnts]);
+
+  var lb={display:"block",fontSize:11,fontWeight:500,color:T.tm,marginBottom:3,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
+  var ip={width:"100%",padding:"6px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none",boxSizing:"border-box"};
+  var secH={fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.08em",color:T.td,marginBottom:8,paddingBottom:4,borderBottom:"1px solid "+T.bd,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"};
+  var thS={padding:"5px 8px",textAlign:"left",borderBottom:"2px solid "+T.bd,color:T.td,fontSize:9,fontWeight:700};
+  var tdS={padding:"5px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace"};
+
+  function upN(setS,setN,s){setS(s);var v=Number(s);if(isFinite(v))setN(v);setDirty(true);}
+  function upTau(s){setTauS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<DUR_UNITS.length;i++){if(DUR_UNITS[i].id===tauU)m=DUR_UNITS[i].toS;}setTau(v*m);}setDirty(true);}
+  function upPrf(s){setPrfS(s);var v=Number(s);if(isFinite(v)&&v>0){var m=1;for(var i=0;i<FREQ_UNITS.length;i++){if(FREQ_UNITS[i].id===prfU)m=FREQ_UNITS[i].toHz;}setPrf(v*m);}setDirty(true);}
+  /* Power/energy toggle helpers */
+  function upPw(s){setPwS(s);var v=Number(s);if(isFinite(v)&&v>0){setPw(v);if(prf>0)setEpS((v/prf).toExponential(4));}setDirty(true);}
+  function upEp(s){setEpS(s);var v=Number(s);if(isFinite(v)&&v>0&&prf>0){var P=v*prf;setPw(P);setPwS(P.toPrecision(4));}setDirty(true);}
+  /* When PRF changes and mode is energy, recompute power */
+  useEffect(function(){if(pwMode==="energy"&&prf>0){var v=Number(epS);if(isFinite(v)&&v>0){setPw(v*prf);setPwS((v*prf).toPrecision(4));}}},[prf,pwMode,epS]);
+  /* When PRF changes and mode is power, update displayed Ep */
+  useEffect(function(){if(pwMode==="power"&&prf>0&&pw>0){setEpS((pw/prf).toExponential(4));}},[prf,pw,pwMode]);
+  /* Keep hatch in sync with scan height and scan line count */
+  useEffect(function(){
+    if((pat==="raster"||pat==="bidi")&&scanHN>0&&nLines>=1)setHatch(nLines>1?scanHN/(nLines-1):scanHN);
+  },[pat,scanHN,nLines]);
+  /* Keep vel in sync for all derived velocity input modes */
+  useEffect(function(){
+    var v=0;
+    if(velMode==="ascans"&&nA>0&&lineL>0&&prf>0) v=lineL*prf/nA;
+    else if(velMode==="dwell"&&dwellN>0&&dia>0) v=dia/(dwellN*1e-6);
+    else if(velMode==="scanrate"&&srateN>0&&lineL>0) v=srateN*lineL;
+    else if(velMode==="framerate"&&frateN>0&&lineL>0) v=lineL*(pat==="linear"?1:nLines)*frateN;
+    if(v>0&&isFinite(v)){setVel(v);setVS(v.toPrecision(4));}
+  },[velMode,nA,prf,dwellN,srateN,frateN,lineL,nLines,dia,pat]);
+
+  /* Selected point for timing diagram (null = worst-case) */
+  var _selPt=useState(null),selPt=_selPt[0],setSelPt=_selPt[1];
+  var _svHov=useState(null),svHov=_svHov[0],setSvHov=_svHov[1];
+  var _selXS=useState(""),selXS=_selXS[0],setSelXS=_selXS[1];
+  var _selYS=useState(""),selYS=_selYS[0],setSelYS=_selYS[1];
+  var svRef=useRef(null);
+
+  var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
+  var _workerRef=useRef(null);
+
+  /* ── Web Worker: runs scanning computation off the main thread ── */
+  function getWorker(){
+    if(_workerRef.current)return _workerRef.current;
+    if(typeof __ENGINE_SOURCE__==="undefined")return null;
+    var workerCode=__ENGINE_SOURCE__+"\n"+[
+      "self.onmessage=function(e){",
+      "  var p=e.data;",
+      "  MPEEngine.loadStandard(p.std);",
+      "  var E=MPEEngine;",
+      "  var isCW=p.prf===0&&p.tau===0;",
+      "  var Ep=p.prf>0?p.pw/p.prf:0;",
+      "  var beam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
+      "    pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
+      "  /* Segment-superposition framework: create scan params for all patterns */",
+      "  var sepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,avg_power_W:p.pw,v_scan_mm_s:p.vel,",
+      "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
+      "     pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:p.vel*5};",
+      "  /* Only build segments if separable path not available */",
+      "  function bldSegs(pat,x0,y0,lL,nL,h,sv,jv,d,bl){",
+      "    if(pat==='linear')return E.buildLinearScan(x0,y0,0,lL,sv,d);",
+      "    return E.buildRasterScan(x0,y0,lL,nL,h,sv,jv,d,bl);}",
+      "  var segs=sepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,p.vel,p.vel*5,p.dia,p.blk);",
+      "  var cr=E.computeScanFluence(beam,segs,p.effPpd,sepP);",
+      "  if(!cr){self.postMessage({error:'Computation returned null'});return;}",
+      "  var eg=cr.grid,s=cr.stats;",
+      "  var minV=isCW?(s.min_velocity||p.vel):0;",
+      "  var sfBeam={wl_nm:p.wl,d_1e_mm:p.dia,tau_s:p.tau,is_cw:isCW,pulse_energy_J:Ep,prf_hz:p.prf,avg_power_W:p.pw};",
+      "  var sf=E.evaluateScanSafety(eg,sfBeam,s.total_time_s,p.dwm,minV,{v_mm_s:p.vel,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});",
+      "  /* Max permissible power */",
+      "  var unitBeam={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,",
+      "    pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,is_cw:isCW};",
+      "  var unitSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:p.prf>0?1/p.prf:0,avg_power_W:1,v_scan_mm_s:p.vel,",
+      "     x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
+      "     pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:p.vel*5};",
+      "  var ucr=E.computeScanFluence(unitBeam,sepP?[]:segs,p.auxPpd,unitSepP);",
+      "  var maxP=Infinity;",
+      "  if(ucr){var upF=0;for(var i=0;i<ucr.grid.fluence.length;i++)if(ucr.grid.fluence[i]>upF)upF=ucr.grid.fluence[i];",
+      "    var mpeT=E.skinMPE(p.wl,ucr.stats.total_time_s||s.total_time_s);",
+      "    if(upF>0)maxP=mpeT/upF;",
+      "    if(!isCW&&p.prf>0){var w2=p.dia/Math.sqrt(2);var maxPr1=E.skinMPE(p.wl,p.tau)*p.prf*Math.PI*w2*w2/(2*100);",
+      "      if(maxPr1<maxP)maxP=maxPr1;}}",
+      "  /* Min safe velocity bisection */",
+      "  var minVel=0;",
+      "  function testV(tv){",
+      "    var tSepP={d_1e_mm:p.dia,prf_hz:p.prf||0,pulse_energy_J:Ep,avg_power_W:p.pw,v_scan_mm_s:tv,",
+      "       x0:0,y0:0,line_length_mm:p.lineL,n_lines:p.nLines||1,hatch_mm:p.hatch||0,",
+      "       pattern:p.pat,blanking:p.blk,is_cw:isCW,v_jump_mm_s:tv*5};",
+      "    var ts2=tSepP?[]:bldSegs(p.pat,0,0,p.lineL,p.nLines,p.hatch,tv,tv*5,p.dia,p.blk);",
+      "    var tb={d_1e_mm:p.dia,wl_nm:p.wl,tau_s:p.tau,prf_hz:p.prf,pulse_energy_J:Ep,avg_power_W:p.pw,is_cw:isCW};",
+      "    var tcr=E.computeScanFluence(tb,ts2,p.auxPpd,tSepP);",
+      "    if(!tcr)return true;",
+      "    var tmv=isCW?(tcr.stats.min_velocity||tv):0;",
+      "    var tsf=E.evaluateScanSafety(tcr.grid,sfBeam,tcr.stats.total_time_s,p.dwm,tmv,{v_mm_s:tv,line_spacing_mm:p.hatch||0,n_lines:p.nLines||1});",
+      "    return tsf.safe;}",
+      "  if(testV(1e6)){var vLo=0.01,vHi=1e6;",
+      "    for(var bi=0;bi<p.maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}",
+      "    minVel=vHi;}else{minVel=Infinity;}",
+      "  /* Pulse positions for visualization (generated from scan params, not segments) */",
+      "  var pulseArr=[];",
+      "  if(!isCW&&p.prf>0){",
+      "    var maxSP=5000;",
+      "    var ps_mm=p.vel/p.prf;",
+      "    var nPulsesLine=Math.max(1,Math.floor((p.lineL/p.vel)*p.prf));",
+      "    var totalEst=nPulsesLine*(p.nLines||1);",
+      "    var pStride=Math.max(1,Math.ceil(totalEst/maxSP));",
+      "    var nL=p.nLines||1,hh=p.hatch||0,tAcc=0;",
+      "    for(var li=0;li<nL&&pulseArr.length<maxSP;li++){",
+      "      var ly=li*hh;",
+      "      var scanDir=1; /* raster scans are unidirectional */",
+      "      var xStart=scanDir===1?0:p.lineL;",
+      "      for(var ki=0;ki<nPulsesLine&&pulseArr.length<maxSP;ki+=pStride){",
+      "        var px=xStart+scanDir*ki*ps_mm;",
+      "        pulseArr.push({t:tAcc+ki/p.prf,x:px,y:ly,si:li});",
+      "      }",
+      "      tAcc+=p.lineL/p.vel;",
+      "      if(li<nL-1)tAcc+=hh/(p.vel*5);",
+      "    }",
+      "    if(pulseArr.length>=maxSP)p.notes.push('Showing '+maxSP+' of ~'+Math.round(totalEst)+' pulses');",
+      "  }",
+      "  /* Coarse segment array for scan path visualization only */",
+      "  var vizSegs=[];",
+      "  var MAX_VIZ_SEGS=5000;",
+      "  var nL2=p.nLines||1;",
+      "  var ptsPerLine=Math.ceil(p.lineL/p.dia);",
+      "  /* Budget: distribute MAX_VIZ_SEGS across lines, skip lines if too many */",
+      "  var lineStride=Math.max(1,Math.ceil(nL2*Math.min(ptsPerLine,200)/MAX_VIZ_SEGS));",
+      "  var vizStep=Math.max(1,Math.ceil(ptsPerLine/Math.min(200,Math.floor(MAX_VIZ_SEGS/Math.ceil(nL2/lineStride)))));",
+      "  for(var vli=0;vli<nL2&&vizSegs.length<MAX_VIZ_SEGS;vli+=lineStride){",
+      "    var vly=vli*(p.hatch||0);",
+      "    var vDir=1; /* raster is unidirectional */",
+      "    var vx0=vDir===1?0:p.lineL;",
+      "    var nVizPts=Math.ceil(ptsPerLine/vizStep);",
+      "    for(var vsi=0;vsi<=nVizPts&&vizSegs.length<MAX_VIZ_SEGS;vsi++){",
+      "      vizSegs.push({x:vx0+vDir*vsi*vizStep*p.dia,y:vly,a:vDir===1?0:Math.PI,v:p.vel});",
+      "    }",
+      "  }",
+      "  /* Transfer TypedArrays for zero-copy performance */",
+      "  var result={",
+      "    g:{nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm},",
+      "    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,",
+      "    st:{tt:s.total_time_s,tp:s.total_pulses||0,mv:s.min_velocity,stride:s.stride||1},",
+      "    sf:{safe:sf.safe,wr:sf.worst_ratio,wx:sf.worst_x_mm,wy:sf.worst_y_mm,",
+      "      br:sf.binding_rule,sm:sf.safety_margin,mt:sf.mpe_tau,mT:sf.mpe_T,",
+      "      pF:sf.peak_fluence,ppM:sf.peak_pulse_H_max,mP:sf.max_pulses,",
+      "      r1m:sf.rule1_max_ratio,r2m:sf.rule2_max_ratio,",
+      "      minRv:sf.min_revisit_s,rvPts:sf.revisit_points,tauR:sf.thermal_relax_s,rvOk:sf.revisit_adequate,",
+      "      anPeak:sf.analytical_peak,anUsed:sf.analytical_used},",
+      "    maxP:maxP,minVel:minVel,pulseArr:pulseArr,segs:vizSegs,notes:p.notes};",
+      "  self.postMessage(result,[eg.fluence.buffer,eg.pulse_count.buffer,eg.peak_pulse_H.buffer,eg.last_visit_t.buffer,eg.min_revisit_s.buffer]);",
+      "};"
+    ].join("\n");
+    try{
+      var blob=new Blob([workerCode],{type:"application/javascript"});
+      _workerRef.current=new Worker(URL.createObjectURL(blob));
+    }catch(err){
+      if(typeof console!=="undefined")console.warn("Web Worker creation failed:",err);
+      _workerRef.current=null;
+    }
+    return _workerRef.current;
+  }
+
+  var SCAN_WORKER_TIMEOUT_MS = 60000; // 60-second safety timeout
+  var _workerTimeout = useRef(null);
+
+  // Clean up Worker and timeout when ScanTab unmounts (e.g., standard change via key={stdVer})
+  useEffect(function(){
+    return function(){
+      if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
+      if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+    };
+  },[]);
+
+  function calculate(){
+    // ── Input validation (safety-critical) ──
+    if(!isFinite(wl)||wl<180||wl>1e6){alert("Wavelength must be 180–1,000,000 nm");return;}
+    if(!isFinite(dia)||dia<=0){alert("Beam diameter must be > 0");return;}
+    if(!isFinite(pw)||pw<=0){alert(pwMode==="energy"?"Pulse energy must be > 0 (and PRF must be > 0 to compute average power)":"Average power must be > 0");return;}
+    if(laserMode==="pulsed"){
+      if(!isFinite(prf)||prf<0){alert("Repetition rate must be ≥ 0");return;}
+      if(!isFinite(tau)||tau<=0){alert("Pulse duration must be > 0");return;}
+    }
+    // Scan area
+    if(!isFinite(lineL)||lineL<=0){alert(pat!=="linear"?"Scan width must be > 0":"Scan length must be > 0");return;}
+    if(pat!=="linear"){
+      if(!isFinite(scanHN)||scanHN<=0){alert("Scan height must be > 0");return;}
+      if(!isFinite(nLines)||nLines<1){alert("Number of scan lines must be ≥ 1");return;}
+    }
+    // Effective scan parameters (nLines and hatch are kept in sync via useEffect)
+    var effNLines=pat!=="linear"?Math.max(1,nLines):1;
+    var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
+    // Effective scan velocity from selected input mode
+    var effVel;
+    if(velMode==="ascans"){
+      if(!isFinite(nA)||nA<=0){alert("A-lines per B-scan must be > 0");return;}
+      if(prf<=0||lineL<=0){alert("PRF and B-scan width must be > 0");return;}
+      effVel=lineL*prf/nA;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid PRF or B-scan width");return;}
+    }else if(velMode==="velocity"){
+      if(!isFinite(vel)||vel<=0){alert("Scan velocity must be > 0");return;}
+      effVel=vel;
+    }else if(velMode==="dwell"){
+      if(!isFinite(dwellN)||dwellN<=0){alert("Dwell time must be > 0");return;}
+      effVel=dia/(dwellN*1e-6);
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid dwell time — check beam diameter");return;}
+    }else if(velMode==="scanrate"){
+      if(!isFinite(srateN)||srateN<=0){alert("Line scan rate must be > 0");return;}
+      effVel=srateN*lineL;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid line scan rate or scan width");return;}
+    }else{
+      if(!isFinite(frateN)||frateN<=0){alert("Frame rate must be > 0");return;}
+      effVel=lineL*(pat==="linear"?1:nLines)*frateN;
+      if(!isFinite(effVel)||effVel<=0){alert("Invalid frame rate or scan parameters");return;}
+    }
+    setCmp(true);setDirty(false);setPerfNote("");
+
+    // ── Performance estimation ──
+    // For separable-eligible scans, compute estimates from params directly
+    // (avoids OOM from segment construction for micro-beams)
+    var calcPrf=laserMode==="cw"?0:prf;
+    var calcTau=laserMode==="cw"?0:tau;
+    var isCWEst=laserMode==="cw";
+    var canSep=((!isCWEst&&calcPrf>0)||(isCWEst&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+    var segsEst=canSep?[]:null;
+    var estTime,estPulses;
+    if(canSep){
+      var lineDurEst=lineL/effVel;
+      var nLEst=pat==="linear"?1:effNLines;
+      var jumpVEst=effVel*5;
+      var hatchEst=pat==="linear"?0:(effHatch||dia);
+      var flybackEst=pat==="linear"?0:(pat==="bidi"?(hatchEst/jumpVEst):(lineL/jumpVEst+hatchEst/jumpVEst));
+      estTime=nLEst*lineDurEst+(nLEst-1)*flybackEst;
+      estPulses=calcPrf*nLEst*lineDurEst;
+    }else{
+      /* Non-separable (CW): guard against huge nLines — use analytical estimation if >10000 lines */
+      if(effNLines>10000){
+        var lineDurEst2=lineL/effVel;
+        var jumpVEst2=effVel*5;
+        var hatchEst2=pat==="linear"?0:(effHatch||dia);
+        var flybackEst2=pat==="linear"?0:(pat==="bidi"?(hatchEst2/jumpVEst2):(lineL/jumpVEst2+hatchEst2/jumpVEst2));
+        estTime=effNLines*lineDurEst2+(effNLines-1)*flybackEst2;
+        estPulses=0; /* CW — no discrete pulses */
+        segsEst=[];
+      }else{
+        if(pat==="linear") segsEst=scanBuildLinear(0,0,0,lineL,effVel,dia);
+        else segsEst=scanBuildRaster(0,0,lineL,effNLines,effHatch,effVel,effVel*5,dia,blk);
+        estTime=0;for(var ei=0;ei<segsEst.length;ei++)estTime+=dia/segsEst[ei].v;
+        estPulses=calcPrf*estTime;
+      }
+    }
+    var sigma=dia/(2*Math.sqrt(2)),estDx=dia/ppd;
+    var trunc=Math.ceil(3*sigma/estDx);
+    var estOps=canSep?0:estPulses*Math.PI*trunc*trunc; // separable path doesn't scale with ops
+    var effPpd=ppd,notes=[];
+    if(!canSep&&estOps>_E.OP_BUDGET&&ppd>3){
+      for(effPpd=ppd-1;effPpd>=3;effPpd--){
+        var dx2=dia/effPpd,tr2=Math.ceil(3*sigma/dx2);
+        if(estPulses*Math.PI*tr2*tr2<_E.OP_BUDGET)break;
+      }
+      effPpd=Math.max(3,effPpd);
+      notes.push("Grid auto-reduced to "+effPpd+" pts/dia for "+Math.round(estPulses/1000)+"k pulses");
+    }
+    /* separable engine note removed — implementation detail not shown to user */
+    else if(estPulses>_E.DEFAULT_MAX_COMPUTE_PULSES){
+      var estStride=Math.ceil(estPulses/_E.DEFAULT_MAX_COMPUTE_PULSES);
+      notes.push("Pulse subsampling active (stride="+estStride+"): computing 1 in every "+estStride+" pulses for "+Math.round(estPulses/1000)+"k total");
+    }
+    var auxPpd=Math.min(effPpd,3);
+    var maxBisect=canSep?3:(estPulses>100000?6:estPulses>10000?8:15);
+
+    // ── Try Web Worker (off main thread) ──
+    var worker=getWorker();
+    if(worker){
+      var params={std:_std,wl:wl,dia:dia,tau:calcTau,prf:calcPrf,pw:pw,
+        pat:pat,lineL:lineL,nLines:effNLines,hatch:effHatch,vel:effVel,dwm:dwm,blk:blk,
+        effPpd:effPpd,auxPpd:auxPpd,maxBisect:maxBisect,notes:notes,estPulses:estPulses};
+      // Safety timeout: kill Worker if it takes too long
+      if(_workerTimeout.current)clearTimeout(_workerTimeout.current);
+      _workerTimeout.current=setTimeout(function(){
+        if(_workerRef.current){_workerRef.current.terminate();_workerRef.current=null;}
+        setPerfNote("Computation timed out after 60 seconds. Try reducing line count, increasing hatch spacing, or lowering PRF.");
+        setCmp(false);
+      },SCAN_WORKER_TIMEOUT_MS);
+      worker.onmessage=function(ev){
+        if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+        var r=ev.data;
+        if(r.error){if(typeof console!=="undefined")console.error("Worker error:",r.error);setCmp(false);return;}
+        /* Reconstruct grid with transferred TypedArrays */
+        var g={nx:r.g.nx,ny:r.g.ny,dx:r.g.dx,xn:r.g.xn,yn:r.g.yn,
+          flu:r.flu,pc:r.pc,ppH:r.ppH,lvt:r.lvt,mrv:r.mrv};
+        var isCW2=laserMode==="cw";
+        var beam2={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?pw/calcPrf:0,P:pw,cw:isCW2};
+        if(r.notes&&r.notes.length>0)setPerfNote(r.notes.join(". ")+".");
+        /* PA: scale cumulative quantities by averages per location
+           — peak fluence and pulse count scale linearly with N_BM,
+             but the cumulative MPE must be recomputed at the new total exposure time
+             because skinMPE(wl,t) has t-regime structure. */
+        var nBMm=Math.max(1,Math.round(nBM));
+        var sfAdj=r.sf;
+        var stAdj=Object.assign({},r.st,{tt:r.st.tt*nBMm});
+        if(nBMm>1){
+          var T_total_pa=r.st.tt*nBMm;
+          var newMPE_T_pa=skinMPE(wl,T_total_pa);
+          var newPF_pa=r.sf.pF*nBMm;
+          sfAdj=Object.assign({},r.sf);
+          sfAdj.pF=newPF_pa;
+          sfAdj.mT=newMPE_T_pa;
+          sfAdj.r2m=isFinite(newMPE_T_pa)&&newMPE_T_pa>0?(newPF_pa/newMPE_T_pa):Infinity;
+          sfAdj.mP=r.sf.mP*nBMm;
+          sfAdj.safe=Math.max(sfAdj.r1m,sfAdj.r2m)<=1;
+          sfAdj.sm=1-Math.max(sfAdj.r1m,sfAdj.r2m);
+          sfAdj.br=sfAdj.r1m>=sfAdj.r2m?"Rule 1":"Rule 2";
+        }
+        setRes({g:g,st:stAdj,sf:sfAdj,segs:r.segs,beam:beam2,maxP:r.maxP,minV:r.minVel,
+          pulses:r.pulseArr,effPpd:effPpd,effNLines:effNLines,effHatch:effHatch,effVel:effVel,nBM:nBMm});
+        setCmp(false);
+      };
+      worker.onerror=function(err){
+        if(_workerTimeout.current){clearTimeout(_workerTimeout.current);_workerTimeout.current=null;}
+        if(typeof console!=="undefined")console.error("Worker error:",err);
+        /* Fall back to main-thread computation */
+        calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);
+      };
+      worker.postMessage(params);
+      return;
+    }
+
+    // ── Fallback: main-thread computation ──
+    setTimeout(function(){calculateMainThread(segsEst,effPpd,auxPpd,maxBisect,notes);},60);
+  }
+
+  function calculateMainThread(segs,effPpd,auxPpd,maxBisect,notes){
+    try{
+      var calcPrf=laserMode==="cw"?0:prf;
+      var calcTau=laserMode==="cw"?0:tau;
+      var Ep=calcPrf>0?pw/calcPrf:0;
+      var isCW=laserMode==="cw";
+      var beam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
+
+      // Derive effective scan params (same logic as calculate())
+      var effNLines=pat!=="linear"?Math.max(1,nLines):1;
+      var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
+      var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
+
+      // Build separable params if applicable (same logic as Worker)
+      var canSep=((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      function mkSepP(vv,ep,optP){
+        if(!canSep)return null;
+        return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,avg_power_W:optP!==undefined?optP:pw,v_scan_mm_s:vv,
+          x0:0,y0:0,line_length_mm:lineL,n_lines:pat==="linear"?1:effNLines,
+          hatch_mm:pat==="linear"?0:effHatch,pattern:pat,blanking:blk,is_cw:isCW,v_jump_mm_s:vv*5};
+      }
+
+      var cr=scanCompute(beam,canSep?[]:segs,effPpd,mkSepP(effVel));
+      if(cr){
+        var minV=isCW?(cr.st.mv||effVel):0;
+        var sf=scanSafety(cr.g,beam,cr.st.tt,dwm,minV,{v_mm_s:effVel,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
+        var unitBeam={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:calcPrf>0?1/calcPrf:0,P:1,cw:isCW};
+        var unitCr=scanCompute(unitBeam,canSep?[]:segs,auxPpd,mkSepP(effVel,calcPrf>0?1/calcPrf:0,1));
+        var maxP=Infinity;
+        if(unitCr){
+          var upF=0;for(var ui=0;ui<unitCr.g.nx*unitCr.g.ny;ui++)if(unitCr.g.flu[ui]>upF)upF=unitCr.g.flu[ui];
+          var mpeT=skinMPE(wl,unitCr.st.tt||cr.st.tt);
+          if(upF>0)maxP=mpeT/upF;
+          if(!isCW&&calcPrf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,calcTau)*calcPrf*Math.PI*w22*w22/(2*100);
+            if(maxPr1<maxP)maxP=maxPr1;}
+        }
+        var minVel=0;
+        if(!canSep&&effNLines<=10000){
+          // Only run bisection on the main thread for brute-force paths
+          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
+          function testV(tv){
+            var ts;
+            if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
+            else ts=scanBuildRaster(0,0,lineL,effNLines,effHatch,tv,tv*5,dia,blk);
+            var tb={wl:wl,d:dia,tau:calcTau,prf:calcPrf,Ep:Ep,P:pw,cw:isCW};
+            var tcr2=scanCompute(tb,ts,auxPpd);
+            if(!tcr2)return true;
+            var tmv=isCW?(tcr2.st.mv||tv):0;
+            var tsf2=scanSafety(tcr2.g,tb,tcr2.st.tt,dwm,tmv,{v_mm_s:tv,line_spacing_mm:pat==="linear"?0:effHatch,n_lines:pat==="linear"?1:effNLines});
+            return tsf2.safe;
+          }
+          if(testV(1e6)){var vLo=0.01,vHi=1e6;
+            for(var bi=0;bi<maxBisect&&(vHi-vLo)/vLo>0.01;bi++){var vMid=(vLo+vHi)/2;if(testV(vMid))vHi=vMid;else vLo=vMid;}
+            minVel=vHi;}else{minVel=Infinity;}
+        }
+
+        // Generate pulse positions and viz segments from scan params (not from segment array)
+        var pulseArr=[];
+        if(!isCW&&calcPrf>0){
+          var maxSP2=5000,ps_mm2=effVel/calcPrf;
+          var nPL2=Math.max(1,Math.floor((lineL/effVel)*calcPrf));
+          var nLV=pat==="linear"?1:effNLines;
+          var totalEst2=nPL2*nLV;
+          var pStride2=Math.max(1,Math.ceil(totalEst2/maxSP2));
+          var tAcc2=0;
+          for(var li2=0;li2<nLV&&pulseArr.length<maxSP2;li2++){
+            var ly2=li2*(pat==="linear"?0:effHatch);
+            for(var ki2=0;ki2<nPL2&&pulseArr.length<maxSP2;ki2+=pStride2){
+              pulseArr.push({t:tAcc2+ki2/calcPrf,x:ki2*ps_mm2,y:ly2,si:li2});
+            }
+            tAcc2+=lineL/effVel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:effHatch)/(effVel*5);
+          }
+        }
+        // Capped viz segments
+        var vizSegs2=[];
+        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:effNLines;
+        var ppl2=Math.ceil(lineL/dia);
+        var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
+        var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
+        for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
+          var vly2=vl2*(pat==="linear"?0:effHatch);
+          var nVP2=Math.ceil(ppl2/vStp2);
+          for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
+            vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+          }
+        }
+
+        if(notes.length>0)setPerfNote(notes.join(". ")+".");
+        /* PA: scale cumulative quantities by averages per location
+           (see worker-callback variant for the MPE-recomputation rationale) */
+        var nBMm2=Math.max(1,Math.round(nBM));
+        var sfMt=sf;
+        var stMt=Object.assign({},cr.st,{tt:cr.st.tt*nBMm2});
+        if(nBMm2>1){
+          var T_total_pa2=cr.st.tt*nBMm2;
+          var newMPE_T_pa2=skinMPE(wl,T_total_pa2);
+          var newPF_pa2=sf.pF*nBMm2;
+          sfMt=Object.assign({},sf);
+          sfMt.pF=newPF_pa2;
+          sfMt.mT=newMPE_T_pa2;
+          sfMt.r2m=isFinite(newMPE_T_pa2)&&newMPE_T_pa2>0?(newPF_pa2/newMPE_T_pa2):Infinity;
+          sfMt.mP=sf.mP*nBMm2;
+          sfMt.safe=Math.max(sfMt.r1m,sfMt.r2m)<=1;
+          sfMt.sm=1-Math.max(sfMt.r1m,sfMt.r2m);
+          sfMt.br=sfMt.r1m>=sfMt.r2m?"Rule 1":"Rule 2";
+        }
+        setRes({g:cr.g,st:stMt,sf:sfMt,segs:vizSegs2,beam:beam,maxP:maxP,minV:minVel,
+          pulses:pulseArr,effPpd:effPpd,effNLines:effNLines,effHatch:effHatch,effVel:effVel,nBM:nBMm2});
+      }
+    }catch(err){if(typeof console!=="undefined")console.error("Calculation error:",err);}
+    setCmp(false);
+  }
+
+  /* ── ECharts theme config (Paul Tol High-Contrast) ── */
+  var ec=useMemo(function(){
+    var dk=theme==="dark";
+    return {
+      bg:dk?"#14171A":"#FAFAFA",
+      panel:dk?"#1E1E1E":"#FFFFFF",
+      grid:dk?"#2E2E2E":"#E8E8E8",
+      spine:dk?"#AAAAAA":"#444444",
+      tick:dk?"#9CA3AF":"#555555",
+      title:dk?"#E0E0E0":"#222222",
+      stem:dk?"#6CB3FF":"#004488",
+      stemShaft:dk?"rgba(187,187,187,0.55)":"rgba(136,136,136,0.55)",
+      cumLine:dk?"#EE99AA":"#BB5566",
+      mpe:dk?"#DDAA33":"#DDAA33",
+      sub:dk?"#888888":"#777777",
+      navBg:dk?"#252525":"#F0F0F0",
+      navWin:dk?"rgba(108,179,255,0.12)":"rgba(0,68,136,0.08)",
+      navBorder:dk?"rgba(108,179,255,0.4)":"rgba(0,68,136,0.35)"
+    };
+  },[theme]);
+
+  var ptTimRef=useRef(null);
+  var _chartRef=useRef(null);
+
+  /* Reset selPt when new results arrive */
+  useEffect(function(){setSelPt(null);},[res]);
+
+  /* ── Dispose ECharts instance on unmount ── */
+  useEffect(function(){
+    return function(){
+      if(_chartRef.current){_chartRef.current.dispose();_chartRef.current=null;}
+    };
+  },[]);
+
+  /* ── Point Timing Diagram: pulse arrivals + cumulative fluence at a point ── */
+  useEffect(function(){
+    if(!res||!ptTimRef.current||typeof echarts==="undefined")return;
+    if(prf<=0||pw<=0)return;
+
+    var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
+    var Ep=pw/prf;
+    var H0=2*Ep/(Math.PI*w2)*100; // J/cm\u00b2
+    var ps=vel/prf; // pulse spacing mm
+    var trunc=3*sigma;
+    var trunc2=trunc*trunc;
+    var nPL=Math.max(1,Math.floor((lineL/vel)*prf));
+    var lineDur=lineL/vel;
+    var nL=pat==="linear"?1:(res.effNLines||1);
+    var hh=pat==="linear"?0:(res.effHatch||hatch);
+    var jumpV=vel*5;
+    var flybackTime=(pat==="linear"||nL<=1)?0:(lineL/jumpV+hh/jumpV);
+
+    // Determine observation point
+    var obsX,obsY;
+    if(selPt){obsX=selPt.x;obsY=selPt.y;}
+    else{
+      var g=res.g,maxF=0,maxIdx=0;
+      for(var gi=0;gi<g.nx*g.ny;gi++){if(g.flu[gi]>maxF){maxF=g.flu[gi];maxIdx=gi;}}
+      var giy=Math.floor(maxIdx/g.nx),gix=maxIdx-giy*g.nx;
+      obsX=g.xn+gix*g.dx;obsY=g.yn+giy*g.dx;
+    }
+
+    // Collect pulse contributions at the observation point
+    var events=[];
+    var tLineStart=0;
+    for(var li=0;li<nL;li++){
+      var yLine=li*hh;
+      var dy=obsY-yLine;
+      var dy2=dy*dy;
+      if(dy2>trunc2){tLineStart+=lineDur+(li<nL-1?flybackTime:0);continue;}
+      var crossAtt=Math.exp(-2*dy2/w2);
+      var scanDir=1;
+      var xStart=scanDir===1?0:lineL;
+      var kCenter=(obsX-xStart)/(scanDir*ps);
+      var kRange=trunc/ps;
+      var kMin=Math.max(0,Math.ceil(kCenter-kRange));
+      var kMax=Math.min(nPL-1,Math.floor(kCenter+kRange));
+      for(var k=kMin;k<=kMax;k++){
+        var xPulse=xStart+scanDir*k*ps;
+        var dx=obsX-xPulse;
+        var dx2=dx*dx;
+        if(dx2>trunc2)continue;
+        var alongAtt=Math.exp(-2*dx2/w2);
+        var Hdep=H0*alongAtt*crossAtt;
+        if(Hdep<H0*1e-6)continue;
+        var tPulse=tLineStart+k/prf;
+        events.push({t:tPulse,H:Hdep});
+      }
+      tLineStart+=lineDur+(li<nL-1?flybackTime:0);
+    }
+
+    events.sort(function(a,b){return a.t-b.t;});
+    var totalTime=res.st.tt;
+    var mpeVal=skinMPE(wl,totalTime);
+
+    // Build cumulative step data and impulse data
+    var cumData=[];
+    var impulseData=[];
+    var cumH=0;
+    cumData.push([0,0]);
+    for(var ei=0;ei<events.length;ei++){
+      var ev=events[ei];
+      cumData.push([ev.t,cumH]);
+      cumH+=ev.H;
+      cumData.push([ev.t,cumH]);
+      impulseData.push([ev.t,ev.H]);
+    }
+    cumData.push([totalTime,cumH]);
+
+    // Scale time for readability
+    var tScale=1,tUnit="s";
+    if(totalTime<0.01){tScale=1e6;tUnit="\u00b5s";}
+    else if(totalTime<10){tScale=1e3;tUnit="ms";}
+
+    var cumScaled=cumData.map(function(p){return [p[0]*tScale,p[1]];});
+    var impulseScaled=impulseData.map(function(p){return [p[0]*tScale,p[1]];});
+
+    var safetyRatio=cumH/mpeVal;
+
+    // ── ECharts rendering ──
+    if(_chartRef.current){_chartRef.current.dispose();_chartRef.current=null;}
+    var chart=echarts.init(ptTimRef.current,null,{renderer:"canvas"});
+    _chartRef.current=chart;
+
+    var fontFamily="'IBM Plex Sans', system-ui, -apple-system, sans-serif";
+
+    var option={
+      backgroundColor:"transparent",
+      animation:false,
+      textStyle:{fontFamily:fontFamily},
+
+      /* Panel labels: (a) and (b) per COMSOL/Optica convention */
+      title:[
+        {text:"(a) Per-pulse fluence",left:68,top:4,
+         textStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:600,color:ec.title}},
+        {text:"(b) Cumulative fluence",left:68,top:"39%",
+         textStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:600,color:ec.title}}
+      ],
+
+      /* Two stacked grids with room for panel labels and legends */
+      grid:[
+        {left:68,right:20,top:24,height:"22%"},
+        {left:68,right:20,top:"48%",height:"38%"}
+      ],
+
+      xAxis:[
+        {type:"value",gridIndex:0,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{show:false},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         min:0,max:totalTime*tScale},
+        {type:"value",gridIndex:1,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{show:true,fontFamily:fontFamily,fontSize:10,color:ec.tick,
+           formatter:function(v){return v%1===0?String(v):v.toFixed(1);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         name:"Time ("+tUnit+")",nameLocation:"middle",nameGap:28,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0,max:totalTime*tScale}
+      ],
+
+      yAxis:[
+        {type:"value",gridIndex:0,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{fontFamily:fontFamily,fontSize:10,color:ec.tick,
+           formatter:function(v){return v<0.001&&v>0?v.toExponential(1):numFmt(v,2);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         name:"Fluence (J/cm\u00b2)",nameLocation:"middle",nameGap:52,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0},
+        {type:"value",gridIndex:1,
+         axisLine:{show:true,lineStyle:{color:ec.spine,width:1}},
+         axisTick:{show:true,length:4,inside:false,lineStyle:{color:ec.spine}},
+         axisLabel:{fontFamily:fontFamily,fontSize:10,color:ec.tick,
+           formatter:function(v){return v<0.001&&v>0?v.toExponential(1):numFmt(v,3);}},
+         splitLine:{show:true,lineStyle:{color:ec.grid,width:0.5}},
+         name:"Fluence (J/cm\u00b2)",nameLocation:"middle",nameGap:52,
+         nameTextStyle:{fontFamily:fontFamily,fontSize:11,fontWeight:500,color:ec.title},
+         min:0}
+      ],
+
+      toolbox:{show:false},
+
+      /* Per-panel legends — each panel gets its own legend inside the plot area (COMSOL/MATLAB convention) */
+      legend:[
+        {data:["Per-pulse fluence"],
+         top:24,right:28,orient:"vertical",
+         itemWidth:20,itemHeight:3,
+         icon:"roundRect",
+         textStyle:{fontFamily:fontFamily,fontSize:10,color:ec.tick},
+         backgroundColor:"rgba(255,255,255,0.88)",
+         borderColor:ec.grid,borderWidth:1,
+         padding:[4,8]},
+        {data:["Cumulative fluence","MPE limit"],
+         top:"48%",right:28,orient:"vertical",
+         itemWidth:20,itemHeight:3,itemGap:8,
+         textStyle:{fontFamily:fontFamily,fontSize:10,color:ec.tick},
+         backgroundColor:"rgba(255,255,255,0.88)",
+         borderColor:ec.grid,borderWidth:1,
+         padding:[4,8]}
+      ],
+
+      /* Linked axis pointers across panels — COMSOL/MATLAB synchronized cursor convention */
+      axisPointer:{link:[{xAxisIndex:"all"}]},
+
+      tooltip:{
+        trigger:"axis",
+        axisPointer:{type:"line",lineStyle:{color:ec.spine,width:1,type:"dashed"}},
+        textStyle:{fontFamily:fontFamily,fontSize:11},
+        formatter:function(params){
+          if(!params||!params.length)return "";
+          var t=params[0].value[0];
+          var out=["<b>t = "+numFmt(t,4)+" "+tUnit+"</b>"];
+          for(var pi=0;pi<params.length;pi++){
+            var p=params[pi];
+            if(p.seriesName==="MPE limit")continue;
+            out.push(p.marker+" "+p.seriesName+": "+numFmt(p.value[1],4)+" J/cm\u00b2");
+          }
+          return out.join("<br>");
+        }
+      },
+
+      series:[
+        {name:"Per-pulse fluence",type:"bar",xAxisIndex:0,yAxisIndex:0,
+         data:impulseScaled,
+         barWidth:Math.max(1,Math.min(3,400/Math.max(1,impulseScaled.length))),
+         itemStyle:{color:ec.stem},
+         emphasis:{itemStyle:{color:ec.stem}},
+         large:true,largeThreshold:500},
+
+        {name:"Cumulative fluence",type:"line",xAxisIndex:1,yAxisIndex:1,
+         data:cumScaled,
+         step:false,
+         lineStyle:{color:ec.cumLine,width:2,type:"solid"},
+         areaStyle:{color:ec.cumLine,opacity:0.04},
+         symbol:"none",
+         emphasis:{disabled:true}},
+
+        {name:"MPE limit",type:"line",xAxisIndex:1,yAxisIndex:1,
+         data:[[0,mpeVal],[totalTime*tScale,mpeVal]],
+         lineStyle:{color:ec.mpe,width:1.5,type:"dashed"},
+         symbol:"none",
+         emphasis:{disabled:true},
+         /* Mark the MPE value with a label on the line */
+         markPoint:{
+           symbol:"rect",symbolSize:[1,1],
+           label:{show:true,position:"insideRight",
+             formatter:function(){return "MPE = "+numFmt(mpeVal,4)+" J/cm\u00b2";},
+             fontFamily:fontFamily,fontSize:9,fontWeight:600,color:ec.mpe,
+             backgroundColor:"rgba(255,255,255,0.88)",
+             borderColor:ec.mpe,borderWidth:0.5,borderRadius:4,
+             padding:[2,6]},
+           data:[{coord:[totalTime*tScale*0.02,mpeVal]}]
+         }}
+      ]
+    };
+
+    chart.setOption(option);
+
+    var onResize=function(){chart.resize();};
+    window.addEventListener("resize",onResize);
+
+    return function(){
+      window.removeEventListener("resize",onResize);
+    };
+  },[res,ec,dia,wl,pw,prf,vel,lineL,pat,hatch,scanHN,selPt]);
+
+  /* ── Scan pattern visualization: pre-computed values ──────────── */
+  /* Engineering notation for dimension labels */
+  function svFmtDim(val){
+    if(!isFinite(val)||val===0)return "0 mm";
+    var av=Math.abs(val);
+    if(av>=1e6)return (val/1e6).toPrecision(4)+" km";
+    if(av>=1e3)return (val/1e3).toPrecision(4)+" m";
+    if(av>=0.1)return +val.toPrecision(4)+" mm";
+    if(av>=1e-4)return (val*1e3).toPrecision(4)+" \u00b5m";
+    if(av>=1e-7)return (val*1e6).toPrecision(4)+" nm";
+    return val.toExponential(2)+" mm";
+  }
+  /* Scan pattern visualization: pre-computed values */
+  var _isLt=theme==="light";
+  var vc={
+    mark:_isLt?"#334155":"#94A3B8", jump:_isLt?"#94A3B8":"#64748B",
+    dimAct:_isLt?"#64748B":"#94A3B8", dimDer:_isLt?"#94A3B8":"#64748B",
+    canvas:_isLt?"#FAFBFC":"#1A1F27", canvasBd:_isLt?"rgba(15,23,42,0.08)":"rgba(255,255,255,0.08)",
+    gridMin:_isLt?"#E8ECF0":"#252D38", gridMaj:_isLt?"#E0E4EA":"#2A3340",
+    area:_isLt?"none":"none",
+    areaBd:_isLt?"#CBD5E1":"#475569",
+    lbl:_isLt?"#475569":"#94A3B8", legTx:_isLt?"#475569":"#94A3B8",
+    lbl2:_isLt?"#334155":"#CBD5E1",
+    corr:_isLt?0.04:0.06,
+    hc:_isLt?"#64748B":"#94A3B8",
+    axX:"#94A3B8", axY:"#94A3B8"
+  };
+  var svBtnBg=_isLt?"#F1F5F9":"#1E293B";
+  var svBtnBd=_isLt?"#CBD5E1":"#475569";
+  var svIc=_isLt?"#64748B":"#94A3B8";
+  /* Fixed canvas — wider left padding for hatch callout */
+  var svW_c=460,svH_c=260;
+  var svPd_t=24,svPd_r=44,svPd_b=36,svPd_l=80;
+  var svPlW=svW_c-svPd_l-svPd_r, svPlH=svH_c-svPd_t-svPd_b;
+  /* Independent x/y scaling */
+  var svPatW=Math.max(lineL,0.001);
+  var svPatH=pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001);
+  var svScX=(svPlW*0.85)/svPatW;
+  var svScY=(svPlH*0.85)/svPatH;
+  var svOx=svPd_l+(svPlW-svPatW*svScX)/2;
+  var svOy=svPd_t+(svPlH-svPatH*svScY)/2;
+  var svRW=svPatW*svScX, svRH=svPatH*svScY;
+  var svBSc=Math.min(svScX,svScY);
+  var svBeamR=Math.max((dia/Math.sqrt(2))*svBSc,1.5);
+  svBeamR=Math.min(svBeamR,Math.min(svRW,svRH)/2);
+  /* Fix 1: beam suppression when beam >> scan area */
+  var svBeamOwl=dia>Math.max(lineL,scanHN||0)*2;
+  var svRenderBeam=svBeam&&!svBeamOwl;
+  /* Fix 2: line decimation */
+  var svHtVis=(nLines>1&&scanHN>0)?scanHN/(nLines-1):0;
+  var svLinePx=svHtVis*svScY;
+  var svTooMany=pat!=="linear"&&nLines>1&&svLinePx<4;
+  var svDecIndices=null;
+  if(svTooMany){
+    var svMaxShow=12;
+    var sdSet={};sdSet[0]=true;sdSet[nLines-1]=true;
+    for(var sdi=1;sdi<svMaxShow-1;sdi++){sdSet[Math.round(sdi*(nLines-1)/(svMaxShow-1))]=true;}
+    svDecIndices=[];for(var sdk in sdSet){if(sdSet.hasOwnProperty(sdk))svDecIndices.push(Number(sdk));}
+    svDecIndices.sort(function(a,b){return a-b;});
+  }
+  var svDecCount=svDecIndices?svDecIndices.length:0;
+  var svMarks=[],svJumps=[];
+  if(pat==="linear"){
+    svMarks.push({x1:svOx,y1:svOy+svRH/2,x2:svOx+svRW,y2:svOy+svRH/2,idx:0});
+  }else if(svTooMany){
+    /* Decimated: iterate only over the small set of indices (never over all nLines) */
+    for(var svdi=0;svdi<svDecIndices.length;svdi++){
+      var svIdx=svDecIndices[svdi];
+      var svLy=svOy+svIdx*svHtVis*svScY;
+      var svLtr=pat==="bidi"?(svIdx%2===0):true;
+      svMarks.push({x1:svLtr?svOx:svOx+svRW,y1:svLy,x2:svLtr?svOx+svRW:svOx,y2:svLy,idx:svIdx});
+    }
+    for(var svmi=0;svmi<svMarks.length-1;svmi++){
+      var svCur=svMarks[svmi],svNxt=svMarks[svmi+1];
+      var svCurLtr=pat==="bidi"?(svCur.idx%2===0):true;
+      var svCurEx=svCurLtr?svOx+svRW:svOx;
+      if(pat==="bidi")svJumps.push({x1:svCurEx,y1:svCur.y1,x2:svCurEx,y2:svNxt.y1});
+      else svJumps.push({x1:svOx+svRW,y1:svCur.y1,x2:svOx,y2:svNxt.y1});
+    }
+  }else{
+    var svNVis=Math.min(nLines,200);
+    for(var svi=0;svi<svNVis;svi++){
+      var svLy2=svOy+svi*svHtVis*svScY;
+      var svLtr2=pat==="bidi"?(svi%2===0):true;
+      svMarks.push({x1:svLtr2?svOx:svOx+svRW,y1:svLy2,x2:svLtr2?svOx+svRW:svOx,y2:svLy2,idx:svi});
+    }
+    for(var svmi2=0;svmi2<svMarks.length-1;svmi2++){
+      var svCur2=svMarks[svmi2],svNxt2=svMarks[svmi2+1];
+      var svCurLtr2=pat==="bidi"?(svCur2.idx%2===0):true;
+      var svCurEx2=svCurLtr2?svOx+svRW:svOx;
+      if(pat==="bidi")svJumps.push({x1:svCurEx2,y1:svCur2.y1,x2:svCurEx2,y2:svNxt2.y1});
+      else svJumps.push({x1:svOx+svRW,y1:svCur2.y1,x2:svOx,y2:svNxt2.y1});
+    }
+  }
+  /* Hatch callout geometry — left margin */
+  var svShowHC=pat!=="linear"&&nLines>1&&svHtVis>0;
+  var svHcY1=svOy,svHcY2=svOy+svHtVis*svScY;
+  var svHcGap=svHcY2-svHcY1;
+  var svHcBX=svOx-12;
+  var svHcInline=svHcGap>=8;
+  var svHcInset=svHcGap<8;
+  var svHcLabel=svFmtDim(svHtVis);
+  /* Formatted dimension labels */
+  var svWLabel=svFmtDim(lineL);
+  var svHLabel=svFmtDim(scanHN);
+  var svGridMinP="",svGridMajP="";
+  if(svGrid){
+    for(var sgx=0;sgx<=svW_c;sgx+=10){if(sgx%50===0)svGridMajP+="M"+sgx+",0V"+svH_c+" ";else svGridMinP+="M"+sgx+",0V"+svH_c+" ";}
+    for(var sgy=0;sgy<=svH_c;sgy+=10){if(sgy%50===0)svGridMajP+="M0,"+sgy+"H"+svW_c+" ";else svGridMinP+="M0,"+sgy+"H"+svW_c+" ";}
+  }
+  /* SVG click → scan coordinate conversion */
+  function svClickToScan(e){
+    if(!svRef.current)return null;
+    var rect=svRef.current.getBoundingClientRect();
+    var sx=(e.clientX-rect.left)/rect.width*svW_c;
+    var sy=(e.clientY-rect.top)/rect.height*svH_c;
+    var scanX=(sx-svOx)/svScX;
+    var scanY=(sy-svOy)/svScY;
+    if(scanX<0||scanX>lineL||scanY<0||scanY>(scanHN||0))return null;
+    return{x:Math.max(0,Math.min(lineL,scanX)),y:Math.max(0,Math.min(scanHN||0,scanY))};
+  }
+  function svHandleClick(e){
+    var pt=svClickToScan(e);
+    if(pt){setSelPt(pt);setSelXS(pt.x.toFixed(3));setSelYS(pt.y.toFixed(3));}
+  }
+  function svHandleMove(e){setSvHov(svClickToScan(e));}
+  function svHandleLeave(){setSvHov(null);}
+  function svCoordGo(){
+    var x=parseFloat(selXS),y=parseFloat(selYS);
+    if(isFinite(x)&&isFinite(y)&&x>=0&&x<=lineL&&y>=0&&y<=(scanHN||0)){
+      setSelPt({x:x,y:y});
+    }
+  }
+  /* Convert scan point to SVG pixel coordinates */
+  function svPtToSvg(pt){return pt?{sx:svOx+pt.x*svScX,sy:svOy+pt.y*svScY}:null;}
+  var svSelS=svPtToSvg(selPt);
+  var svHovS=svPtToSvg(svHov);
+  /* Tooltip positioning — avoid clipping edges */
+  var svTipW=96,svTipH=18;
+  function svTipPos(sx,sy){
+    var tx=sx+12,ty=sy-22;
+    if(tx+svTipW>svW_c-4)tx=sx-svTipW-12;
+    if(ty<4)ty=sy+12;
+    if(ty+svTipH>svH_c-4)ty=svH_c-svTipH-4;
+    return{tx:tx,ty:ty};
+  }
+
+  /* ═══ PACT static-fluence branch ═══ */
+  if(modality==="pact"){
+    var pactValid=isFinite(pactA)&&pactA>0&&isFinite(pactE)&&pactE>0&&isFinite(prf)&&prf>0&&isFinite(pactT)&&pactT>0&&isFinite(wl)&&wl>0&&isFinite(tau)&&tau>0;
+    var pH_pp=pactValid?(pactE/pactA):NaN;
+    var pN=pactValid?(prf*pactT):NaN;
+    var pH_total=pactValid?(pH_pp*pN):NaN;
+    var pMPE1=pactValid?skinMPE(wl,tau):NaN;
+    var pMPET=pactValid?skinMPE(wl,pactT):NaN;
+    /* Defend against engine returning non-finite/zero MPE for out-of-range inputs:
+       treat as fail rather than silently displaying "—" or NaN ratios. */
+    var pMPE1OK=isFinite(pMPE1)&&pMPE1>0;
+    var pMPETOK=isFinite(pMPET)&&pMPET>0;
+    var pR1=pactValid&&pMPE1OK?(pH_pp/pMPE1):Infinity;
+    var pR2=pactValid&&pN>1?(pMPETOK?(pH_total/pMPET):Infinity):pR1;
+    var pSafe=pactValid&&pMPE1OK&&pR1<=1&&pR2<=1;
+    var pBind=pR1>=pR2?"Rule 1 (single pulse)":"Rule 2 (cumulative)";
+    var pRatio=Math.max(pR1,pR2);
+    var pAvgI=pactValid?(pactE*prf/pactA):NaN; /* time-averaged irradiance W/cm² */
+
+    return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      {/* ═══ Region 1: PACT Configuration ═══ */}
       <div>
-        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Photoacoustic Scan Configuration</div>
-        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16}}>
-          <div style={{fontSize:12,color:T.tm,lineHeight:1.7}}>
-            This tab will contain photoacoustic-specific scanning parameters including excitation wavelength, pulse energy, PRF, and scan geometry optimized for PA imaging. The same scan safety engine as General Scanning will be used with PA-specific terminology, default values, and additional parameters such as acoustic detection bandwidth.
+        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>PACT / MSOT Static Fluence Configuration</div>
+        <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+          <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+            <div style={secH}>Photoacoustic Source</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              <div>
+                <label style={lb}>Modality Preset</label>
+                <select value={modality} onChange={function(e){
+                  var v=e.target.value; setModality(v);
+                  if(v==="or-pam"){
+                    /* OR-PAM default: 10 µm spot, 10 nJ pulse energy → Rule 1 ~0.64 of skin MPE.
+                       Note: published OR-PAM systems often use 5 µm spot at >100 nJ for skin imaging,
+                       which exceeds skin MPE by ~25×. Such systems target retinal applications via
+                       ophthalmic optics where retinal MPE (not skin MPE) governs. */
+                    setWlS("532");setWl(532);
+                    setDS("0.010");setDia(0.010);
+                    setTauS("5");setTau(5e-9);setTauU("ns");
+                    setPrfS("100");setPrf(100000);setPrfU("kHz");
+                    setPwMode("energy");setEpS("10e-9");setPw(0.001);setPwS("0.001");
+                    setLLS("1");setLineL(1);setScanHS("1");setScanHN(1);
+                    setNLS("1000");setNLines(1000);setNAS("1000");setNA(1000);
+                    setNBMS("1");setNBM(1);
+                  } else if(v==="ar-pam"){
+                    setWlS("532");setWl(532);
+                    setDS("1.0");setDia(1.0);
+                    setTauS("5");setTau(5e-9);setTauU("ns");
+                    setPrfS("1");setPrf(1000);setPrfU("kHz");
+                    setPwMode("energy");setEpS("50e-6");setPw(0.050);setPwS("0.050");
+                    setLLS("5");setLineL(5);setScanHS("5");setScanHN(5);
+                    setNLS("200");setNLines(200);setNAS("200");setNA(200);
+                    setNBMS("1");setNBM(1);
+                  }
+                  setDirty(true);
+                }} style={{...ip,cursor:"pointer"}}>
+                  <option value="or-pam">OR-PAM — optical-resolution (10 µm, 100 kHz)</option>
+                  <option value="ar-pam">AR-PAM — acoustic-resolution (1 mm dark-field, 1 kHz)</option>
+                  <option value="pact">PACT / MSOT — large-area diffuse (1 cm², 10 Hz)</option>
+                </select>
+              </div>
+              <div><label htmlFor="pact-wl" style={lb}>Excitation Wavelength (nm)</label><input id="pact-wl" type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>
+              <div>
+                <label style={lb}>Pulse Duration</label>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+                  <select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                </div>
+              </div>
+              <div>
+                <label style={lb}>PRF</label>
+                <div style={{display:"flex",gap:4}}>
+                  <input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+                  <select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+                </div>
+              </div>
+              <div><label htmlFor="pact-e" style={lb}>Per-Pulse Energy (J)</label><input id="pact-e" type="text" value={pactES} onChange={function(e){upN(setPactES,setPactE,e.target.value);}} placeholder="e.g. 20e-3" style={ip}/>
+                {pactValid?<div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{"P_avg = "+(pactE*prf*1000).toPrecision(3)+" mW"}</div>:null}
+              </div>
+            </div>
           </div>
-          <div style={{fontSize:10,color:T.td,marginTop:8,fontStyle:"italic"}}>Content is under development.</div>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+              <div style={secH}>Illumination Geometry</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div><label htmlFor="pact-a" style={lb}>Illumination Footprint (cm²)</label><input id="pact-a" type="text" value={pactAS} onChange={function(e){upN(setPactAS,setPactA,e.target.value);}} style={ip}/>
+                  <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>typical PACT/MSOT: 1–8 cm²</div>
+                </div>
+                <div><label htmlFor="pact-t" style={lb}>Exposure Duration (s)</label><input id="pact-t" type="text" value={pactTS} onChange={function(e){upN(setPactTS,setPactT,e.target.value);}} style={ip}/>
+                  <div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{pactValid?"N pulses = "+pN.toPrecision(4):""}</div>
+                </div>
+              </div>
+              <div style={{marginTop:10,fontSize:10,color:T.tm,lineHeight:1.6,padding:"8px 10px",background:T.bgI,borderRadius:4,border:"1px solid "+T.bd}}>
+                PACT and MSOT systems use diffuse illumination over a cm²-scale footprint with no scanning of the optical beam. The safety analysis reduces to per-pulse surface fluence and cumulative fluence over the exposure interval. For multi-spectral acquisitions (sequential wavelengths), evaluate each wavelength independently and verify the additivity rule Σ(Hₙ/MPEₙ) ≤ 1.
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ═══ Region 2: PA Scan Safety Results ═══ */}
+      {/* ═══ Region 2: PACT Safety Results ═══ */}
       <div>
-        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>PA Scan Safety Results</div>
-        <div style={{background:T.card,border:"1px solid "+T.bd,borderRadius:6,padding:16,color:T.td,fontSize:11}}>
-          Results will appear here after PA-specific content is implemented. The results structure will mirror General Scanning: Safety Verdict, Timing Diagram, PA Acquisition Summary, and Permissible Ranges.
-        </div>
+        <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Safety Results</div>
+        {pactValid?<div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
+          <div style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:12}}>
+            <div role="alert" aria-live="polite" style={{background:pSafe?"#E8F5F0":"#fbe9e7",borderRadius:4,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,minWidth:160}}>
+              <div><div style={{fontSize:8,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:pSafe?"#00796B":"#bf360c",marginBottom:1}}>Safety Verdict</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:pSafe?"#00796B":"#bf360c"}}>{pSafe?"PASS":"FAIL"}</div></div>
+              <div><div style={{fontSize:9,fontFamily:"'IBM Plex Mono', monospace",color:pSafe?"#00897B":"#d84315"}}>margin: {isFinite(pRatio)?(pSafe?"+":"")+((1-pRatio)*100).toFixed(1)+"%":"—"}</div>
+              <div style={{fontSize:9,color:pSafe?"#26a69a":"#e64a19"}}>binding: {pBind}</div></div>
+            </div>
+            <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,border:"1px solid "+T.bd,borderRadius:4}}>
+              <div style={{padding:"8px 12px",borderRight:"1px solid "+T.bd}}>
+                <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 1 — Single Pulse</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:pR1>1?T.no:T.ok}}>{numFmt(pH_pp,4)}</span>
+                  <span style={{fontSize:9,color:T.td}}>J/cm²</span>
+                  <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:pR1>1?T.no:T.ok,marginLeft:"auto"}}>{isFinite(pR1)?pR1.toFixed(3)+"×":"—"}</span>
+                </div>
+                <div style={{fontSize:8,color:T.td,marginTop:1}}>MPE(τ) = {numFmt(pMPE1,4)} J/cm²</div>
+              </div>
+              <div style={{padding:"8px 12px"}}>
+                <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 2 — Cumulative</div>
+                <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                  <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:pR2>1?T.no:T.ok}}>{numFmt(pH_total,4)}</span>
+                  <span style={{fontSize:9,color:T.td}}>J/cm²</span>
+                  <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:pR2>1?T.no:T.ok,marginLeft:"auto"}}>{isFinite(pR2)?pR2.toFixed(3)+"×":"—"}</span>
+                </div>
+                <div style={{fontSize:8,color:T.td,marginTop:1}}>MPE(T={numFmt(pactT,3)}s) = {numFmt(pMPET,4)} J/cm²</div>
+              </div>
+            </div>
+          </div>
+          <div style={secH}>Exposure Summary</div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
+            ["Modality","PACT / MSOT (static)","Footprint area",pactA.toPrecision(4)+" cm²"],
+            ["Excitation λ",wl+" nm","Pulse duration τ",numFmt(tau,3)+" s"],
+            ["Per-pulse energy",numFmt(pactE,4)+" J","PRF",numFmt(prf,4)+" Hz"],
+            ["Per-pulse fluence",numFmt(pH_pp,4)+" J/cm²","Time-avg irradiance",numFmt(pAvgI,4)+" W/cm²"],
+            ["N pulses",pN.toPrecision(4),"Exposure duration T",numFmt(pactT,3)+" s"],
+          ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bgI}}>
+            <td style={{padding:"3px 8px",fontSize:10,color:T.tm,width:"18%"}}>{row[0]}</td>
+            <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[1]}</td>
+            <td style={{padding:"3px 8px",fontSize:10,color:T.tm,width:"18%"}}>{row[2]}</td>
+            <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[3]}</td>
+          </tr>;})}</tbody></table>
+        </div>:<div style={{padding:14,background:T.card,border:"1px solid "+T.bd,borderRadius:4,fontSize:11,color:T.td}}>
+          Enter footprint area, per-pulse energy, PRF, exposure duration, wavelength, and pulse duration to evaluate.
+        </div>}
       </div>
 
       {/* ═══ Region 3: Safety Notice ═══ */}
-      <div style={{padding:"8px 12px",borderRadius:4,border:"1px solid "+T.bd,borderLeft:"3px solid #B45309",fontSize:9,color:T.td,lineHeight:1.6,background:T.bgI}}>
+      <div style={{fontSize:9,color:T.td,lineHeight:1.6,padding:"8px 0"}}>
         <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
-        This tool evaluates skin MPE per {STD_NAME}. Safety limits constrain but do not replace photoacoustic optimization analysis.{" "}
+        PACT static fluence evaluated per {STD_NAME} using Rule 1 (per-pulse) and Rule 2 (average). For multi-wavelength MSOT acquisitions, the additivity rule Σ(Hₙ/MPEₙ) ≤ 1 must be evaluated separately and is not currently implemented.{" "}
         <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
       </div>
+    </div>);
+  }
+
+  return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Region 1: Configuration ═══ */}
+    <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
+    {/* ── Inputs: 2-column layout ── */}
+    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
+        <div style={secH}>Photoacoustic Source</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div>
+            <label style={lb}>Modality Preset</label>
+            <select value={modality} onChange={function(e){
+              var v=e.target.value; setModality(v);
+              if(v==="or-pam"){
+                /* OR-PAM default: 10 µm spot, 10 nJ pulse energy → Rule 1 ~0.64 of skin MPE.
+                   See preset label note re: skin-vs-retinal MPE applicability. */
+                setWlS("532");setWl(532);
+                setDS("0.010");setDia(0.010);
+                setTauS("5");setTau(5e-9);setTauU("ns");
+                setPrfS("100");setPrf(100000);setPrfU("kHz");
+                setPwMode("energy");setEpS("10e-9");setPw(0.001);setPwS("0.001");
+                setLLS("1");setLineL(1);setScanHS("1");setScanHN(1);
+                setNLS("1000");setNLines(1000);setNAS("1000");setNA(1000);
+                setNBMS("1");setNBM(1);
+              } else if(v==="ar-pam"){
+                setWlS("532");setWl(532);
+                setDS("1.0");setDia(1.0);
+                setTauS("5");setTau(5e-9);setTauU("ns");
+                setPrfS("1");setPrf(1000);setPrfU("kHz");
+                setPwMode("energy");setEpS("50e-6");setPw(0.050);setPwS("0.050");
+                setLLS("5");setLineL(5);setScanHS("5");setScanHN(5);
+                setNLS("200");setNLines(200);setNAS("200");setNA(200);
+                setNBMS("1");setNBM(1);
+              } else if(v==="pact"){
+                setWlS("800");setWl(800);
+                setTauS("5");setTau(5e-9);setTauU("ns");
+                setPrfS("10");setPrf(10);setPrfU("Hz");
+                setPactAS("1.0");setPactA(1.0);
+                setPactES("20e-3");setPactE(20e-3);
+                setPactTS("10");setPactT(10);
+              }
+              setDirty(true);
+            }} style={{...ip,cursor:"pointer"}}>
+              <option value="or-pam">OR-PAM — optical-resolution (10 µm, 100 kHz)</option>
+              <option value="ar-pam">AR-PAM — acoustic-resolution (1 mm dark-field, 1 kHz)</option>
+              <option value="pact">PACT / MSOT — large-area diffuse (1 cm², 10 Hz)</option>
+            </select>
+          </div>
+          {modality!=="pact"?<div><label htmlFor="scan-wl" style={lb}>Excitation Wavelength (nm)</label><input id="scan-wl" type="text" value={wlS} onChange={function(e){upN(setWlS,setWl,e.target.value)}} style={ip}/></div>:null}
+          {modality!=="pact"?<div><label htmlFor="scan-dia" style={lb}>Illumination Spot 1/e² (mm)</label><input id="scan-dia" type="text" value={dS} onChange={function(e){upN(setDS,setDia,e.target.value)}} style={ip}/></div>:null}
+          <div>
+            <label style={lb}>Laser Mode</label>
+            <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
+              {[["pulsed","Pulsed"],["cw","CW"]].map(function(m){
+                return <button key={m[0]} onClick={function(){
+                  setLaserMode(m[0]);
+                  if(m[0]==="cw")setPwMode("power");
+                  setDirty(true);
+                }} style={{flex:1,padding:"4px 10px",fontSize:12,fontWeight:laserMode===m[0]?500:400,
+                  background:laserMode===m[0]?T.card:"transparent",
+                  color:laserMode===m[0]?T.tx:T.tm,
+                  border:"none",
+                  borderBottom:laserMode===m[0]?"2px solid "+T.ac:"2px solid transparent",
+                  cursor:"pointer"}}>{m[1]}</button>;
+              })}
+            </div>
+          </div>
+          {laserMode==="pulsed"?<div>
+            <label style={lb}>Pulse Duration</label>
+            <div style={{display:"flex",gap:4}}>
+              <input type="text" value={tauS} onChange={function(e){upTau(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={tauU} onChange={function(e){setTauU(e.target.value);upTau(tauS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{DUR_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            </div>
+          </div>:null}
+          {laserMode==="pulsed"?<div>
+            <label style={lb}>PRF</label>
+            <div style={{display:"flex",gap:4}}>
+              <input type="text" value={prfS} onChange={function(e){upPrf(e.target.value)}} style={{flex:1,padding:"7px 10px",fontSize:13,fontFamily:"'IBM Plex Mono', monospace",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,outline:"none"}}/>
+              <select value={prfU} onChange={function(e){setPrfU(e.target.value);upPrf(prfS)}} style={{fontSize:11,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer"}}>{FREQ_UNITS.map(function(u){return <option key={u.id} value={u.id}>{u.label}</option>;})}</select>
+            </div>
+          </div>:null}
+          <div>
+            <label style={lb}>Power Input</label>
+            <select value={pwMode} onChange={function(e){
+              var m=e.target.value;setPwMode(m);setDirty(true);
+              if(m==="energy"&&prf>0&&pw>0)setEpS((pw/prf).toExponential(4));
+            }} disabled={laserMode==="cw"} style={{width:"100%",marginBottom:6,fontSize:11,padding:"5px 8px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:laserMode==="cw"?"default":"pointer",opacity:laserMode==="cw"?0.6:1,boxSizing:"border-box"}}>
+              <option value="power">Average Power (W)</option>
+              <option value="energy">Pulse Energy (J)</option>
+            </select>
+            {pwMode==="power"?
+              <div>
+                <input id="scan-pw" type="text" value={pwS} onChange={function(e){upPw(e.target.value)}} style={ip}/>
+                {laserMode==="pulsed"&&prf>0&&pw>0?<div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{"Ep = "+(pw/prf).toExponential(3)+" J"}</div>:null}
+              </div>
+            :
+              <div>
+                <input type="text" value={epS} onChange={function(e){upEp(e.target.value)}} placeholder="e.g. 50e-6" style={ip}/>
+                {prf>0&&pw>0?<div style={{fontSize:8,color:T.td,marginTop:2,fontFamily:"'IBM Plex Mono', monospace"}}>{"P_avg = "+pw.toPrecision(3)+" W"}</div>:null}
+              </div>
+            }
+          </div>
+        </div>
+
+          {/* Divider */}
+          <div style={{borderTop:"1px solid "+T.bd,margin:"4px 0"}}/>
+          {/* Dwell time + flyback (merged from Settings) */}
+          <div>
+            <label style={lb}>Dwell Time Definition</label>
+            <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden"}}>
+              {[["gaussian","Gaussian"],["geometric","Geometric"]].map(function(dm){
+                return <button key={dm[0]} onClick={function(){setDwm(dm[0])}} style={{flex:1,padding:"4px 10px",fontSize:11,fontWeight:dwm===dm[0]?500:400,background:dwm===dm[0]?T.card:"transparent",color:dwm===dm[0]?T.tx:T.tm,border:"none",borderBottom:dwm===dm[0]?"2px solid "+T.ac:"2px solid transparent",cursor:"pointer"}}>{dm[1]}</button>;
+              })}
+            </div>
+          </div>
+          {pat!=="linear"?<div>
+            <label style={{...lb,marginBottom:6}}>Galvo Flyback Blanking</label>
+            <label style={{display:"flex",alignItems:"flex-start",gap:6,cursor:"pointer",fontSize:11,color:T.tx}}>
+              <input type="checkbox" checked={blk} onChange={function(){setBlk(!blk);setDirty(true);}} style={{accentColor:T.ac,width:14,height:14,marginTop:2}}/>
+              <span style={{lineHeight:1.3}}>{blk?"Laser blanked during flyback/jumps":"Laser fires during flyback (conservative)"}</span>
+            </label>
+            <div style={{fontSize:8,color:T.td,marginTop:2,marginLeft:20}}>OCT/confocal systems typically blank during galvo return</div>
+          </div>:null}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",padding:14}}>
+        {/* Header: title + toggle toolbar */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={secH}>Scan Pattern</div>
+          <div style={{display:"flex",gap:2}}>
+            <button onClick={function(){setSvGrid(!svGrid);}} title="Grid" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svGrid?svBtnBg:"transparent",border:svGrid?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svGrid?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.4" strokeLinecap="round"><line x1="5" y1="1" x2="5" y2="15"/><line x1="11" y1="1" x2="11" y2="15"/><line x1="1" y1="5" x2="15" y2="5"/><line x1="1" y1="11" x2="15" y2="11"/></svg></button>
+            <button onClick={function(){setSvBeam(!svBeam);}} title="Beam spot" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svBeam?svBtnBg:"transparent",border:svBeam?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svBeam?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3"><circle cx="8" cy="8" r="5" strokeDasharray="2.5 2"/><circle cx="8" cy="8" r="1.5" fill={svIc} stroke="none"/></svg></button>
+            <button onClick={function(){setSvFlyback(!svFlyback);}} title="Flyback paths" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svFlyback?svBtnBg:"transparent",border:svFlyback?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svFlyback?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.3" strokeLinecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="12" x2="14" y2="12"/><path d="M14,4 C16,4 16,12 14,12" strokeDasharray="2 2" opacity="0.6"/></svg></button>
+            <button onClick={function(){setSvAnts(!svAnts);}} title="Scan animation" style={{width:26,height:26,display:"inline-flex",alignItems:"center",justifyContent:"center",background:svAnts?svBtnBg:"transparent",border:svAnts?"1px solid "+svBtnBd:"1px solid transparent",borderRadius:4,cursor:"pointer",opacity:svAnts?1:0.4,padding:0}}><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke={svIc} strokeWidth="1.5" strokeLinecap="round"><line x1="2" y1="8" x2="12" y2="8" strokeDasharray="2.5 3"/><polygon points="11,5.5 15,8 11,10.5" fill={svIc} stroke="none" opacity="0.5"/></svg></button>
+          </div>
+        </div>
+        {/* Pattern selector */}
+        <div style={{display:"inline-flex",background:T.hov||"rgba(15,23,42,0.04)",borderRadius:6,border:"1px solid "+T.bd,overflow:"hidden",marginBottom:8}}>
+          {[["linear","Linear"],["raster","Raster"],["bidi","Bidirectional"]].map(function(pt){
+            return <button key={pt[0]} onClick={function(){setPat(pt[0]);setDirty(true);}} style={{flex:1,padding:"5px 10px",fontSize:12,fontWeight:pat===pt[0]?500:400,background:pat===pt[0]?T.card:"transparent",color:pat===pt[0]?T.tx:T.tm,border:"none",borderBottom:pat===pt[0]?"2px solid "+T.ac:"2px solid transparent",borderRight:pt[0]!=="bidi"?"1px solid "+T.bd:"none",cursor:"pointer"}}>{pt[1]}</button>;
+          })}
+        </div>
+        {/* SVG Visualization — all fixes */}
+        <div style={{borderRadius:4,overflow:"hidden",border:"1px solid "+vc.canvasBd,marginBottom:10}}>
+          <svg ref={svRef} viewBox={"0 0 "+svW_c+" "+svH_c} style={{width:"100%",height:"auto",display:"block",background:vc.canvas,cursor:pat!=="linear"?"crosshair":"default"}} xmlns="http://www.w3.org/2000/svg" shapeRendering="geometricPrecision" onClick={pat!=="linear"?svHandleClick:null} onMouseMove={pat!=="linear"?svHandleMove:null} onMouseLeave={pat!=="linear"?svHandleLeave:null}>
+            <defs>
+              <clipPath id="sv-clip"><rect x={svOx-2} y={svOy-2} width={svRW+4} height={svRH+4}/></clipPath>
+              <marker id="sv-arr" markerWidth="8" markerHeight="5" refX="7.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L8,2.5 L0,5 z" fill={vc.dimAct}/></marker>
+              <marker id="sv-arr2" markerWidth="8" markerHeight="5" refX="0.5" refY="2.5" orient="auto" markerUnits="userSpaceOnUse"><path d="M8,0 L0,2.5 L8,5 z" fill={vc.dimAct}/></marker>
+              <marker id="sv-hc1" markerWidth="4" markerHeight="4" refX="3.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0.5 L4,2 L0,3.5 z" fill={vc.hc}/></marker>
+              <marker id="sv-hc2" markerWidth="4" markerHeight="4" refX="0.5" refY="2" orient="auto" markerUnits="userSpaceOnUse"><path d="M4,0.5 L0,2 L4,3.5 z" fill={vc.hc}/></marker>
+            </defs>
+            {svGrid?<g><path d={svGridMinP} fill="none" stroke={vc.gridMin} strokeWidth="0.5" opacity="0.5"/><path d={svGridMajP} fill="none" stroke={vc.gridMaj} strokeWidth="0.5" opacity="0.6"/></g>:null}
+            {svGrid?<g>
+              <line x1={svOx-14} y1={svOy+svRH} x2={svOx+22} y2={svOy+svRH} stroke={vc.axX} strokeWidth="0.8" opacity="0.4"/>
+              <line x1={svOx} y1={svOy+svRH+14} x2={svOx} y2={svOy+svRH-22} stroke={vc.axY} strokeWidth="0.8" opacity="0.4"/>
+              <text x={svOx+24} y={svOy+svRH+3} fill={vc.axX} fontSize="7.5" fontFamily="'IBM Plex Mono', monospace" opacity="0.4" fontWeight="400">x</text>
+              <text x={svOx+3} y={svOy+svRH-24} fill={vc.axY} fontSize="7.5" fontFamily="'IBM Plex Mono', monospace" opacity="0.4" fontWeight="400">y</text>
+              <circle cx={svOx} cy={svOy+svRH} r="1.8" fill="none" stroke={vc.lbl} strokeWidth="0.6"/>
+            </g>:null}
+            <rect x={svOx} y={svOy} width={svRW} height={svRH} fill="none" stroke={vc.areaBd} strokeWidth="0.75"/>
+            {svRenderBeam?<g clipPath="url(#sv-clip)">{svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,len=Math.sqrt(dx*dx+dy*dy),ang=Math.atan2(dy,dx)*180/Math.PI;return <rect key={"c"+i} x={-len/2} y={-svBeamR} width={len} height={svBeamR*2} rx={svBeamR} transform={"translate("+((s.x1+s.x2)/2)+","+((s.y1+s.y2)/2)+") rotate("+ang+")"} fill={vc.mark} opacity={vc.corr}/>;})}</g>:null}
+            {svFlyback?svJumps.map(function(s,i){var vert=Math.abs(s.x1-s.x2)<1;var d=vert?"M"+s.x1+","+s.y1+"L"+s.x2+","+s.y2:"M"+s.x1+","+s.y1+"C"+(s.x1+(s.x2>s.x1?25:-25))+","+s.y1+" "+(s.x2+(s.x1>s.x2?25:-25))+","+s.y2+" "+s.x2+","+s.y2;return <path key={"j"+i} d={d} fill="none" stroke={vc.jump} strokeWidth="0.6" strokeDasharray="4,2" opacity="0.5"/>;}):null}
+            {svMarks.map(function(s,i){var dx=s.x2-s.x1,dy=s.y2-s.y1,mx=(s.x1+s.x2)/2,my=(s.y1+s.y2)/2,ang=Math.atan2(dy,dx)*180/Math.PI;return <g key={"m"+i}><line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.mark} strokeWidth="1.0"/>{svAnts?<line x1={s.x1} y1={s.y1} x2={s.x2} y2={s.y2} stroke={vc.canvas} strokeWidth="1.0" strokeDasharray="3,7" strokeDashoffset={-antOff} opacity="0.45"/>:null}<polygon points="0,-2.5 5,0 0,2.5" fill={vc.mark} opacity="0.65" transform={"translate("+mx+","+my+") rotate("+ang+")"}/><circle cx={s.x1} cy={s.y1} r="1.4" fill={vc.mark} opacity="0.35"/></g>;})}
+            {svRenderBeam&&svMarks.length>0?<g><circle cx={svMarks[0].x1} cy={svMarks[0].y1} r={svBeamR} fill="none" stroke={vc.mark} strokeWidth="0.75" strokeDasharray="2.5,2" opacity="0.3"/></g>:null}
+            {/* Inline hatch callout — bracket in left margin */}
+            {svShowHC&&svHcInline?<g>
+              <line x1={svHcBX-5} y1={svHcY1} x2={svOx-4} y2={svHcY1} stroke={vc.hc} strokeWidth="0.4"/>
+              <line x1={svHcBX-5} y1={svHcY2} x2={svOx-4} y2={svHcY2} stroke={vc.hc} strokeWidth="0.4"/>
+              <line x1={svHcBX} y1={svHcY1} x2={svHcBX} y2={svHcY2} stroke={vc.hc} strokeWidth="0.5" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2-1} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="9" fontFamily="'IBM Plex Mono', monospace" fontWeight="500">{"Δh"}</text>
+              <text x={svHcBX-8} y={(svHcY1+svHcY2)/2+10} textAnchor="end" dominantBaseline="middle" fill={vc.hc} fontSize="8.5" fontFamily="'IBM Plex Mono', monospace" fontWeight="500">{svHcLabel}</text>
+            </g>:null}
+            {/* Inset hatch callout — for sub-pixel spacing */}
+            {svShowHC&&svHcInset?<g>
+              <rect x="3" y={svPd_t-2} width={svPd_l-8} height="62" rx="3" fill={_isLt?"white":"#2A2A30"} stroke={vc.hc} strokeWidth="0.8"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+11} textAnchor="middle" fill={vc.hc} fontSize="9" fontFamily="'IBM Plex Sans', system-ui, sans-serif" fontWeight="700" letterSpacing="0.04em">LINE SPACING</text>
+              <line x1="10" y1={svPd_t+24} x2={svPd_l-22} y2={svPd_t+24} stroke={vc.mark} strokeWidth="1.0"/>
+              <line x1="10" y1={svPd_t+44} x2={svPd_l-22} y2={svPd_t+44} stroke={vc.mark} strokeWidth="1.0"/>
+              <line x1={svPd_l-16} y1={svPd_t+24} x2={svPd_l-16} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.5" markerStart="url(#sv-hc2)" markerEnd="url(#sv-hc1)"/>
+              <line x1={svPd_l-20} y1={svPd_t+24} x2={svPd_l-12} y2={svPd_t+24} stroke={vc.hc} strokeWidth="0.7"/>
+              <line x1={svPd_l-20} y1={svPd_t+44} x2={svPd_l-12} y2={svPd_t+44} stroke={vc.hc} strokeWidth="0.7"/>
+              <text x={(svPd_l-5)/2+3} y={svPd_t+57} textAnchor="middle" fill={vc.hc} fontSize="10.5" fontFamily="'IBM Plex Mono', monospace" fontWeight="700">{svHcLabel}</text>
+            </g>:null}
+            {/* Width dimension */}
+            <g><line x1={svOx} y1={svOy+svRH+3} x2={svOx} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW} y1={svOy+svRH+3} x2={svOx+svRW} y2={svOy+svRH+24} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx} y1={svOy+svRH+18} x2={svOx+svRW} y2={svOy+svRH+18} stroke={vc.dimAct} strokeWidth="0.4" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW/2} y={svOy+svRH+32} textAnchor="middle" fill={vc.dimAct} fontSize="10" fontFamily="'IBM Plex Mono', monospace" fontWeight="600">{svWLabel}</text></g>
+            {/* Height dimension */}
+            {pat!=="linear"?<g><line x1={svOx+svRW+3} y1={svOy} x2={svOx+svRW+24} y2={svOy} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW+3} y1={svOy+svRH} x2={svOx+svRW+24} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.4"/><line x1={svOx+svRW+18} y1={svOy} x2={svOx+svRW+18} y2={svOy+svRH} stroke={vc.dimAct} strokeWidth="0.4" markerStart="url(#sv-arr2)" markerEnd="url(#sv-arr)"/><text x={svOx+svRW+28} y={svOy+svRH/2} dominantBaseline="middle" fill={vc.dimAct} fontSize="10" fontFamily="'IBM Plex Mono', monospace" fontWeight="600">{svHLabel}</text></g>:null}
+            {/* Pattern label — above scan area */}
+            <text x={svPd_l} y="16" fill={vc.lbl} fontSize="9.5" fontWeight="600" fontFamily="'IBM Plex Sans', system-ui, sans-serif" letterSpacing="0.08em">{pat==="linear"?"LINEAR":pat==="bidi"?"BIDIRECTIONAL RASTER":"UNIDIRECTIONAL RASTER"}</text>
+            {pat!=="linear"?<text x={svW_c-8} y="16" textAnchor="end" fill={vc.lbl} fontSize="9" fontFamily="'IBM Plex Mono', monospace">{nLines+" lines"}</text>:null}
+            {/* Decimation notice — below width dim */}
+            {svTooMany?<text x={svOx+svRW/2} y={svOy+svRH+42} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="'IBM Plex Mono', monospace" fontStyle="italic">{"showing "+svDecCount+" of "+nLines.toLocaleString()+" lines"}</text>:null}
+            {/* Beam suppression notice — above scan area */}
+            {svBeamOwl&&svBeam?<text x={svOx+svRW/2} y={svOy-8} textAnchor="middle" fill={vc.lbl2} fontSize="9" fontFamily="'IBM Plex Mono', monospace">{"beam ("+svFmtDim(dia)+") \u226B scan area"}</text>:null}
+            {/* Legend — bottom right, outside scan area */}
+            <g transform={"translate("+(svW_c-8)+","+(svH_c-16)+")"}><line x1="-58" y1="0" x2="-44" y2="0" stroke={vc.mark} strokeWidth="1.0"/><text x="-41" y="0.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="'IBM Plex Mono', monospace">mark</text>{svFlyback?<g><line x1="-58" y1="-14" x2="-44" y2="-14" stroke={vc.jump} strokeWidth="0.8" strokeDasharray="3,2"/><text x="-41" y="-13.5" dominantBaseline="middle" fill={vc.legTx} fontSize="8" fontFamily="'IBM Plex Mono', monospace">flyback</text></g>:null}</g>
+            {/* Hover crosshairs — neutral grey, colorblind safe */}
+            {svHovS&&!selPt&&pat!=="linear"?<g opacity="0.4">
+              <line x1={svHovS.sx} y1={svOy} x2={svHovS.sx} y2={svOy+svRH} stroke={vc.lbl} strokeWidth="0.7" strokeDasharray="3,3"/>
+              <line x1={svOx} y1={svHovS.sy} x2={svOx+svRW} y2={svHovS.sy} stroke={vc.lbl} strokeWidth="0.7" strokeDasharray="3,3"/>
+              <circle cx={svHovS.sx} cy={svHovS.sy} r="4" fill="none" stroke={vc.lbl} strokeWidth="1"/>
+            </g>:null}
+            {/* Selected point marker — circle+cross for shape redundancy */}
+            {svSelS&&pat!=="linear"?<g>
+              <line x1={svSelS.sx} y1={svOy} x2={svSelS.sx} y2={svOy+svRH} stroke={T.no} strokeWidth="0.8" strokeDasharray="5,3" opacity="0.5"/>
+              <line x1={svOx} y1={svSelS.sy} x2={svOx+svRW} y2={svSelS.sy} stroke={T.no} strokeWidth="0.8" strokeDasharray="5,3" opacity="0.5"/>
+              <circle cx={svSelS.sx} cy={svSelS.sy} r="6" fill="none" stroke={T.no} strokeWidth="1.5"/>
+              <line x1={svSelS.sx-3} y1={svSelS.sy} x2={svSelS.sx+3} y2={svSelS.sy} stroke={T.no} strokeWidth="1.5"/>
+              <line x1={svSelS.sx} y1={svSelS.sy-3} x2={svSelS.sx} y2={svSelS.sy+3} stroke={T.no} strokeWidth="1.5"/>
+            </g>:null}
+            {/* Hover coordinate tooltip — dynamically positioned to avoid edge clipping */}
+            {svHov&&svHovS&&!selPt&&pat!=="linear"?(function(){var tp=svTipPos(svHovS.sx,svHovS.sy);return <g>
+              <rect x={tp.tx} y={tp.ty} width={svTipW} height={svTipH} rx="2" fill="rgba(31,41,51,0.88)"/>
+              <text x={tp.tx+6} y={tp.ty+13} fill="#E6EDF3" fontSize="10" fontFamily={"'IBM Plex Mono', monospace"}>{"("+svHov.x.toFixed(2)+", "+svHov.y.toFixed(2)+")"}</text>
+            </g>;})():null}
+            {/* Click instruction hint — below dimensions, clear of geometry */}
+            {!selPt&&pat!=="linear"?<text x={svOx+svRW/2} y={svH_c-4} textAnchor="middle" fill={vc.lbl} fontSize="8.5" fontFamily={"'IBM Plex Sans', system-ui, sans-serif"} fontWeight="400" opacity="0.5">Click anywhere in scan area to select observation point</text>:null}
+          </svg>
+        </div>
+        {/* Coordinate input bar */}
+        {pat!=="linear"?<div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:4}}>
+          <div style={{display:"flex",alignItems:"center",gap:5}}>
+            <span style={{fontSize:11,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Observation:</span>
+            {selPt?<span style={{fontFamily:"'IBM Plex Mono', monospace",fontSize:12,color:T.tx,fontWeight:500,fontVariantNumeric:"tabular-nums"}}>{"("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm"}</span>
+              :<span style={{fontSize:11,color:T.td,fontStyle:"italic",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>click scan area or enter coordinates</span>}
+            {selPt?<button onClick={function(){setSelPt(null);setSelXS("");setSelYS("");}} style={{fontSize:10,padding:"2px 8px",background:"transparent",border:"1px solid "+T.bd,borderRadius:4,cursor:"pointer",color:T.ac,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Reset to worst-case</button>:null}
+          </div>
+          <div style={{borderLeft:"1px solid "+T.bd,height:18}}/>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <span style={{fontSize:10,color:T.td}}>x</span>
+            <input type="text" value={selXS} onChange={function(e){setSelXS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:4,textAlign:"right",color:T.tx,outline:"none",background:T.card,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
+            <span style={{fontSize:10,color:T.td}}>y</span>
+            <input type="text" value={selYS} onChange={function(e){setSelYS(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter")svCoordGo();}} placeholder="0.000" style={{width:66,fontFamily:"'IBM Plex Mono', monospace",fontSize:11,height:24,padding:"0 6px",border:"1px solid "+T.bd,borderRadius:4,textAlign:"right",color:T.tx,outline:"none",background:T.card,fontVariantNumeric:"tabular-nums",boxSizing:"border-box"}}/>
+            <span style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>mm</span>
+            <button onClick={svCoordGo} style={{height:24,padding:"0 10px",fontSize:10,fontWeight:500,background:T.ac,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>Go</button>
+          </div>
+        </div>:null}
+        {/* Inputs — compact row */}
+        <div style={{display:"grid",gridTemplateColumns:pat==="linear"?"1fr 1fr 1fr":"1fr 1fr 1fr 1fr 1fr",gap:8}}>
+          <div><label htmlFor="scan-sw" style={lb}>{pat==="linear"?"B-scan Length (mm)":"B-scan Width (mm)"}</label><input id="scan-sw" type="text" value={lLS} onChange={function(e){upN(setLLS,setLineL,e.target.value);}} style={ip}/></div>
+          {pat!=="linear"?<div><label htmlFor="scan-sh" style={lb}>Slow-axis Range (mm)</label><input id="scan-sh" type="text" value={scanHS} onChange={function(e){upN(setScanHS,setScanHN,e.target.value);}} style={ip}/></div>:null}
+          {pat!=="linear"?<div><label htmlFor="scan-nl" style={lb}>B-scans / Volume</label><input id="scan-nl" type="text" value={nLS} onChange={function(e){setNLS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNLines(v);setDirty(true);}} style={ip}/></div>:null}
+          <div><label htmlFor="scan-nbm" style={lb}>Averages / Loc.</label><input id="scan-nbm" type="text" value={nBMS} onChange={function(e){setNBMS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNBM(v);setDirty(true);}} style={ip}/></div>
+          <div>
+            <label style={lb}>Scan Speed</label>
+            <select value={velMode} onChange={function(e){setVelMode(e.target.value);setDirty(true);}} style={{width:"100%",marginBottom:4,fontSize:10,padding:"4px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",boxSizing:"border-box"}}><option value="ascans">A-lines / B-scan</option><option value="velocity">Velocity (mm/s)</option><option value="dwell">Dwell (\u00b5s)</option><option value="scanrate">B-scan rate (Hz)</option><option value="framerate">Volume rate (Hz)</option></select>
+            {velMode==="ascans"?<input type="text" value={nAS} onChange={function(e){setNAS(e.target.value);var v=Math.max(1,Math.round(Number(e.target.value)));if(isFinite(v))setNA(v);setDirty(true);}} style={ip}/>:velMode==="velocity"?<input type="text" value={vS} onChange={function(e){upN(setVS,setVel,e.target.value);}} style={ip}/>:velMode==="dwell"?<input type="text" value={dwellS} onChange={function(e){upN(setDwellS,setDwellN,e.target.value);}} style={ip}/>:velMode==="scanrate"?<input type="text" value={srateS} onChange={function(e){upN(setSrateS,setSrateN,e.target.value);}} style={ip}/>:<input type="text" value={frateS} onChange={function(e){upN(setFrateS,setFrateN,e.target.value);}} style={ip}/>}
+          </div>
+        </div>
+        {/* Derived readouts — single line below */}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:4}}>
+          {pat!=="linear"&&nLines>1&&scanHN>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"Step: "+(scanHN/(nLines-1)*1000).toFixed(2)+" \u00b5m"}</div>:null}
+          {velMode==="ascans"&&nA>0&&prf>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(lineL*prf/nA).toFixed(2)+" mm/s ("+(prf/nA).toFixed(2)+" B-scans/s)"}</div>:null}
+          {velMode==="dwell"&&dwellN>0&&dia>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(dia/(dwellN*1e-6)).toFixed(2)+" mm/s"}</div>:null}
+          {velMode==="scanrate"&&srateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(srateN*lineL).toFixed(2)+" mm/s"}</div>:null}
+          {velMode==="framerate"&&frateN>0&&lineL>0?<div style={{fontSize:8,color:T.td,fontFamily:"'IBM Plex Mono', monospace"}}>{"\u2192 "+(lineL*(pat==="linear"?1:nLines)*frateN).toFixed(2)+" mm/s"}</div>:null}
+        </div>
+      </div>
+
+      </div>
     </div>
-  );
+    <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+      <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
+    </div>
+    </div>
+
+    {/* ── Performance Note ── */}
+    {perfNote?<div style={{padding:"8px 12px",borderRadius:4,background:"#fff3e0",border:"1px solid #ffe0b2",fontSize:10,color:"#e65100",fontFamily:"'IBM Plex Mono', monospace",lineHeight:1.6}}>
+      {"\u26a1"} {perfNote}
+    </div>:null}
+
+    {/* ═══ Region 2: Results ═══ */}
+    <div>
+      <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Safety Results</div>
+    {/* ── Safety Results ── */}
+    {res?<div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
+      {/* Verdict bar + rules in single row */}
+      <div style={{display:"flex",gap:12,alignItems:"stretch",marginBottom:12}}>
+        <div role="alert" aria-live="polite" style={{background:res.sf.safe?"#E8F5F0":"#fbe9e7",borderRadius:4,padding:"10px 16px",display:"flex",alignItems:"center",gap:10,minWidth:160}}>
+          <div><div style={{fontSize:8,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:res.sf.safe?"#00796B":"#bf360c",marginBottom:1}}>Safety Verdict{res.nBM>1?" · ×"+res.nBM+" avg":""}</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00796B":"#bf360c"}}>{res.sf.safe?"PASS":"FAIL"}</div></div>
+          <div><div style={{fontSize:9,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.safe?"#00897B":"#d84315"}}>margin: {res.sf.safe?"+":""}{(res.sf.sm*100).toFixed(1)}%</div>
+          <div style={{fontSize:9,color:res.sf.safe?"#26a69a":"#e64a19"}}>binding: {res.sf.br}</div></div>
+        </div>
+        <div style={{flex:1,display:"grid",gridTemplateColumns:"1fr 1fr",gap:0,border:"1px solid "+T.bd,borderRadius:4}}>
+          <div style={{padding:"8px 12px",borderRight:"1px solid "+T.bd}}>
+            <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 1 — Single Pulse</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok}}>{numFmt(res.sf.ppM,4)}</span>
+              <span style={{fontSize:9,color:T.td}}>J/cm{"²"}</span>
+              <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r1m>1?T.no:T.ok,marginLeft:"auto"}}>{res.sf.r1m.toFixed(3)}{"×"}</span>
+            </div>
+            <div style={{fontSize:8,color:T.td,marginTop:1}}>MPE({"τ"}) = {numFmt(res.sf.mt,4)} J/cm{"²"}</div>
+          </div>
+          <div style={{padding:"8px 12px"}}>
+            <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",color:T.td,marginBottom:3}}>Rule 2 — Cumulative</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontSize:13,fontWeight:500,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok}}>{numFmt(res.sf.pF,4)}</span>
+              <span style={{fontSize:9,color:T.td}}>J/cm{"²"}</span>
+              <span style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace",color:res.sf.r2m>1?T.no:T.ok,marginLeft:"auto"}}>{res.sf.r2m.toFixed(3)}{"×"}</span>
+            </div>
+            <div style={{fontSize:8,color:T.td,marginTop:1}}>MPE(T={numFmt(res.st.tt,3)}s) = {numFmt(res.sf.mT,4)} J/cm{"²"}</div>
+          </div>
+        </div>
+      </div>
+      {/* ── Worst-case stationary advisory (galvo-stall fault mode) ── */}
+      {(function(){
+        var T_st=res.st.tt;
+        if(!isFinite(T_st)||T_st<=0)return null;
+        var w_cm=(dia/2)/10;
+        var denom=Math.PI*w_cm*w_cm;
+        if(denom<=0)return null;
+        var sRatio,sSafe,sBind,sH,sMPE;
+        if(laserMode==="cw"){
+          var I_peak=2*pw/denom;
+          sH=I_peak*T_st;
+          sMPE=skinMPE(wl,T_st);
+          sRatio=sH/sMPE;sSafe=sRatio<1;sBind="CW (T="+numFmt(T_st,3)+" s)";
+        }else if(prf>0){
+          var H_pp=2*(pw/prf)/denom;
+          var N_st=prf*T_st;
+          var H_total=H_pp*N_st;
+          var mpe1=skinMPE(wl,tau);
+          var mpeT2=skinMPE(wl,T_st);
+          var r1s=H_pp/mpe1;
+          var r2s=N_st>1?(H_total/mpeT2):r1s;
+          if(r1s>=r2s){sRatio=r1s;sBind="Rule 1 (single pulse)";sH=H_pp;sMPE=mpe1;}
+          else{sRatio=r2s;sBind="Rule 2 (cumulative)";sH=H_total;sMPE=mpeT2;}
+          sSafe=sRatio<1;
+        }else return null;
+        var bg=sSafe?"#E8F5F0":"#fff3e0";
+        var bd=sSafe?"#C4E5DF":"#ffe0b2";
+        var col=sSafe?"#00796B":"#e65100";
+        var note=sSafe?"tissue safe under galvo-stall fault":"fault-mode exceeds MPE \u2014 stall interlock recommended";
+        return <div style={{marginTop:10,padding:"6px 10px",background:bg,borderRadius:4,border:"1px solid "+bd,fontSize:10,color:col,fontFamily:"'IBM Plex Mono', monospace"}}>
+          {(sSafe?"\u2713":"\u26a0")+" Advisory \u2014 worst-case stationary: H = "+numFmt(sH,4)+" J/cm\u00b2 ("+sRatio.toFixed(3)+"\u00d7 MPE), binding "+sBind+" \u2014 "+note}
+        </div>;
+      })()}
+      {/* ── ANSI Rule 3 advisory (informational, not applied for ICNIRP skin) ── */}
+      {(function(){
+        var N=res.sf.mP;
+        if(!isFinite(N)||N<=1)return null;
+        var rule3Mpe=res.sf.mt*Math.pow(N,-0.25);
+        var rule3Ratio=res.sf.ppM/rule3Mpe;
+        if(rule3Ratio<=1)return null;
+        return <div style={{marginTop:10,padding:"6px 10px",background:"#f5f5f0",borderRadius:4,border:"1px dashed #b8b8a0",fontSize:10,color:"#555",fontFamily:"'IBM Plex Mono', monospace"}}>
+          {"ⓘ ANSI Z136.1 Rule 3 (informational): N = "+Math.round(N)+" pulses/spot, N⁻¹ᐞˡ = "+Math.pow(N,-0.25).toFixed(3)+", per-pulse limit drops to "+numFmt(rule3Mpe,3)+" J/cm² ("+rule3Ratio.toFixed(2)+"× actual). ICNIRP 2013 does not apply Rule 3 to skin; this advisory is shown for ANSI cross-reference only."}
+        </div>;
+      })()}
+      {/* Compact summary table — single table, essential info only */}
+      <div style={secH}>Scan Summary</div>
+      <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>{[
+        ["Scan pattern",pat==="linear"?"Linear":pat==="bidi"?"Bidirectional raster":"Unidirectional raster","Scan velocity",vel.toPrecision(4)+" mm/s"],
+        ["Total scan time",numFmt(res.st.tt,4)+" s"+(res.nBM>1?" (×"+res.nBM+" avg)":""),"Grid",res.g.nx+"×"+res.g.ny+" ("+ppd+" pts/dia)"],
+        ["Peak fluence",numFmt(res.sf.pF,4)+" J/cm²"+(res.sf.anUsed?" (analytical)":""),"Max pulses at point",String(res.sf.mP)],
+        ["Pulse energy",numFmt(pw/prf,4)+" J","Dwell time ("+dwm+")",numFmt(dwm==="gaussian"?scanDwellGaussian(dia,vel):scanDwellGeometric(dia,vel),4)+" s"],
+        ["τᵣ (thermal)",numFmt(res.sf.tauR,4)+" s","Flyback blanking",pat==="linear"?"N/A":(blk?"Yes":"No (conservative)")],
+        ["Modality",modality==="or-pam"?"OR-PAM":modality==="ar-pam"?"AR-PAM":"PACT","Averages / loc.",String(Math.max(1,Math.round(nBM)))],
+      ].map(function(row,i){return <tr key={i} style={{borderBottom:"1px solid "+T.bgI}}>
+        <td style={{padding:"3px 8px",fontSize:10,color:T.tm,width:"18%"}}>{row[0]}</td>
+        <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[1]}</td>
+        <td style={{padding:"3px 8px",fontSize:10,color:T.tm,width:"18%"}}>{row[2]}</td>
+        <td style={{padding:"3px 8px",fontSize:11,fontFamily:"'IBM Plex Mono', monospace",fontWeight:500,width:"32%"}}>{row[3]}</td>
+      </tr>;})}</tbody></table>
+      {/* Thermal relaxation — inline if available */}
+      {isFinite(res.sf.minRv)?<div style={{marginTop:10,padding:"6px 10px",background:res.sf.rvOk?"#E8F5F0":"#fff3e0",borderRadius:4,border:"1px solid "+(res.sf.rvOk?"#C4E5DF":"#ffe0b2"),fontSize:10,color:res.sf.rvOk?"#00796B":"#e65100",fontFamily:"'IBM Plex Mono', monospace"}}>
+        {res.sf.rvOk?"✓":"⚠"}{" Thermal: τᵣ = "+numFmt(res.sf.tauR,3)+" s, min revisit = "+numFmt(res.sf.minRv,3)+" s ("+((res.sf.minRv/res.sf.tauR)).toFixed(2)+"× τᵣ) — "+(res.sf.rvOk?"tissue cools between passes":"thermal accumulation likely")}
+      </div>:null}
+      {/* Permissible limits — compact inline */}
+      {(function(){
+        var maxEp=scanMaxPulseEnergy(wl,dia,tau);
+        var minPRF=scanMinRepRate(wl,dia,tau,pw);
+        return <div style={{marginTop:10}}>
+          <div style={{fontSize:9,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",color:T.td,marginBottom:4}}>Permissible Ranges</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:6}}>
+            {[
+              ["Max Ep",numFmt(maxEp,3)+" J",pw/prf<=maxEp*1.001],
+              ["Min PRF",numFmt(minPRF,3)+" Hz",prf>=minPRF*0.999],
+              ["Max power",numFmt(res.maxP||0,3)+" W",pw<=(res.maxP||Infinity)*1.001],
+              ["Min velocity",isFinite(res.minV)?numFmt(res.minV,3)+" mm/s":"—",isFinite(res.minV)?vel>=res.minV*0.999:true]
+            ].map(function(it,i){
+              return <div key={i} style={{fontSize:10,fontFamily:"'IBM Plex Mono', monospace"}}>
+                <span style={{color:T.td,fontSize:9}}>{it[0]}: </span>
+                <span style={{fontWeight:600,color:it[2]?T.ok:T.no}}>{it[1]}</span>
+              </div>;
+            })}
+          </div>
+        </div>;
+      })()}
+    </div>:null}
+
+    {/* ── Point Timing Visualization ── */}
+    <div style={{background:T.card,borderRadius:4,border:"1px solid "+T.bd,padding:14}}>
+      <div style={secH}>Point Timing Diagram</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>
+          {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
+          {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
+        </div>
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+      </div>
+      {res&&prf>0?<div>
+        <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
+      </div>
+        :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
+    </div>
+    </div>
+
+    {/* ═══ Region 3: Safety Notice ═══ */}
+    {/* Safety disclaimer — compact */}
+    <div style={{fontSize:9,color:T.td,lineHeight:1.6,padding:"8px 0"}}>
+      <strong style={{color:T.tm}}>{"⚠"} Notice:</strong>{" "}
+      This tool evaluates skin MPE per {STD_NAME} using Rules 1 (per-pulse) and Rule 2 (average power). ICNIRP 2013 does not specify a Rule 3 (N⁻¹ᐞˡ multi-pulse correction) for skin; for ANSI Z136.1 compliance, additional Rule 3 evaluation may be required, particularly for high-PRF OR-PAM (>100 kHz).{" "}
+      <strong style={{color:T.no}}>Research and educational use only.</strong>{" "}Verify all values against the applicable standard.
+    </div>
+  </div>);
 }
 
 /* ═══════ SCANNING PROTOCOLS (sub-tab router) ═══════ */
