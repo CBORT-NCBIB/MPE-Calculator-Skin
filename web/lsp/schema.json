@@ -1,0 +1,535 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cbort-ncbib.github.io/MPE-Calculator-Skin/schemas/lsp-1.0.0.schema.json",
+  "title": "Laser Scan Pattern (LSP) Document",
+  "description": "Canonical exchange format for arbitrary laser scan patterns with embedded MPE-relevant metadata. Version 1.0.0 of the schema. Compatibility policy: minor versions (1.x) add optional fields only; patch versions (1.0.x) fix wording or examples without changing semantics; major versions (2.x) may rename or remove. Unknown top-level keys in input documents are preserved by readers but may be warned about.",
+  "type": "object",
+  "required": ["lsp_version", "meta", "laser", "exposure", "pattern"],
+  "additionalProperties": true,
+  "properties": {
+
+    "lsp_version": {
+      "description": "SemVer string identifying the schema version this document conforms to. Readers should accept any 1.x.x document and may warn on unknown patches.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+
+    "lsp_schema": {
+      "description": "Optional URL of the JSON Schema document this LSP document was authored against. Informational only; validators use lsp_version to resolve the schema.",
+      "type": "string",
+      "format": "uri"
+    },
+
+    "meta": {
+      "description": "Document-level metadata: identity, units, coordinate frame, bounding box.",
+      "type": "object",
+      "required": ["units"],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "description": "Human-readable name for the pattern.",
+          "type": "string",
+          "maxLength": 256
+        },
+        "description": {
+          "description": "Free-form description of the pattern's intent and provenance.",
+          "type": "string",
+          "maxLength": 4096
+        },
+        "created": {
+          "description": "ISO 8601 timestamp at which the document was created.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "author": {
+          "description": "Author or originating institution.",
+          "type": "string",
+          "maxLength": 256
+        },
+        "source_tool": {
+          "description": "Name and version of the tool that emitted this document.",
+          "type": "string",
+          "maxLength": 256
+        },
+        "coordinate_frame": {
+          "description": "Interpretation of the (x, y) coordinates. sample_plane is the default and means physical coordinates at the imaging plane. scanner_angle means mechanical scanner angles in radians. galvo_voltage means raw drive voltages.",
+          "type": "string",
+          "enum": ["sample_plane", "scanner_angle", "galvo_voltage"],
+          "default": "sample_plane"
+        },
+        "units": {
+          "description": "Declared physical units for the document. Required because the most common source of MPE error is a silent unit confusion.",
+          "type": "object",
+          "required": ["length", "time", "power"],
+          "additionalProperties": false,
+          "properties": {
+            "length": {
+              "description": "Unit for spatial coordinates and beam diameter.",
+              "type": "string",
+              "enum": ["mm", "um", "rad", "V"]
+            },
+            "time": {
+              "description": "Unit for durations and time-sampled axes.",
+              "type": "string",
+              "enum": ["s", "ms", "us", "ns"]
+            },
+            "power": {
+              "description": "Unit for laser power.",
+              "type": "string",
+              "enum": ["W", "mW", "normalized", "percent"]
+            },
+            "wavelength": {
+              "description": "Unit for laser wavelength. Defaults to nm.",
+              "type": "string",
+              "enum": ["nm", "um"],
+              "default": "nm"
+            }
+          }
+        },
+        "origin": {
+          "description": "Optional document origin in declared length units. Defaults to [0, 0].",
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "extent_bbox": {
+          "description": "Optional bounding box [[x_min, y_min], [x_max, y_max]] in declared length units. Used by validators to flag out-of-range coordinates.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": { "type": "number" }
+          }
+        }
+      }
+    },
+
+    "laser": {
+      "description": "Laser source parameters required for MPE evaluation.",
+      "type": "object",
+      "required": ["wavelength_nm", "beam_diameter_mm", "pulse_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "wavelength_nm": {
+          "description": "Center wavelength in nanometers. ICNIRP 2013 valid range is 180 to 1,000,000 nm.",
+          "type": "number",
+          "minimum": 180,
+          "maximum": 1000000
+        },
+        "beam_diameter_mm": {
+          "description": "Beam diameter at the exposure plane in millimeters, using the definition specified in beam_diameter_definition.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        },
+        "beam_diameter_definition": {
+          "description": "Definition under which the beam diameter is reported. The engine assumes 1/e^2 intensity by default.",
+          "type": "string",
+          "enum": ["FWHM", "1/e^2_intensity", "1/e_field"],
+          "default": "1/e^2_intensity"
+        },
+        "pulse_mode": {
+          "description": "cw indicates a continuous-wave laser. pulsed requires the pulse object to be populated.",
+          "type": "string",
+          "enum": ["cw", "pulsed"]
+        },
+        "pulse": {
+          "description": "Pulsed-laser parameters. Required when pulse_mode is pulsed; ignored when pulse_mode is cw.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["repetition_rate_hz", "pulse_duration_s"],
+              "additionalProperties": false,
+              "properties": {
+                "repetition_rate_hz": {
+                  "description": "Pulse repetition frequency in Hz. Must be positive.",
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "pulse_duration_s": {
+                  "description": "Single-pulse duration in seconds. Must be positive.",
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "pulse_energy_j": {
+                  "description": "Optional explicit per-pulse energy in joules. If absent, computed from segment power and repetition rate.",
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+
+    "exposure": {
+      "description": "Exposure-window parameters required for MPE evaluation under ICNIRP 2013 Rule 2.",
+      "type": "object",
+      "required": ["tissue", "exposure_duration_s"],
+      "additionalProperties": false,
+      "properties": {
+        "tissue": {
+          "description": "Target tissue. Only skin is currently supported by the MPE engine.",
+          "type": "string",
+          "enum": ["skin"]
+        },
+        "exposure_duration_s": {
+          "description": "Total exposure window in seconds. Used as the time argument to MPE(t) in Rule 2.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 86400
+        },
+        "aperture_mm": {
+          "description": "Optional ICNIRP averaging aperture in millimeters. If absent, the engine's default for the chosen tissue is used.",
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        }
+      }
+    },
+
+    "pattern": {
+      "description": "The scan pattern itself. Either segments, samples, or parameterized must be populated, as indicated by representation.",
+      "type": "object",
+      "required": ["representation", "authoritative"],
+      "additionalProperties": false,
+      "properties": {
+
+        "representation": {
+          "description": "Which structural form this pattern is encoded in. segments is a piecewise-constant event list. samples is a dense time-sampled waveform. hybrid means both are present and the authoritative field disambiguates.",
+          "type": "string",
+          "enum": ["segments", "samples", "hybrid"]
+        },
+
+        "authoritative": {
+          "description": "Which encoding is canonical on round-trip when more than one is present.",
+          "type": "string",
+          "enum": ["segments", "samples", "parameterized"]
+        },
+
+        "default_velocity_mm_s": {
+          "description": "Optional default velocity in mm/s applied to any segment that omits an explicit velocity. Ignored when representation is samples.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+
+        "default_power_w": {
+          "description": "Optional default power in watts applied to any segment that omits an explicit power. Ignored when representation is samples.",
+          "type": "number",
+          "minimum": 0
+        },
+
+        "loop": {
+          "description": "Optional looping policy. enabled false means the pattern is single-shot; otherwise count specifies the number of repetitions and frame_gap_s the blanked dwell between them.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean", "default": false },
+            "count": { "type": "integer", "minimum": 1, "default": 1 },
+            "frame_gap_s": { "type": "number", "minimum": 0, "default": 0 }
+          }
+        },
+
+        "segments": {
+          "description": "Ordered list of scan segments. Required when representation is segments or hybrid.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/Segment" }
+            }
+          ]
+        },
+
+        "samples": {
+          "description": "Time-sampled waveform. Required when representation is samples or hybrid.",
+          "oneOf": [
+            { "type": "null" },
+            { "$ref": "#/$defs/Samples" }
+          ]
+        },
+
+        "parameterized": {
+          "description": "Editor-only parameterized shape definitions. Preserved on round-trip but never the source of truth for computation; the segments or samples blocks must be regenerated whenever parameterized is edited.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/ParameterizedShape" }
+            }
+          ]
+        },
+
+        "sidecar": {
+          "description": "Optional reference to an external file holding the dense arrays. Reserved for Phase 2 HDF5 sidecar support.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["type", "href"],
+              "additionalProperties": false,
+              "properties": {
+                "type": { "type": "string", "enum": ["hdf5", "npz", "csv"] },
+                "href": { "type": "string" },
+                "dataset_map": { "type": "object" }
+              }
+            }
+          ]
+        }
+      },
+
+      "allOf": [
+        {
+          "if": { "properties": { "representation": { "const": "segments" } } },
+          "then": {
+            "required": ["segments"],
+            "properties": {
+              "segments": { "type": "array", "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "representation": { "const": "samples" } } },
+          "then": {
+            "required": ["samples"],
+            "properties": {
+              "samples": { "$ref": "#/$defs/Samples" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "representation": { "const": "hybrid" } } },
+          "then": {
+            "required": ["segments", "samples"],
+            "properties": {
+              "segments": { "type": "array", "minItems": 1 },
+              "samples": { "$ref": "#/$defs/Samples" }
+            }
+          }
+        }
+      ]
+    },
+
+    "validation_hints": {
+      "description": "Optional bounds the authoring tool believes its pattern stays within. The validator uses these to reject malformed or adversarial inputs early.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_velocity_mm_per_s": { "type": "number", "exclusiveMinimum": 0 },
+        "max_power_w": { "type": "number", "minimum": 0 },
+        "expected_total_duration_s": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    }
+  },
+
+  "$defs": {
+
+    "Velocity": {
+      "description": "Velocity specification for a single segment. Three modes are supported.",
+      "oneOf": [
+        {
+          "description": "Constant velocity over the entire segment.",
+          "type": "object",
+          "required": ["mode", "value_mm_per_s"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "constant" },
+            "value_mm_per_s": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "description": "Linear velocity ramp between v_start and v_end over the segment's parametric length.",
+          "type": "object",
+          "required": ["mode", "v_start_mm_per_s", "v_end_mm_per_s"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "linear_ramp" },
+            "v_start_mm_per_s": { "type": "number", "exclusiveMinimum": 0 },
+            "v_end_mm_per_s": { "type": "number", "exclusiveMinimum": 0 }
+          }
+        },
+        {
+          "description": "Inherit from pattern.default_velocity_mm_s.",
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "inherit" }
+          }
+        }
+      ]
+    },
+
+    "Power": {
+      "description": "Optical power specification for a single segment.",
+      "oneOf": [
+        {
+          "description": "Constant power over the entire segment.",
+          "type": "object",
+          "required": ["mode", "value"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "constant" },
+            "value": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "description": "Linear power ramp between start and end values over the segment's parametric length.",
+          "type": "object",
+          "required": ["mode", "value_start", "value_end"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "linear_ramp" },
+            "value_start": { "type": "number", "minimum": 0 },
+            "value_end": { "type": "number", "minimum": 0 }
+          }
+        },
+        {
+          "description": "Inherit from pattern.default_power_w.",
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "const": "inherit" }
+          }
+        }
+      ]
+    },
+
+    "Segment": {
+      "description": "One element of a scan pattern's segment list. type discriminates the geometry.",
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "type": { "type": "string", "enum": ["line", "arc", "dwell", "move"] },
+        "p0": {
+          "description": "Start point [x, y] in declared length units.",
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "p1": {
+          "description": "End point [x, y] in declared length units. Required for line and move; required for arc as the endpoint; absent for dwell.",
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "center": {
+          "description": "Arc center point [x, y] in declared length units. Required for arc.",
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "sweep_rad": {
+          "description": "Signed arc sweep in radians (positive counter-clockwise). Required for arc.",
+          "type": "number"
+        },
+        "duration_s": {
+          "description": "Dwell duration in seconds. Required for dwell.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "velocity": { "$ref": "#/$defs/Velocity" },
+        "power": { "$ref": "#/$defs/Power" },
+        "blanked": {
+          "description": "If true, the laser is off during this segment regardless of power. Defaults to false.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "line" } } },
+          "then": { "required": ["p0", "p1"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "move" } } },
+          "then": { "required": ["p0", "p1"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "arc" } } },
+          "then": { "required": ["p0", "p1", "center", "sweep_rad"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "dwell" } } },
+          "then": { "required": ["p0", "duration_s"] }
+        }
+      ]
+    },
+
+    "Samples": {
+      "description": "Dense time-sampled waveform representation.",
+      "type": "object",
+      "required": ["sample_rate_hz", "x", "y"],
+      "additionalProperties": false,
+      "properties": {
+        "sample_rate_hz": {
+          "description": "Uniform sampling rate of all arrays in this block, in hertz.",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "encoding": {
+          "description": "Reserved for future binary encodings. Phase 1 supports only inline JSON arrays.",
+          "type": "string",
+          "enum": ["inline", "base64_float32", "base64_float64"],
+          "default": "inline"
+        },
+        "x": {
+          "description": "X coordinates at each sample, in declared length units.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "y": {
+          "description": "Y coordinates at each sample, in declared length units.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "z": {
+          "description": "Optional Z coordinates (reserved for 3D scans).",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "power": {
+          "description": "Optional power at each sample, in declared power units. If absent, pattern.default_power_w is used.",
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "blanked": {
+          "description": "Optional per-sample blanking flag. If absent, no samples are blanked.",
+          "type": "array",
+          "items": { "type": "boolean" }
+        }
+      }
+    },
+
+    "ParameterizedShape": {
+      "description": "Editor-only parameterized shape definition. Preserved across round-trips.",
+      "type": "object",
+      "required": ["id", "shape", "params"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "integer", "minimum": 0 },
+        "shape": {
+          "type": "string",
+          "enum": ["spiral", "lissajous", "rosette", "circle", "raster", "linear", "bidi_raster", "sparse_points"]
+        },
+        "params": {
+          "description": "Shape-specific parameter object.",
+          "type": "object"
+        }
+      }
+    }
+  }
+}
