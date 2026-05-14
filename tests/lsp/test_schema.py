@@ -14,6 +14,7 @@ verify the schema itself is correct independently of any JavaScript code.
 import json
 import sys
 from pathlib import Path
+
 from jsonschema import Draft202012Validator
 
 SCHEMA_PATH = Path(__file__).resolve().parents[2] / "web" / "lsp" / "schema.json"
@@ -492,6 +493,48 @@ TESTS.append(make_test(
     ]),
     False
 ))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# pytest discovery
+#
+# The test corpus above is structured as (name, document, should_be_valid)
+# tuples in the TESTS list. To make these visible to pytest's collection
+# mechanism (which runs in CI), we provide a parametrized test function that
+# wraps the corpus. The standalone main() runner below remains functional for
+# direct invocation via `python3 tests/lsp/test_schema.py`, preserving the
+# legacy contract.
+# ─────────────────────────────────────────────────────────────────────────────
+
+try:
+    import pytest
+
+    _VALIDATOR = Draft202012Validator(json.loads(SCHEMA_PATH.read_text()))
+
+    @pytest.mark.parametrize(
+        ("name", "doc", "should_be_valid"),
+        TESTS,
+        ids=[name for name, _, _ in TESTS],
+    )
+    def test_schema_case(name, doc, should_be_valid):
+        """Parametrized wrapper exposing the test corpus to pytest."""
+        errors = list(_VALIDATOR.iter_errors(doc))
+        is_valid = len(errors) == 0
+        if should_be_valid and not is_valid:
+            first = errors[0].message if errors else ""
+            raise AssertionError(
+                f"Case '{name}' expected to validate cleanly; got "
+                f"{len(errors)} error(s); first: {first}"
+            )
+        if not should_be_valid and is_valid:
+            raise AssertionError(
+                f"Case '{name}' expected to fail validation, but the document "
+                f"validated cleanly"
+            )
+
+except ImportError:
+    # pytest is not installed; the standalone main() below still works.
+    pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
