@@ -64,6 +64,19 @@ jobs:
       - name: Run engine.js tests
         run: node tests/test_engine_js.mjs
 
+      - name: Install Ajv for LSP Node-side tests
+        working-directory: web
+        run: npm install ajv
+
+      - name: Run LSP validator tests
+        run: node tests/lsp/test_validate.mjs
+
+      - name: Run LSP factory tests
+        run: node tests/lsp/test_factory.mjs
+
+      - name: Run LSP canonicalization tests
+        run: node tests/lsp/test_canonicalize.mjs
+
   # ── Build verification ─────────────────────────────────────
   build:
     runs-on: ubuntu-latest
