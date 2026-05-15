@@ -36,6 +36,16 @@ jsx_path = os.path.join(web_dir, "calculator.jsx")
 engine_path = os.path.join(web_dir, "engine.js")
 out_path = os.path.join(web_dir, "index.html")
 
+# ── LSP foundation paths ──
+# These are inlined into the bundle so the LSP Web Worker can run offline.
+# (Note: the LSP validator's Stage 1 schema check requires Ajv 8 on the
+# main thread; that integration is deferred to a follow-up commit when
+# the import-flow UI is added.  Commit 1 only wires up the worker, which
+# does not need Ajv.)
+lsp_dir = os.path.join(web_dir, "lsp")
+lsp_canonicalize_path = os.path.join(lsp_dir, "canonicalize.js")
+lsp_worker_path = os.path.join(web_dir, "lsp.worker.js")
+
 # Read standard path from config.js (allows switching standards without editing build.py)
 config_path = os.path.join(web_dir, "config.js")
 std_rel_path = "./standards/icnirp_2013.json"  # fallback if config.js missing
@@ -49,30 +59,103 @@ if os.path.exists(config_path):
 json_path = os.path.join(web_dir, std_rel_path.lstrip("./"))
 std_filename = os.path.basename(json_path)
 
-# ── Read sources ──
-with open(jsx_path, "r") as f:
-    jsx = f.read()
-with open(json_path, "r") as f:
-    std_json = f.read().strip()
-with open(engine_path, "r") as f:
-    engine_js = f.read()
+def _read_required(path, description):
+    """Read a required source file with a clear error message on failure.
 
-# ── Strip Node.js export block from engine for browser embedding ──
-# Lines between BUILD_STRIP_START and BUILD_STRIP_END contain the Node.js
-# require() + module.exports block which must NOT appear in browser code.
-# After stripping, only the unconditional { window.MPEEngine = {...}; } block remains.
-engine_browser = []
-stripping = False
-for line in engine_js.split("\n"):
-    if "BUILD_STRIP_START" in line:
-        stripping = True
-        continue
-    if "BUILD_STRIP_END" in line:
-        stripping = False
-        continue
-    if not stripping:
-        engine_browser.append(line)
-engine_js_browser = "\n".join(engine_browser)
+    The default Python FileNotFoundError traceback is opaque to non-developers
+    debugging a partial checkout or a misconfigured environment.  This helper
+    catches that case and exits with a message that names exactly which file
+    is missing and where it should live.
+    """
+    try:
+        with open(path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        print(f"Error: Required source file is missing: {path}", file=sys.stderr)
+        print(f"  Description: {description}", file=sys.stderr)
+        print(f"  Recovery: ensure your checkout is complete (git status; git pull), "
+              f"then re-run web/build.py.", file=sys.stderr)
+        sys.exit(2)
+
+
+# ── Read sources ──
+jsx = _read_required(jsx_path, "main React component (web/calculator.jsx)")
+std_json = _read_required(json_path, f"ICNIRP standard JSON (web/{std_rel_path})").strip()
+engine_js = _read_required(engine_path, "calculation engine (web/engine.js)")
+
+# Read LSP module sources for inlining into the Worker context
+lsp_canonicalize_js = _read_required(
+    lsp_canonicalize_path,
+    "LSP canonicalization module (web/lsp/canonicalize.js)")
+lsp_worker_js = _read_required(
+    lsp_worker_path,
+    "LSP worker shell (web/lsp.worker.js)")
+
+
+def _strip_node_block(source):
+    """Strip lines between BUILD_STRIP_START and BUILD_STRIP_END markers.
+
+    The same convention is used in engine.js and all LSP modules to gate
+    Node-specific code (require, module.exports) that must not appear in the
+    browser/worker build.  After stripping, only the unconditional browser-side
+    self.* assignments remain.
+
+    Marker recognition: a line is treated as a marker only if it is a
+    pure-comment line that contains nothing except the marker token (after
+    stripping whitespace and the `//` prefix).  This prevents documentation
+    comments like `// build.py strips the Node.js block (BUILD_STRIP_START →
+    BUILD_STRIP_END)` from accidentally triggering the strip.
+    """
+    import re
+    start_re = re.compile(r'^\s*//\s*BUILD_STRIP_START\s*$')
+    end_re = re.compile(r'^\s*//\s*BUILD_STRIP_END\s*$')
+    out_lines = []
+    stripping = False
+    for line in source.split("\n"):
+        if start_re.match(line):
+            stripping = True
+            continue
+        if end_re.match(line):
+            stripping = False
+            continue
+        if not stripping:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def _js_string_literal(source):
+    """Encode a source string as a JavaScript string literal safe to embed
+    inside an HTML <script> tag.
+
+    JSON encoding produces a valid JS string literal for any string, but the
+    HTML parser closes a <script> tag whenever it sees the case-insensitive
+    sequence "</script" followed by certain terminator characters.  If the
+    source contains that sequence (for example, a comment documenting a
+    <script> tag), the bundle silently breaks: the parser ends the script,
+    treats the rest of the source as text, then the closing </script> tag
+    leaves the page in an inconsistent state.
+
+    Defense in depth: split the dangerous sequence "</" into "<" + "/" at
+    the JS-string level so the rendered HTML never contains </script
+    inside a string literal.  The runtime string value is identical because
+    "<" + "/" === "</" in JavaScript.
+
+    We apply the same treatment to "<!--" and "-->" which can confuse the
+    HTML comment parser inside legacy parsers.
+    """
+    encoded = json.dumps(source)
+    # Replace within the JSON-encoded form (between the surrounding quotes).
+    # The JSON encoder never emits these sequences itself, so a substring
+    # replace is safe and reversible.
+    encoded = encoded.replace("</", "<\\/")
+    encoded = encoded.replace("<!--", "<\\!--")
+    encoded = encoded.replace("-->", "--\\>")
+    return encoded
+
+
+lsp_canonicalize_js_browser = _strip_node_block(lsp_canonicalize_js)
+lsp_worker_js_browser = _strip_node_block(lsp_worker_js)
+engine_js_browser = _strip_node_block(engine_js)
 
 # ── Transform JSX for browser embedding ──
 lines = jsx.split("\n")
@@ -223,7 +306,58 @@ if (typeof MPEEngine !== "undefined") MPEEngine.loadStandard(__STD_DATA__);
 <script>
 // Engine source for Web Worker (scanning computation runs off main thread)
 // Uses the FULL engine.js (including Node.js exports) since Worker scope is isolated
-var __ENGINE_SOURCE__ = {json.dumps(engine_js)};
+var __ENGINE_SOURCE__ = {_js_string_literal(engine_js)};
+</script>
+
+<script>
+// LSP worker sources (Sub-phase 1D): the LSP canonicalization pipeline runs
+// off the main thread inside its own Web Worker.  The three sources below are
+// concatenated and turned into a Blob URL by __createLSPWorker() when the
+// main thread first imports an LSP document.
+//
+// Order matters: engine first (LSPCanonicalize calls into it), then
+// canonicalize.js (exports self.LSPCanonicalize), then the worker shell
+// (defines self.onmessage, etc.).
+var __LSP_CANONICALIZE_SRC__ = {_js_string_literal(lsp_canonicalize_js_browser)};
+var __LSP_WORKER_SRC__ = {_js_string_literal(lsp_worker_js_browser)};
+
+// Factory function exposed to React code.  Returns a freshly-constructed
+// Web Worker instance, or null if Workers are unsupported.  The caller is
+// responsible for sending the init message before any canonicalize messages.
+//
+// Blob URL lifetime: we intentionally do NOT revoke the URL after the
+// Worker is constructed.  The HTML spec is unambiguous that an existing
+// Worker constructed from a blob URL keeps working after the URL is
+// revoked, but some browser versions have had subtle timing bugs in that
+// area.  The memory cost of one ~3 MB Blob URL kept alive for the
+// lifetime of the page is negligible, and the URL is garbage-collected
+// automatically on page unload.  The safer-by-default choice is to not
+// revoke until/unless we have a reason to.
+function __createLSPWorker() {{
+  if (typeof Worker === "undefined") return null;
+  if (typeof Blob === "undefined" || typeof URL === "undefined" ||
+      typeof URL.createObjectURL !== "function") return null;
+  if (typeof __ENGINE_SOURCE__ === "undefined" ||
+      typeof __LSP_CANONICALIZE_SRC__ === "undefined" ||
+      typeof __LSP_WORKER_SRC__ === "undefined") {{
+    return null;  // build script did not inline the required sources
+  }}
+  var combined = [
+    __ENGINE_SOURCE__,
+    __LSP_CANONICALIZE_SRC__,
+    __LSP_WORKER_SRC__
+  ].join("\\n;\\n");
+  var blob = new Blob([combined], {{type: "application/javascript"}});
+  var url = URL.createObjectURL(blob);
+  try {{
+    return new Worker(url);
+  }} catch (e) {{
+    // Construction failed (CSP block, unsupported MIME, etc).  Revoke the
+    // URL since no Worker is keeping it alive.
+    try {{ URL.revokeObjectURL(url); }} catch (_) {{}}
+    return null;
+  }}
+}}
 </script>
 
 <script{script_type}>
@@ -248,6 +382,7 @@ with open(out_path, "w") as f:
 line_count = html.count("\n") + 1
 print(f"Built {out_path}")
 print(f"  Sources: calculator.jsx ({len(lines)} lines), engine.js ({len(engine_js.splitlines())} lines), {std_filename}")
+print(f"  LSP:     canonicalize.js ({len(lsp_canonicalize_js.splitlines())} lines), lsp.worker.js ({len(lsp_worker_js.splitlines())} lines)")
 print(f"  Output:  index.html ({line_count} lines)")
 print(f"  JSX mode: {mode_label}")
 print(f"  Transforms: stripped imports, Tooltip→RTooltip, stripped export default")
