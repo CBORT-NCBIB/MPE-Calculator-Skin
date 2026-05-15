@@ -92,6 +92,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js (for Babel + bundle smoke test)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install build dependencies (Babel)
+        working-directory: web
+        run: npm install
+        # web/package.json lists @babel/core and @babel/preset-react as
+        # devDependencies; npm install pulls them in so build.py can
+        # pre-compile JSX rather than falling back to runtime Babel.
+
       - name: Build index.html
         run: python web/build.py
 
@@ -104,11 +116,6 @@ jobs:
           grep -q '__LSP_WORKER_SRC__' web/index.html || { echo "FAIL: LSP worker source not in output"; exit 1; }
           grep -q '__createLSPWorker' web/index.html || { echo "FAIL: LSP worker factory not in output"; exit 1; }
           echo "Build OK: index.html contains expected markers"
-
-      - name: Set up Node.js (for bundle smoke test)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
 
       - name: Validate bundle (syntax + worker round-trip)
         run: node tests/lsp/test_bundle.mjs

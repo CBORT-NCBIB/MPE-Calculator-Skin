@@ -146,14 +146,34 @@ test("bundle: contains required marker strings", () => {
   }
 });
 
-test("bundle: every inline <script> block parses as JavaScript", () => {
-  // Match <script>...</script> blocks that do NOT have a src= attribute.
-  const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g;
-  let match, idx = 0, errors = [];
+test("bundle: every plain inline <script> block parses as JavaScript", () => {
+  // Match each <script>...</script> block.  Capture the opening-tag
+  // attribute string so we can recognize text/babel blocks (which contain
+  // JSX, not plain JS, and would naturally fail new Function() parsing).
+  //
+  // Two flavors of bundle exist:
+  //   - PRE-COMPILED (CI and local with Babel installed): all script
+  //     blocks contain plain JS, no JSX literal characters.  All blocks
+  //     should parse with new Function().
+  //   - RUNTIME-BABEL FALLBACK (when @babel/core is missing): the main
+  //     application script is emitted as <script type="text/babel"> with
+  //     raw JSX.  That block legitimately fails plain-JS parsing because
+  //     the browser invokes Babel on it at runtime.  Skip such blocks.
+  //
+  // Skipping text/babel blocks does NOT weaken the test on a pre-compiled
+  // build (which has no text/babel blocks at all); it only makes the
+  // test robust to the runtime-Babel fallback.
+  const re = /<script(?![^>]*\bsrc=)([^>]*)>([\s\S]*?)<\/script>/g;
+  let match, idx = 0, errors = [], skipped = 0;
   while ((match = re.exec(html)) !== null) {
     idx++;
-    const body = match[1];
+    const attrs = match[1] || "";
+    const body = match[2];
     if (body.trim().length === 0) continue;
+    if (/type\s*=\s*["']text\/babel["']/i.test(attrs)) {
+      skipped++;
+      continue;  // JSX block — not plain JS
+    }
     try {
       new Function(body);  // syntax check only; does not execute
     } catch (e) {
