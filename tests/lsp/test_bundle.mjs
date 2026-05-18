@@ -113,10 +113,13 @@ std = JSON.parse(readFileSync(STD_PATH, "utf-8"));
 const bundleMtime = statSync(BUNDLE_PATH).mtimeMs;
 const sourceFiles = [
   "web/build.py",
+  "web/build_ajv_entry.js",
   "web/engine.js",
   "web/calculator.jsx",
   "web/lsp.worker.js",
-  "web/lsp/canonicalize.js"
+  "web/lsp/canonicalize.js",
+  "web/lsp/validate.js",
+  "web/lsp/schema.json"
 ];
 const staleSources = [];
 for (const rel of sourceFiles) {
@@ -281,6 +284,139 @@ test("bundle: __createLSPWorker is defined as a function", () => {
   // failure (inside a catch), not unconditionally.
   assert(slice.includes("URL.revokeObjectURL"),
     "expected revocation to be present on the failure path");
+});
+
+// ─── Main-thread Ajv + validator integration ──────────────────────────────
+//
+// Sub-phase 1D commit 2 inlines an Ajv 8 bundle (via esbuild) plus the LSP
+// schema plus the LSP validator into the main-thread script sequence.
+// These tests load all three into a single sandboxed context using the
+// SAME script execution semantics as a real browser (vm.runInContext with
+// each block as a separate runInContext call, mirroring how the browser
+// executes each <script> tag with global-scope semantics).  This catches
+// load-order bugs, global-resolution bugs, and Ajv-strict-mode rejections
+// that would otherwise only surface in production.
+
+function _findScriptBlockContaining(text, marker) {
+  // Linear scan for <script>...</script> blocks that contain the marker.
+  // Skip blocks with src= (CDN scripts) and type=text/babel (JSX).
+  let pos = 0;
+  while (true) {
+    const idx = text.indexOf("<script", pos);
+    if (idx < 0) return null;
+    const endOpen = text.indexOf(">", idx);
+    if (endOpen < 0) return null;
+    const opening = text.slice(idx, endOpen + 1);
+    if (/\bsrc=/.test(opening) || /type\s*=\s*["']text\/babel["']/i.test(opening)) {
+      pos = endOpen + 1;
+      continue;
+    }
+    const close = text.indexOf("</script>", endOpen);
+    if (close < 0) return null;
+    const body = text.slice(endOpen + 1, close);
+    if (body.includes(marker)) return body;
+    pos = close + 9;
+  }
+}
+
+function _makeMainThreadSandbox() {
+  // Browser-like main-thread context: `window` aliases the global, `var X` at
+  // top level becomes `window.X`.  We use runInContext to faithfully
+  // reproduce this: script execution inside vm puts top-level `var` declarations
+  // on the context's global object.
+  const sandbox = {
+    console, setTimeout, clearTimeout, setInterval, clearInterval,
+    Math, JSON, Date, Object, Array, Set, Map, WeakMap, WeakSet,
+    Error, TypeError, RangeError, SyntaxError,
+    Number, String, Boolean, Symbol, Promise,
+    isFinite, isNaN, parseInt, parseFloat,
+    RegExp, ArrayBuffer, Uint8Array, Int32Array, Float64Array,
+    Reflect, Proxy
+  };
+  // Browser convention: `window` is an alias for the global object.
+  sandbox.window = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  return sandbox;
+}
+
+test("bundle: Ajv2020 loads as a constructor on the main-thread global", () => {
+  const ajvBody = _findScriptBlockContaining(html, "globalThis.Ajv2020");
+  assert(ajvBody, "could not locate Ajv bundle script block");
+  const sandbox = _makeMainThreadSandbox();
+  vm.runInContext(ajvBody, sandbox, { filename: "ajv-bundle" });
+  assert(typeof sandbox.Ajv2020 === "function",
+    "expected window.Ajv2020 to be a constructor; got " + typeof sandbox.Ajv2020);
+  // Spot-check that it instantiates and compiles a trivial schema.
+  vm.runInContext(`
+    var v = new Ajv2020({strict: false});
+    var validate = v.compile({type: "object", properties: {x: {type: "number"}}, required: ["x"]});
+    globalThis._testResult = [validate({x: 42}), validate({y: "no"})];
+  `, sandbox);
+  assertEq(sandbox._testResult[0], true);
+  assertEq(sandbox._testResult[1], false);
+});
+
+test("bundle: LSP_SCHEMA loads as an object on the main-thread global", () => {
+  const schemaBody = _findScriptBlockContaining(html, "var LSP_SCHEMA = ");
+  assert(schemaBody, "could not locate LSP_SCHEMA script block");
+  const sandbox = _makeMainThreadSandbox();
+  vm.runInContext(schemaBody, sandbox, { filename: "lsp-schema" });
+  assert(typeof sandbox.LSP_SCHEMA === "object" && sandbox.LSP_SCHEMA !== null,
+    "expected window.LSP_SCHEMA to be an object");
+  assert(typeof sandbox.LSP_SCHEMA.$id === "string", "schema is missing $id");
+  assert(sandbox.LSP_SCHEMA.$schema && sandbox.LSP_SCHEMA.$schema.includes("2020-12"),
+    "schema must declare draft 2020-12");
+});
+
+test("bundle: LSPValidate loads, validates good docs, rejects malformed ones", () => {
+  const ajvBody = _findScriptBlockContaining(html, "globalThis.Ajv2020");
+  const schemaBody = _findScriptBlockContaining(html, "var LSP_SCHEMA = ");
+  const validateBody = _findScriptBlockContaining(html, "root.LSPValidate = LSPValidate");
+  assert(ajvBody && schemaBody && validateBody,
+    "could not locate one or more main-thread script blocks");
+
+  const sandbox = _makeMainThreadSandbox();
+  vm.runInContext(ajvBody, sandbox, { filename: "ajv-bundle" });
+  vm.runInContext(schemaBody, sandbox, { filename: "lsp-schema" });
+  vm.runInContext(validateBody, sandbox, { filename: "lsp-validate" });
+
+  assert(sandbox.LSPValidate && typeof sandbox.LSPValidate.validate === "function",
+    "window.LSPValidate.validate is not a function");
+
+  // Good document — should pass both Stage 1 and Stage 2.
+  const goodDoc = {
+    lsp_version: "1.0.0",
+    meta: { units: { length: "mm", time: "s", power: "W" } },
+    laser: { wavelength_nm: 532, beam_diameter_mm: 0.5, pulse_mode: "cw" },
+    exposure: { tissue: "skin", exposure_duration_s: 1.0 },
+    pattern: { representation: "segments", authoritative: "segments", default_power_w: 0.1,
+      segments: [{ id: 0, type: "line", p0: [0, 0], p1: [5, 0],
+        velocity: { mode: "constant", value_mm_per_s: 50 },
+        power: { mode: "constant", value: 0.1 }}]}
+  };
+  vm.runInContext(`globalThis._r = LSPValidate.validate(${JSON.stringify(goodDoc)});`, sandbox);
+  assertEq(sandbox._r.ok, true,
+    "valid doc should pass validation: " + JSON.stringify(sandbox._r.errors));
+
+  // Bad document — missing required fields.
+  vm.runInContext(`globalThis._r2 = LSPValidate.validate({lsp_version: "1.0.0"});`, sandbox);
+  assertEq(sandbox._r2.ok, false);
+  assert(sandbox._r2.errors.length > 0, "expected at least one error");
+
+  // Adversarial document — non-finite number where Stage 2 should catch it.
+  // Build a base doc with valid structure, then mutate p1 to inject NaN
+  // via direct sandbox access (avoiding the JSON.stringify+replace fragility
+  // that fails if any other field in goodDoc serializes to "null").
+  const docWithNaN = JSON.parse(JSON.stringify(goodDoc));
+  vm.runInContext(`
+    globalThis._docWithNaN = ${JSON.stringify(docWithNaN)};
+    globalThis._docWithNaN.pattern.segments[0].p1 = [0, Number.NaN];
+    globalThis._r3 = LSPValidate.validate(globalThis._docWithNaN);
+  `, sandbox);
+  // Either Stage 1 (NaN is not a number per JSON schema in strict mode)
+  // or Stage 2 (finite-number sweep) should reject this.
+  assertEq(sandbox._r3.ok, false, "doc with NaN coordinate should be rejected");
 });
 
 // ─────────────────────────────────────────────────────────────────────────

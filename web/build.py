@@ -38,13 +38,18 @@ out_path = os.path.join(web_dir, "index.html")
 
 # ── LSP foundation paths ──
 # These are inlined into the bundle so the LSP Web Worker can run offline.
-# (Note: the LSP validator's Stage 1 schema check requires Ajv 8 on the
-# main thread; that integration is deferred to a follow-up commit when
-# the import-flow UI is added.  Commit 1 only wires up the worker, which
-# does not need Ajv.)
+# Stage 1 (Ajv schema) and Stage 2 (plausibility) validation run on the
+# main thread, so validate.js and a self-contained Ajv 8 bundle are also
+# inlined into the main-thread script blocks.
 lsp_dir = os.path.join(web_dir, "lsp")
 lsp_canonicalize_path = os.path.join(lsp_dir, "canonicalize.js")
 lsp_worker_path = os.path.join(web_dir, "lsp.worker.js")
+lsp_validate_path = os.path.join(lsp_dir, "validate.js")
+lsp_schema_path = os.path.join(lsp_dir, "schema.json")
+# Ajv bundling: esbuild reads build_ajv_entry.js and produces a self-
+# contained IIFE bundle of Ajv 2020.  See build_ajv_entry.js for the
+# rationale and command this script invokes.
+ajv_entry_path = os.path.join(web_dir, "build_ajv_entry.js")
 
 # Read standard path from config.js (allows switching standards without editing build.py)
 config_path = os.path.join(web_dir, "config.js")
@@ -90,6 +95,108 @@ lsp_canonicalize_js = _read_required(
 lsp_worker_js = _read_required(
     lsp_worker_path,
     "LSP worker shell (web/lsp.worker.js)")
+
+# Read main-thread LSP validator + schema for inlining into the page's
+# main-thread script blocks.  Stage 1 uses Ajv against the schema; Stage 2
+# is pure JS plausibility checks.
+lsp_validate_js = _read_required(
+    lsp_validate_path,
+    "LSP validator (web/lsp/validate.js)")
+lsp_schema_json = _read_required(
+    lsp_schema_path,
+    "LSP schema (web/lsp/schema.json)").strip()
+
+
+def _assert_no_script_close(content, source_label):
+    """Defensive check: a literal '</script>' (or any case variant) inside an
+    inlined source would prematurely close the wrapping <script> block in the
+    generated HTML, breaking the page.  This catches accidental inclusions
+    early.  The Ajv bundle bypasses this check because esbuild generates it
+    deterministically and never produces script-close sequences."""
+    import re
+    if re.search(r"</\s*script\s*>", content, re.IGNORECASE):
+        print(f"ERROR: {source_label} contains a '</script>' sequence which would "
+              f"break the HTML output.  This must be removed before building.",
+              file=sys.stderr)
+        sys.exit(4)
+
+
+_assert_no_script_close(lsp_schema_json, "web/lsp/schema.json")
+_assert_no_script_close(lsp_validate_js, "web/lsp/validate.js")
+
+
+def _bundle_ajv(entry_path, web_dir):
+    """Invoke esbuild to produce a self-contained Ajv 8 IIFE bundle.
+
+    Why a separate bundling step?  Ajv 8 is a CommonJS package that imports
+    its rest-of-package at runtime via require().  It does not ship a
+    self-contained UMD or IIFE bundle.  We use esbuild (declared in
+    web/package.json devDependencies) to walk the require graph from
+    build_ajv_entry.js and produce a single ~125 KB minified IIFE that
+    exposes globalThis.Ajv2020.
+
+    Why esbuild rather than rollup or webpack?  esbuild is the fastest
+    bundler in the ecosystem (Ajv bundles in ~40 ms), has zero config in
+    this mode, and produces output that is byte-stable across runs.
+
+    If esbuild is missing (e.g. npm install was skipped), we fail with a
+    clear error rather than silently degrading to a runtime-load fallback.
+    Silent degradation would mean shipping a calculator that depends on
+    network access for safety-critical schema validation — exactly the
+    failure mode the bundling approach exists to avoid.
+    """
+    import tempfile
+    tmpdir = tempfile.mkdtemp(prefix="ajv-bundle-")
+    out_path = os.path.join(tmpdir, "ajv-bundle.js")
+    try:
+        result = subprocess.run(
+            ["npx", "--no-install", "esbuild",
+             entry_path,
+             "--bundle", "--minify",
+             "--format=iife",
+             "--target=es2019",
+             f"--outfile={out_path}"],
+            capture_output=True,
+            cwd=web_dir,
+            timeout=60
+        )
+        if result.returncode != 0:
+            print("Error: esbuild failed to bundle Ajv.", file=sys.stderr)
+            print(f"  stderr: {result.stderr.decode('utf-8', 'replace')[:500]}", file=sys.stderr)
+            print(f"  stdout: {result.stdout.decode('utf-8', 'replace')[:500]}", file=sys.stderr)
+            print("  Recovery: run 'cd web && npm install' to install esbuild "
+                  "and ajv, then re-run web/build.py.", file=sys.stderr)
+            sys.exit(3)
+        with open(out_path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        print("Error: 'npx' is not on PATH.  Node.js is required to build the bundle.",
+              file=sys.stderr)
+        print("  Recovery: install Node.js 18+ from https://nodejs.org/, then "
+              "run 'cd web && npm install'.", file=sys.stderr)
+        sys.exit(3)
+    except subprocess.TimeoutExpired:
+        print("Error: esbuild timed out after 60 s while bundling Ajv.",
+              file=sys.stderr)
+        print("  This is highly abnormal — the bundle is ~125 KB and normally "
+              "takes <500 ms.", file=sys.stderr)
+        print("  Recovery: check that 'npx esbuild --version' works; if it hangs, "
+              "delete web/node_modules and re-run 'cd web && npm install'.",
+              file=sys.stderr)
+        sys.exit(3)
+    finally:
+        # Clean up the temp file but ignore errors (file may not exist if
+        # esbuild failed before writing).
+        try:
+            os.remove(out_path)
+            os.rmdir(tmpdir)
+        except OSError:
+            pass
+
+
+print("Bundling Ajv via esbuild...")
+ajv_bundle_js = _bundle_ajv(ajv_entry_path, web_dir)
+print(f"  Ajv bundle: {len(ajv_bundle_js):,} bytes")
 
 
 def _strip_node_block(source):
@@ -155,6 +262,7 @@ def _js_string_literal(source):
 
 lsp_canonicalize_js_browser = _strip_node_block(lsp_canonicalize_js)
 lsp_worker_js_browser = _strip_node_block(lsp_worker_js)
+lsp_validate_js_browser = _strip_node_block(lsp_validate_js)
 engine_js_browser = _strip_node_block(engine_js)
 
 # ── Transform JSX for browser embedding ──
@@ -304,6 +412,31 @@ if (typeof MPEEngine !== "undefined") MPEEngine.loadStandard(__STD_DATA__);
 </script>
 
 <script>
+// Ajv 8 (JSON Schema 2020-12 validator) bundled via esbuild.  Exposes
+// globalThis.Ajv2020.  See web/build_ajv_entry.js for the bundling
+// rationale.  Bundled here rather than CDN-loaded so the calculator
+// works fully offline — schema validation is safety-critical and must
+// not silently degrade when the network is unreachable.
+{ajv_bundle_js}
+</script>
+
+<script>
+// LSP-JSON schema (web/lsp/schema.json) inlined for main-thread Stage 1
+// validation.  The validator (loaded immediately below) reads this from
+// the global via window.LSP_SCHEMA — see web/lsp/validate.js for the
+// resolution order.
+var LSP_SCHEMA = {lsp_schema_json};
+</script>
+
+<script>
+// LSP main-thread validator (web/lsp/validate.js).  Stage 1 = Ajv schema
+// check using LSP_SCHEMA and the bundled Ajv2020.  Stage 2 = pure-JS
+// plausibility checks (finite numbers, bbox sanity, segment count caps,
+// per-segment power consistency, etc).  Exposes window.LSPValidate.
+{lsp_validate_js_browser}
+</script>
+
+<script>
 // Engine source for Web Worker (scanning computation runs off main thread)
 // Uses the FULL engine.js (including Node.js exports) since Worker scope is isolated
 var __ENGINE_SOURCE__ = {_js_string_literal(engine_js)};
@@ -382,7 +515,11 @@ with open(out_path, "w") as f:
 line_count = html.count("\n") + 1
 print(f"Built {out_path}")
 print(f"  Sources: calculator.jsx ({len(lines)} lines), engine.js ({len(engine_js.splitlines())} lines), {std_filename}")
-print(f"  LSP:     canonicalize.js ({len(lsp_canonicalize_js.splitlines())} lines), lsp.worker.js ({len(lsp_worker_js.splitlines())} lines)")
+print(f"  LSP:     canonicalize.js ({len(lsp_canonicalize_js.splitlines())} lines), "
+      f"lsp.worker.js ({len(lsp_worker_js.splitlines())} lines), "
+      f"validate.js ({len(lsp_validate_js.splitlines())} lines), "
+      f"schema.json ({len(lsp_schema_json):,} bytes)")
+print(f"  Ajv:     {len(ajv_bundle_js):,} bytes (bundled via esbuild)")
 print(f"  Output:  index.html ({line_count} lines)")
 print(f"  JSX mode: {mode_label}")
 print(f"  Transforms: stripped imports, Tooltip→RTooltip, stripped export default")

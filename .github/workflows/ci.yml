@@ -64,9 +64,12 @@ jobs:
       - name: Run engine.js tests
         run: node tests/test_engine_js.mjs
 
-      - name: Install Ajv for LSP Node-side tests
+      - name: Install dependencies for LSP Node-side tests
         working-directory: web
-        run: npm install ajv
+        run: npm install
+        # web/package.json declares ajv as a devDependency; npm install
+        # picks it up for the LSP validator tests (which use the Node-side
+        # Ajv loader).  esbuild is also pulled but not used in this job.
 
       - name: Run LSP validator tests
         run: node tests/lsp/test_validate.mjs
@@ -115,7 +118,14 @@ jobs:
           grep -q '__LSP_CANONICALIZE_SRC__' web/index.html || { echo "FAIL: LSP canonicalize source not in output"; exit 1; }
           grep -q '__LSP_WORKER_SRC__' web/index.html || { echo "FAIL: LSP worker source not in output"; exit 1; }
           grep -q '__createLSPWorker' web/index.html || { echo "FAIL: LSP worker factory not in output"; exit 1; }
+          grep -q 'Ajv2020' web/index.html || { echo "FAIL: Ajv2020 bundle not in output"; exit 1; }
+          grep -q 'var LSP_SCHEMA' web/index.html || { echo "FAIL: LSP_SCHEMA not in output"; exit 1; }
+          grep -q 'LSPValidate' web/index.html || { echo "FAIL: LSPValidate not in output"; exit 1; }
+          grep -q 'PatternSource' web/index.html || { echo "FAIL: PatternSource component not in output"; exit 1; }
           echo "Build OK: index.html contains expected markers"
 
       - name: Validate bundle (syntax + worker round-trip)
         run: node tests/lsp/test_bundle.mjs
+
+      - name: Run LSP UI helper tests
+        run: node tests/lsp/test_ui_helpers.mjs

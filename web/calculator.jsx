@@ -100,6 +100,302 @@ function scanBuildRaster(x0,y0,lL,nL,h,sv,jv,d,bl){return _addShortNames(_E.buil
 var scanMaxPulseEnergy = _E.maxPulseEnergy;
 var scanMinRepRate = _E.minRepRate;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LSP-JSON IMPORT FLOW (Sub-phase 1D)
+
+   The LSP foundation lives in web/lsp/ (schema.json, validate.js, factory.js,
+   canonicalize.js).  validate.js + schema.json are inlined into the page by
+   build.py and run on the main thread.  canonicalize.js runs inside a Web
+   Worker constructed by __createLSPWorker() (see build.py).
+
+   The translation between LSP and the existing scan-content components is:
+
+     1. User picks a .lsp.json file in the PatternSource card.
+     2. PatternSource component emits onImport(file).
+     3. Parent calls _readAndValidateLSP(file) → parsed doc OR {error, warnings}.
+     4. Parent posts {type:"canonicalize", doc} to its LSP worker.
+     5. Worker replies with {beam, engineSegments, scanParams, totalTime_s}.
+     6. Parent translates beam (full-name → short-name) via _lspBeamToShort,
+        then mirrors LSP-derived values into the existing React state so the
+        downstream scanCompute pipeline runs unchanged.
+     7. The disabled state on the inputs is driven by lspState.phase==='loaded'.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/** Parse and validate a File (or string) as LSP-JSON on the main thread.
+ *
+ *  Returns a Promise resolving to:
+ *    {ok: true,  doc, warnings}     — Stage 1 and Stage 2 both passed
+ *    {ok: false, errors, warnings}  — Stage 1 or Stage 2 reported errors
+ *
+ *  Never throws: every failure path returns a structured result.
+ *
+ *  Stage 1 = Ajv schema validation against window.LSP_SCHEMA.
+ *  Stage 2 = plausibility checks (finite numbers, bbox sanity, segment caps,
+ *  per-segment power consistency, etc).  Both run inside LSPValidate.validate.
+ *
+ *  When LSPValidate or its dependencies (Ajv, LSP_SCHEMA) are missing — e.g.
+ *  in environments where the build script did not inline them — we return a
+ *  clear error rather than a cryptic ReferenceError.
+ */
+function _readAndValidateLSP(fileOrString){
+  return new Promise(function(resolve){
+    function _validate(text){
+      var doc;
+      try { doc = JSON.parse(text); }
+      catch (parseErr) {
+        resolve({ok:false, errors:[{
+          code:"INVALID_JSON", path:"",
+          message:"File is not valid JSON: "+(parseErr&&parseErr.message?parseErr.message:String(parseErr))
+        }], warnings:[]});
+        return;
+      }
+      if (typeof window.LSPValidate==="undefined" ||
+          typeof window.LSPValidate.validate!=="function") {
+        resolve({ok:false, errors:[{
+          code:"VALIDATOR_NOT_LOADED", path:"",
+          message:"LSP validator is not loaded. This is a build configuration issue; please report it."
+        }], warnings:[]});
+        return;
+      }
+      var result;
+      try { result = window.LSPValidate.validate(doc); }
+      catch (validErr) {
+        resolve({ok:false, errors:[{
+          code:"INTERNAL_ERROR", path:"",
+          message:"Validator threw an unexpected exception: "+
+            (validErr&&validErr.message?validErr.message:String(validErr))
+        }], warnings:[]});
+        return;
+      }
+      if (!result || typeof result!=="object") {
+        resolve({ok:false, errors:[{
+          code:"INTERNAL_ERROR", path:"",
+          message:"Validator returned a non-object result"
+        }], warnings:[]});
+        return;
+      }
+      if (!result.ok) {
+        resolve({ok:false, errors:result.errors||[], warnings:result.warnings||[]});
+        return;
+      }
+      resolve({ok:true, doc:doc, warnings:result.warnings||[]});
+    }
+    if (typeof fileOrString==="string") {
+      _validate(fileOrString);
+      return;
+    }
+    if (!fileOrString || typeof fileOrString.text!=="function") {
+      resolve({ok:false, errors:[{
+        code:"INVALID_INPUT", path:"",
+        message:"Input is not a File or string"
+      }], warnings:[]});
+      return;
+    }
+    // Defensive size check: the worker's PAYLOAD_TOO_LARGE cap is 10 MB, and
+    // reading a multi-hundred-MB file into a JS string then JSON.parsing it
+    // can OOM the tab before the worker ever sees the document.  Reject
+    // oversized files early.  16 MB cap matches 10 MB document plus ~60%
+    // headroom for whitespace and Unicode expansion.
+    if (typeof fileOrString.size === "number" && fileOrString.size > 16 * 1024 * 1024) {
+      resolve({ok:false, errors:[{
+        code:"PAYLOAD_TOO_LARGE", path:"",
+        message:"File exceeds 16 MB limit ("+(fileOrString.size/1024/1024).toFixed(1)+" MB). "+
+          "The calculator accepts LSP documents up to 10 MB; pathologically large files are rejected "+
+          "before reading to prevent browser OOM."
+      }], warnings:[]});
+      return;
+    }
+    fileOrString.text().then(_validate, function(readErr){
+      resolve({ok:false, errors:[{
+        code:"FILE_READ_ERROR", path:"",
+        message:"Failed to read file: "+(readErr&&readErr.message?readErr.message:String(readErr))
+      }], warnings:[]});
+    });
+  });
+}
+
+/** Translate the canonicalize beam (full-name fields) to the short-name shape
+ *  the existing scanCompute() wrapper consumes.
+ *
+ *  Engine canonical form               scanCompute short form
+ *  ─────────────────────────────────   ────────────────────────
+ *  d_1e_mm                             d
+ *  wl_nm                               wl
+ *  tau_s                               tau
+ *  prf_hz                              prf
+ *  pulse_energy_J                      Ep
+ *  avg_power_W                         P
+ *  is_cw                               cw
+ *
+ *  Returns null on invalid input (caller treats as error).
+ */
+function _lspBeamToShort(b){
+  if (!b || typeof b!=="object") return null;
+  return {
+    d:   b.d_1e_mm,
+    wl:  b.wl_nm,
+    tau: b.tau_s,
+    prf: b.prf_hz,
+    Ep:  b.pulse_energy_J,
+    P:   b.avg_power_W,
+    cw:  !!b.is_cw
+  };
+}
+
+/** Compute a display label for the Pattern Source card status badge.
+ *  Pure function; returned string is shown verbatim. */
+function _lspStatusLabel(lspState){
+  if (!lspState || lspState.phase==="idle") return "Preset: Built-in";
+  if (lspState.phase==="loading") return "Loading…";
+  if (lspState.phase==="loaded") return "Imported: "+(lspState.filename||"(unknown)");
+  if (lspState.phase==="error") return "Import failed";
+  return "Preset: Built-in";
+}
+
+/** PatternSource — dumb React component for the LSP import card.
+ *
+ *  Renders as a full-width row that fits above Region 1 of a scan-content
+ *  component.  Has three zones: status badge (left), Import/Eject buttons
+ *  (middle), warnings indicator (right) which expands into a panel on click.
+ *
+ *  Props:
+ *    T         — theme object
+ *    lspState  — current LSP state owned by parent ({phase, filename, ...})
+ *    onImport  — (file: File) => void; parent handles parsing + validation
+ *    onEject   — () => void; parent restores pre-LSP state
+ *
+ *  This component does NOT own any LSP state; it only renders and emits
+ *  events.  All validation and worker coordination happens in the parent.
+ *  This separation makes the component trivially testable.
+ */
+function PatternSource(props){
+  var T = props.T;
+  var lspState = props.lspState || {phase:"idle"};
+  var onImport = props.onImport;
+  var onEject = props.onEject;
+
+  var _showWarn = useState(false);
+  var showWarn = _showWarn[0], setShowWarn = _showWarn[1];
+  var fileRef = useRef(null);
+
+  var phase = lspState.phase || "idle";
+  var loaded = phase==="loaded";
+  var loading = phase==="loading";
+  var hasError = phase==="error";
+
+  // Combine errors + warnings for the indicator count.  Errors take priority
+  // (red dot), then warnings (yellow dot), then none (no dot).
+  var errors = lspState.errors || [];
+  var warnings = lspState.warnings || [];
+  var hasMessages = errors.length > 0 || warnings.length > 0;
+
+  var statusBg = loaded
+    ? "rgba(16,185,129,0.08)"     // green tint for "Imported"
+    : (hasError ? "rgba(220,38,38,0.08)" : "rgba(15,23,42,0.04)");
+  var statusColor = loaded ? "#047857" : (hasError ? "#b91c1c" : T.tm);
+
+  function handleFileChange(e){
+    var f = e.target.files && e.target.files[0];
+    if (f && onImport) onImport(f);
+    // Reset so the same file can be re-imported after eject
+    e.target.value = "";
+  }
+  function handleImportClick(){
+    if (fileRef.current) fileRef.current.click();
+  }
+
+  return React.createElement("div", {
+    style:{
+      background:T.card, border:"1px solid "+T.bd, borderRadius:6,
+      padding:"10px 14px", marginBottom:12,
+      fontFamily:"'IBM Plex Sans', system-ui, sans-serif"
+    }
+  },
+    React.createElement("div", {style:{display:"flex", alignItems:"center", gap:12}},
+      // Status badge
+      React.createElement("div", {
+        style:{
+          flex:"0 0 auto", padding:"4px 10px", borderRadius:4,
+          background:statusBg, color:statusColor,
+          fontSize:11, fontWeight:600, letterSpacing:"0.02em",
+          fontFamily:"'IBM Plex Mono', monospace",
+          maxWidth:340, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"
+        },
+        title:_lspStatusLabel(lspState)
+      }, _lspStatusLabel(lspState)),
+
+      // Spacer
+      React.createElement("div", {style:{flex:"1 1 auto"}}),
+
+      // Import button (hidden when LSP is loaded)
+      !loaded ? React.createElement("button", {
+        onClick:handleImportClick, disabled:loading,
+        style:{
+          padding:"5px 12px", fontSize:12, fontWeight:500,
+          background:loading?T.hov:T.ac, color:loading?T.tm:"#ffffff",
+          border:"1px solid "+(loading?T.bd:T.ac), borderRadius:4,
+          cursor:loading?"default":"pointer",
+          opacity:loading?0.6:1
+        }
+      }, loading?"Loading…":"Import LSP…") : null,
+
+      // Eject button (only when loaded)
+      loaded ? React.createElement("button", {
+        onClick:onEject,
+        style:{
+          padding:"5px 12px", fontSize:12, fontWeight:500,
+          background:"transparent", color:T.tx,
+          border:"1px solid "+T.bd, borderRadius:4, cursor:"pointer"
+        }
+      }, "Eject") : null,
+
+      // Warnings indicator
+      hasMessages ? React.createElement("button", {
+        onClick:function(){setShowWarn(!showWarn);},
+        style:{
+          padding:"4px 10px", fontSize:11, fontWeight:600,
+          background:errors.length>0?"rgba(220,38,38,0.08)":"rgba(217,119,6,0.08)",
+          color:errors.length>0?"#b91c1c":"#92400e",
+          border:"1px solid "+(errors.length>0?"#fca5a5":"#fcd34d"),
+          borderRadius:4, cursor:"pointer", fontFamily:"'IBM Plex Mono', monospace"
+        },
+        title:(errors.length>0?"Errors":"Warnings")+" — click to "+(showWarn?"hide":"view")
+      },
+        (errors.length>0?errors.length+" error"+(errors.length>1?"s":"")
+          : warnings.length+" warning"+(warnings.length>1?"s":""))
+        + (showWarn?" ▴":" ▾")
+      ) : null,
+
+      // Hidden file input
+      React.createElement("input", {
+        ref:fileRef, type:"file", accept:".json,.lsp.json,application/json",
+        style:{display:"none"}, onChange:handleFileChange
+      })
+    ),
+
+    // Expandable warnings/errors panel
+    showWarn && hasMessages ? React.createElement("div", {
+      style:{
+        marginTop:10, padding:"8px 12px",
+        background:errors.length>0?"#fef2f2":"#fffbeb",
+        border:"1px solid "+(errors.length>0?"#fca5a5":"#fcd34d"),
+        borderRadius:4, fontSize:12, fontFamily:"'IBM Plex Mono', monospace",
+        maxHeight:240, overflowY:"auto"
+      }
+    },
+      errors.concat(warnings).map(function(m,i){
+        return React.createElement("div", {key:i, style:{marginBottom:i<errors.length+warnings.length-1?6:0, lineHeight:1.45}},
+          React.createElement("span", {style:{fontWeight:600, color:i<errors.length?"#b91c1c":"#92400e"}},
+            "["+m.code+"] "),
+          m.path ? React.createElement("span", {style:{color:"#6b7280", fontSize:11}}, m.path+" — ") : null,
+          React.createElement("span", null, m.message||"(no message)")
+        );
+      })
+    ) : null
+  );
+}
+
+
 function si(v,u){if(!isFinite(v))return"\u2014";var a=Math.abs(v);if(a===0)return"0 "+u;if(a>=1e6)return numFmt(v,4)+" "+u;if(a>=1e3)return(v/1e3).toPrecision(4)+" k"+u;if(a>=.1)return v.toPrecision(4)+" "+u;if(a>=1e-3)return(v*1e3).toPrecision(4)+" m"+u;if(a>=1e-6)return(v*1e6).toPrecision(4)+" \u00b5"+u;if(a>=1e-9)return(v*1e9).toPrecision(4)+" n"+u;return numFmt(v,4)+" "+u;}
 
 /* ═══════ SCIENTIFIC NOTATION ═══════ */
@@ -1001,6 +1297,354 @@ function GeneralScanContent(p){
   var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
   var _workerRef=useRef(null);
 
+  /* ── LSP-JSON import state (Sub-phase 1D commit 2) ─────────────────────
+     phase:  "idle" | "loading" | "loaded" | "error"
+     When phase==="loaded", the existing scan-configuration inputs are
+     disabled and display the LSP-derived values.  Eject restores the
+     pre-import state.  The LSP worker is created lazily on first import. */
+  var _lspState=useState({phase:"idle"}),lspState=_lspState[0],setLspState=_lspState[1];
+  var _lspWorkerRef=useRef(null);
+  var _lspInitRef=useRef(null);
+  var _lspPreImportState=useRef(null);
+  var _lspReqIdRef=useRef(0);  // monotonic request ID counter (prevents Math.random collisions)
+
+  /* Lazy worker creation + init.  Returns a Promise that resolves when the
+     worker has accepted the standard.  Three structural defenses:
+     (1) On init rejection we CLEAR _lspInitRef so the next import retries,
+         rather than permanently caching the rejected promise.
+     (2) We attach an 'error' event listener on the worker so script-load
+         failures (CSP block, malformed bundle, etc) reject the promise
+         rather than hanging forever.
+     (3) We add a 10s init timeout as a last-resort defense; in practice
+         init takes 50-200 ms in modern browsers.                          */
+  function _getLspWorkerInited(){
+    if (_lspInitRef.current) return _lspInitRef.current;
+    if (typeof __createLSPWorker!=="function") return null;
+    var w = __createLSPWorker();
+    if (!w) return null;
+    _lspWorkerRef.current = w;
+
+    // Compute stdData OUTSIDE the Promise executor.  If _E.getStandard()
+    // throws here, we can clean up the worker reference cleanly before
+    // returning a rejected Promise; throwing inside the executor would
+    // leak the worker ref because the catch path runs in a context where
+    // we've already assigned _lspWorkerRef.current = w.
+    var stdData;
+    try {
+      stdData = (typeof __STD_DATA__!=="undefined") ? __STD_DATA__ :
+                (_E && _E.getStandard ? {standard:_E.getStandard()} : null);
+    } catch (stdErr) {
+      try { w.terminate(); } catch (_) {}
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      return Promise.reject(new Error("Failed to obtain standard data: " +
+        (stdErr && stdErr.message ? stdErr.message : String(stdErr))));
+    }
+
+    var p = new Promise(function(resolve, reject){
+      var initReq = (++_lspReqIdRef.current);
+      var settled = false;
+      function settle(ok, err){
+        if (settled) return; settled = true;
+        try { w.removeEventListener("message", onInit); } catch (_) {}
+        try { w.removeEventListener("error", onError); } catch (_) {}
+        if (timeoutId) clearTimeout(timeoutId);
+        if (ok) resolve();
+        else {
+          // Terminate the failed worker to free its thread/memory; clear
+          // both refs so the next import retries with a fresh worker.
+          try { w.terminate(); } catch (_) {}
+          if (_lspWorkerRef.current === w) _lspWorkerRef.current = null;
+          _lspInitRef.current = null;
+          reject(err);
+        }
+      }
+      function onInit(ev){
+        if (!ev||!ev.data) return;
+        if (ev.data.requestId!==initReq) return;
+        // Accept both init_result and error (worker's top-level catch).
+        // Without this, a worker exception during init would silently
+        // hang us for the full 10 s timeout.
+        if (ev.data.type==="init_result") {
+          if (ev.data.ok) settle(true);
+          else settle(false, new Error(ev.data.error||"LSP worker init failed"));
+        } else if (ev.data.type==="error") {
+          var firstErr = ev.data.errors && ev.data.errors[0];
+          settle(false, new Error(
+            (firstErr && firstErr.message) ? firstErr.message :
+            "Worker emitted an error response during init"));
+        }
+        // Other response types: ignore.
+      }
+      function onError(ev){
+        // Worker script-load failure or uncaught exception inside the worker.
+        var msg = (ev && ev.message) ? ev.message :
+                  (ev && ev.filename) ? ("error in "+ev.filename) :
+                  "Worker reported an error before init completed";
+        settle(false, new Error(msg));
+      }
+      var timeoutId = setTimeout(function(){
+        settle(false, new Error("LSP worker init timed out after 10 s"));
+      }, 10000);
+      w.addEventListener("message", onInit);
+      w.addEventListener("error", onError);
+      try {
+        w.postMessage({type:"init", requestId:initReq, standard:stdData});
+      } catch (postErr) {
+        settle(false, postErr);
+      }
+    });
+    _lspInitRef.current = p;
+    return p;
+  }
+
+  /* Send a canonicalize message and wait for the matching response.  Three
+     structural defenses against M2 (handler leak): we ALWAYS remove the
+     listener via a settle() helper, even on timeout; we time out after 30s
+     (canonicalization on the largest realistic doc completes in 1-2 s); and
+     errors during postMessage are caught synchronously.                  */
+  function _canonicalizeViaWorker(doc){
+    return new Promise(function(resolve, reject){
+      var initP = _getLspWorkerInited();
+      if (!initP){
+        reject(new Error("LSP worker is not available in this environment"));
+        return;
+      }
+      initP.then(function(){
+        var w = _lspWorkerRef.current;
+        if (!w){
+          reject(new Error("LSP worker reference was cleared during init"));
+          return;
+        }
+        var req = (++_lspReqIdRef.current);
+        var settled = false;
+        function settle(ok, val){
+          if (settled) return; settled = true;
+          try { w.removeEventListener("message", onMsg); } catch (_) {}
+          try { w.removeEventListener("error", onError); } catch (_) {}
+          if (timeoutId) clearTimeout(timeoutId);
+          if (ok) resolve(val); else reject(val);
+        }
+        function onMsg(ev){
+          if (!ev||!ev.data) return;
+          if (ev.data.requestId!==req) return;
+          // Accept both canonicalize_result (normal path) and error (worker's
+          // top-level catch).  Both have matching requestId; both indicate
+          // the worker is done with this request.  Without accepting "error"
+          // here, an internal worker exception would cause us to wait the
+          // full 30 s timeout when we already have the error in hand.
+          if (ev.data.type==="canonicalize_result") {
+            settle(true, ev.data);
+          } else if (ev.data.type==="error") {
+            // Worker emitted a top-level error response.  Surface it as a
+            // structured canonicalize-style failure so the caller's existing
+            // error-handling path works uniformly.
+            settle(true, {
+              type: "canonicalize_result",
+              requestId: req,
+              ok: false,
+              errors: (ev.data.errors && ev.data.errors.length) ? ev.data.errors : [{
+                code: "INTERNAL_ERROR", path: "",
+                message: "Worker emitted an error response without details"
+              }],
+              warnings: []
+            });
+          }
+          // Other response types: ignore (defensive — unknown protocol extension).
+        }
+        function onError(ev){
+          var msg = (ev && ev.message) ? ev.message :
+                    "Worker reported an error during canonicalization";
+          settle(false, new Error(msg));
+        }
+        var timeoutId = setTimeout(function(){
+          settle(false, new Error("LSP canonicalization timed out after 30 s"));
+        }, 30000);
+        w.addEventListener("message", onMsg);
+        w.addEventListener("error", onError);
+        try {
+          w.postMessage({type:"canonicalize", requestId:req, doc:doc});
+        } catch (postErr) {
+          settle(false, postErr);
+        }
+      }, function(initErr){ reject(initErr); });
+    });
+  }
+
+  function _snapshotPreImportState(){
+    return {
+      wlS:wlS, wl:wl, dS:dS, dia:dia, tauS:tauS, tau:tau, tauU:tauU,
+      prfS:prfS, prf:prf, prfU:prfU, pwS:pwS, pw:pw, pwMode:pwMode,
+      laserMode:laserMode, epS:epS, vS:vS, vel:vel, velMode:velMode,
+      dwellS:dwellS, dwellN:dwellN, srateS:srateS, srateN:srateN,
+      frateS:frateS, frateN:frateN,
+      pat:pat, lLS:lLS, lineL:lineL, scanHS:scanHS, scanHN:scanHN,
+      nLS:nLS, nLines:nLines, blk:blk
+    };
+  }
+
+  function _applyLspToState(result){
+    var beam = _lspBeamToShort(result.beam);
+    if (!beam) return false;
+    // Defensive: canonicalize.js may produce avg_power_W = 0 if the LSP
+    // omits both pattern.default_power_w and a usable (pulse_energy_j, PRF)
+    // pair.  Without a positive power, downstream Calculate would compute
+    // bogus zero-flux results, so we reject here.
+    if (!isFinite(beam.P) || beam.P <= 0) return false;
+    if (!isFinite(beam.wl) || beam.wl <= 0) return false;
+    if (!isFinite(beam.d) || beam.d <= 0) return false;
+    if (!beam.cw) {
+      if (!isFinite(beam.tau) || beam.tau <= 0) return false;
+      if (!isFinite(beam.prf) || beam.prf <= 0) return false;
+    }
+    setWlS(String(beam.wl)); setWl(beam.wl);
+    setDS(String(beam.d)); setDia(beam.d);
+    setLaserMode(beam.cw ? "cw" : "pulsed");
+    if (!beam.cw) {
+      setTauS(String(beam.tau*1e9)); setTau(beam.tau); setTauU("ns");
+      setPrfS(String(beam.prf/1000)); setPrf(beam.prf); setPrfU("kHz");
+    }
+    setPwS(beam.P.toPrecision(4)); setPw(beam.P); setPwMode("power");
+    var sp = result.scanParams;
+    if (sp) {
+      setVS(String(sp.v_scan_mm_s)); setVel(sp.v_scan_mm_s); setVelMode("velocity");
+      setLLS(String(sp.line_length_mm)); setLineL(sp.line_length_mm);
+      if (sp.pattern==="linear") setPat("linear");
+      else if (sp.pattern==="raster") setPat("raster");
+      else if (sp.pattern==="bidi") setPat("bidi");
+      // Always set nLines and scanHN for state consistency, even for linear
+      // (where these are not displayed but still tracked).  For linear,
+      // n_lines is always 1.  For raster/bidi, use the LSP values.
+      var nL = (sp.n_lines && sp.n_lines >= 1) ? sp.n_lines : 1;
+      setNLS(String(nL)); setNLines(nL);
+      if (nL > 1 && typeof sp.hatch_mm === "number") {
+        var sh = sp.hatch_mm * (nL - 1);
+        setScanHS(String(sh)); setScanHN(sh);
+      }
+      // else: keep previous scanHN (hidden anyway for linear/n_lines=1)
+      if (typeof sp.blanking==="boolean") setBlk(sp.blanking);
+    }
+    setDirty(true);
+    return true;
+  }
+
+  /* M32 fix: terminate the LSP worker on unmount so tab switching doesn't
+     leak workers.  The dependency array is empty so this effect's cleanup
+     runs only at unmount.  Reading _lspWorkerRef.current at unmount is
+     correct — refs are mutable through the component's lifetime and the
+     ref captures the latest worker. */
+  useEffect(function(){
+    return function(){
+      var w = _lspWorkerRef.current;
+      if (w) { try { w.terminate(); } catch (_) {} }
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+    };
+  }, []);
+
+  function _handleLspImport(file){
+    setLspState({phase:"loading", filename:file && file.name});
+    _readAndValidateLSP(file).then(function(r){
+      if (!r.ok) {
+        setLspState({phase:"error", filename:file && file.name,
+          errors:r.errors||[], warnings:r.warnings||[]});
+        return;
+      }
+      _canonicalizeViaWorker(r.doc).then(function(cr){
+        if (!cr.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:cr.errors||[], warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        // The current UI integration only handles LSPs that canonicalize to
+        // a preset pattern (linear, raster, bidi).  Custom segment paths
+        // produce engineSegments but no scanParams.  Rejecting them here is
+        // safer than silently leaving the previous geometry in place with
+        // new beam parameters — which would cause Calculate to compute the
+        // wrong scenario.  Commit 3 will add engineSegments→state mapping
+        // for the segment-array case.
+        if (!cr.scanParams) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:[{
+              code:"UNSUPPORTED_PATTERN", path:"/pattern",
+              message:"This LSP uses a custom scan path that the calculator UI does not yet support. " +
+                "Only preset patterns (linear, raster, bidi_raster) are accepted in this release. " +
+                "Custom segment arrays will be supported in a future update."
+            }],
+            warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        // Snapshot pre-import state ONLY if we're entering loaded from idle.
+        // If we were already loaded (user re-importing without ejecting),
+        // the existing snapshot still holds the true pre-LSP state — keep it
+        // so Eject restores to manual values, not to the previous LSP.
+        if (lspState.phase==="idle" || lspState.phase==="error") {
+          _lspPreImportState.current = _snapshotPreImportState();
+        }
+        var applied = _applyLspToState(cr);
+        if (!applied) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:[{code:"INTERNAL_ERROR", path:"", message:"Failed to apply LSP-derived values"}],
+            warnings:[]});
+          return;
+        }
+        setLspState({phase:"loaded", filename:file && file.name, doc:r.doc,
+          beam:cr.beam, engineSegments:cr.engineSegments, scanParams:cr.scanParams,
+          totalTime_s:cr.totalTime_s, warnings:(r.warnings||[]).concat(cr.warnings||[])});
+      }, function(workerErr){
+        // Differentiate error codes based on the actual failure mode.
+        // The Promise rejector inside _getLspWorkerInited / _canonicalizeViaWorker
+        // throws Error objects with specific messages.  We pattern-match the
+        // message to assign the right code so users see a meaningful error.
+        // Patterns are deliberately broad: any timeout → WORKER_TIMEOUT;
+        // any init-related failure → WORKER_INIT_FAILED; everything else
+        // (including post-init worker exceptions and structured-clone errors)
+        // falls through to WORKER_UNAVAILABLE.
+        var errMsg = String(workerErr && workerErr.message || workerErr);
+        var code = "WORKER_UNAVAILABLE";
+        if (/timed out/i.test(errMsg)) {
+          code = "WORKER_TIMEOUT";
+        } else if (/\binit\b|standard data/i.test(errMsg)) {
+          // Matches: "init failed", "init result", "during init",
+          // "before init completed", "Failed to obtain standard data"
+          code = "WORKER_INIT_FAILED";
+        }
+        setLspState({phase:"error", filename:file && file.name,
+          errors:[{code:code, path:"", message:errMsg}],
+          warnings:r.warnings||[]});
+      });
+    });
+  }
+
+  function _handleLspEject(){
+    var prev = _lspPreImportState.current;
+    if (prev){
+      setWlS(prev.wlS); setWl(prev.wl); setDS(prev.dS); setDia(prev.dia);
+      setTauS(prev.tauS); setTau(prev.tau); setTauU(prev.tauU);
+      setPrfS(prev.prfS); setPrf(prev.prf); setPrfU(prev.prfU);
+      setPwS(prev.pwS); setPw(prev.pw); setPwMode(prev.pwMode);
+      setLaserMode(prev.laserMode); setEpS(prev.epS);
+      setVS(prev.vS); setVel(prev.vel); setVelMode(prev.velMode);
+      setDwellS(prev.dwellS); setDwellN(prev.dwellN);
+      setSrateS(prev.srateS); setSrateN(prev.srateN);
+      setFrateS(prev.frateS); setFrateN(prev.frateN);
+      setPat(prev.pat);
+      setLLS(prev.lLS); setLineL(prev.lineL);
+      setScanHS(prev.scanHS); setScanHN(prev.scanHN);
+      setNLS(prev.nLS); setNLines(prev.nLines);
+      setBlk(prev.blk);
+      setDirty(true);
+    }
+    _lspPreImportState.current = null;
+    setLspState({phase:"idle"});
+  }
+  var lspLoaded = lspState.phase==="loaded";
+  /* During the "loading" phase the worker is canonicalizing the LSP and the
+     state values are about to be overwritten by _applyLspToState. Disabling
+     the fieldset during loading prevents the user from making edits that
+     would be silently clobbered when the canonicalization resolves.        */
+  var lspLocked = lspLoaded || lspState.phase==="loading";
+
   /* ── Web Worker: runs scanning computation off the main thread ── */
   function getWorker(){
     if(_workerRef.current)return _workerRef.current;
@@ -1779,11 +2423,27 @@ function GeneralScanContent(p){
   }
 
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Pattern Source (Sub-phase 1D commit 2) ═══ */}
+    {/* LSP-JSON import card. When loaded, the controls below become read-only
+        and display the LSP-derived values; Eject restores the previous state. */}
+    <PatternSource T={T} lspState={lspState}
+      onImport={_handleLspImport} onEject={_handleLspEject} />
+
     {/* ═══ Region 1: Configuration ═══ */}
     <div>
       <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
-    {/* ── Inputs: 2-column layout ── */}
-    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+    {/* ── Inputs: 2-column layout ──
+        fieldset with disabled={lspLoaded} natively propagates the disabled
+        state to every <input>, <select>, <button>, and <textarea> inside.
+        Borders/padding/margin/min-width:0 reset so the fieldset is
+        layout-transparent. CSS opacity is conditional so the user sees
+        the state change clearly. */}
+    <fieldset disabled={lspLocked} style={{
+      border:"none",padding:0,margin:0,minWidth:0,
+      display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start",
+      opacity:lspLocked?0.55:1,
+      pointerEvents:lspLocked?"none":"auto"
+    }}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Beam Parameters</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1998,7 +2658,7 @@ function GeneralScanContent(p){
       </div>
 
       </div>
-    </div>
+    </fieldset>
     <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
       <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
     </div>
