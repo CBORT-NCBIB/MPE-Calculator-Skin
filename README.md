@@ -257,7 +257,7 @@ This GitHub repository implements the ICNIRP 2013 standards using the following 
 
 ## Authors
 
-Isaac T. Gallegos¹\*, Ryan McAuley¹, Brett E. Bouma¹², David Veysset¹  
+Isaac T. Gallegos¹\*, Ryan McAuley¹, Nicholas Borges¹, Brett E. Bouma¹², David Veysset¹  
 
 ## Affiliations
 
