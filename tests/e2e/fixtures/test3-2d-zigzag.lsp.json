@@ -1,0 +1,52 @@
+{
+  "lsp_version": "1.0.0",
+  "meta": {
+    "name": "Smoke test 3: 2D zigzag (4:3 aspect) for bug #12",
+    "description": "Zigzag path 4 mm wide x 3 mm tall. Bug #12: if user's pre-import pat is 'linear', the svPatH formula must use the actual scanHN (3mm), not the linear-strip 35% aspect ratio. EXPECTED: viz rectangle has a clear 4:3 aspect ratio; clicking the viz selects coords in [0,4]x[0,3].",
+    "author": "Manual smoke test",
+    "units": { "length": "mm", "time": "s", "power": "W" }
+  },
+  "laser": {
+    "wavelength_nm": 1060,
+    "beam_diameter_mm": 0.025,
+    "pulse_mode": "pulsed",
+    "pulse": {
+      "repetition_rate_hz": 100000,
+      "pulse_duration_s": 1e-8,
+      "pulse_energy_j": 1.8e-8
+    }
+  },
+  "exposure": {
+    "tissue": "skin",
+    "exposure_duration_s": 0.2
+  },
+  "pattern": {
+    "representation": "segments",
+    "authoritative": "segments",
+    "default_power_w": 0.0018,
+    "default_velocity_mm_s": 200,
+    "segments": [
+      { "id": 0, "type": "line", "p0": [0, 0], "p1": [4, 0],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } },
+      { "id": 1, "type": "line", "p0": [4, 0], "p1": [0, 1],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } },
+      { "id": 2, "type": "line", "p0": [0, 1], "p1": [4, 1],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } },
+      { "id": 3, "type": "line", "p0": [4, 1], "p1": [0, 2],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } },
+      { "id": 4, "type": "line", "p0": [0, 2], "p1": [4, 2],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } },
+      { "id": 5, "type": "line", "p0": [4, 2], "p1": [0, 3],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } },
+      { "id": 6, "type": "line", "p0": [0, 3], "p1": [4, 3],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 } }
+    ]
+  }
+}

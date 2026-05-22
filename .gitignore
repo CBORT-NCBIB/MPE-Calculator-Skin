@@ -44,3 +44,10 @@ web/index.html
 # Node.js (for JS test tooling)
 node_modules/
 package-lock.json
+
+# Playwright (e2e test artifacts — regenerated per run)
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+playwright/.cache/

@@ -100,6 +100,600 @@ function scanBuildRaster(x0,y0,lL,nL,h,sv,jv,d,bl){return _addShortNames(_E.buil
 var scanMaxPulseEnergy = _E.maxPulseEnergy;
 var scanMinRepRate = _E.minRepRate;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   LSP-JSON IMPORT FLOW (Sub-phase 1D)
+
+   The LSP foundation lives in web/lsp/ (schema.json, validate.js, factory.js,
+   canonicalize.js).  validate.js + schema.json are inlined into the page by
+   build.py and run on the main thread.  canonicalize.js runs inside a Web
+   Worker constructed by __createLSPWorker() (see build.py).
+
+   The translation between LSP and the existing scan-content components is:
+
+     1. User picks a .lsp.json file in the PatternSource card.
+     2. PatternSource component emits onImport(file).
+     3. Parent calls _readAndValidateLSP(file) → parsed doc OR {error, warnings}.
+     4. Parent posts {type:"canonicalize", doc} to its LSP worker.
+     5. Worker replies with {beam, engineSegments, scanParams, totalTime_s}.
+     6. Parent translates beam (full-name → short-name) via _lspBeamToShort,
+        then mirrors LSP-derived values into the existing React state so the
+        downstream scanCompute pipeline runs unchanged.
+     7. The disabled state on the inputs is driven by lspState.phase==='loaded'.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/** Parse and validate a File (or string) as LSP-JSON on the main thread.
+ *
+ *  Returns a Promise resolving to:
+ *    {ok: true,  doc, warnings}     — Stage 1 and Stage 2 both passed
+ *    {ok: false, errors, warnings}  — Stage 1 or Stage 2 reported errors
+ *
+ *  Never throws: every failure path returns a structured result.
+ *
+ *  Stage 1 = Ajv schema validation against window.LSP_SCHEMA.
+ *  Stage 2 = plausibility checks (finite numbers, bbox sanity, segment caps,
+ *  per-segment power consistency, etc).  Both run inside LSPValidate.validate.
+ *
+ *  When LSPValidate or its dependencies (Ajv, LSP_SCHEMA) are missing — e.g.
+ *  in environments where the build script did not inline them — we return a
+ *  clear error rather than a cryptic ReferenceError.
+ */
+function _readAndValidateLSP(fileOrString){
+  return new Promise(function(resolve){
+    function _validate(text){
+      var doc;
+      try { doc = JSON.parse(text); }
+      catch (parseErr) {
+        resolve({ok:false, errors:[{
+          code:"INVALID_JSON", path:"",
+          message:"File is not valid JSON: "+(parseErr&&parseErr.message?parseErr.message:String(parseErr))
+        }], warnings:[]});
+        return;
+      }
+      if (typeof window.LSPValidate==="undefined" ||
+          typeof window.LSPValidate.validate!=="function") {
+        resolve({ok:false, errors:[{
+          code:"VALIDATOR_NOT_LOADED", path:"",
+          message:"LSP validator is not loaded. This is a build configuration issue; please report it."
+        }], warnings:[]});
+        return;
+      }
+      var result;
+      try { result = window.LSPValidate.validate(doc); }
+      catch (validErr) {
+        resolve({ok:false, errors:[{
+          code:"INTERNAL_ERROR", path:"",
+          message:"Validator threw an unexpected exception: "+
+            (validErr&&validErr.message?validErr.message:String(validErr))
+        }], warnings:[]});
+        return;
+      }
+      if (!result || typeof result!=="object") {
+        resolve({ok:false, errors:[{
+          code:"INTERNAL_ERROR", path:"",
+          message:"Validator returned a non-object result"
+        }], warnings:[]});
+        return;
+      }
+      if (!result.ok) {
+        resolve({ok:false, errors:result.errors||[], warnings:result.warnings||[]});
+        return;
+      }
+      resolve({ok:true, doc:doc, warnings:result.warnings||[]});
+    }
+    if (typeof fileOrString==="string") {
+      _validate(fileOrString);
+      return;
+    }
+    if (!fileOrString || typeof fileOrString.text!=="function") {
+      resolve({ok:false, errors:[{
+        code:"INVALID_INPUT", path:"",
+        message:"Input is not a File or string"
+      }], warnings:[]});
+      return;
+    }
+    // Defensive size check: the worker's PAYLOAD_TOO_LARGE cap is 10 MB, and
+    // reading a multi-hundred-MB file into a JS string then JSON.parsing it
+    // can OOM the tab before the worker ever sees the document.  Reject
+    // oversized files early.  16 MB cap matches 10 MB document plus ~60%
+    // headroom for whitespace and Unicode expansion.
+    if (typeof fileOrString.size === "number" && fileOrString.size > 16 * 1024 * 1024) {
+      resolve({ok:false, errors:[{
+        code:"PAYLOAD_TOO_LARGE", path:"",
+        message:"File exceeds 16 MB limit ("+(fileOrString.size/1024/1024).toFixed(1)+" MB). "+
+          "The calculator accepts LSP documents up to 10 MB; pathologically large files are rejected "+
+          "before reading to prevent browser OOM."
+      }], warnings:[]});
+      return;
+    }
+    fileOrString.text().then(_validate, function(readErr){
+      resolve({ok:false, errors:[{
+        code:"FILE_READ_ERROR", path:"",
+        message:"Failed to read file: "+(readErr&&readErr.message?readErr.message:String(readErr))
+      }], warnings:[]});
+    });
+  });
+}
+
+/** Translate the canonicalize beam (full-name fields) to the short-name shape
+ *  the existing scanCompute() wrapper consumes.
+ *
+ *  Engine canonical form               scanCompute short form
+ *  ─────────────────────────────────   ────────────────────────
+ *  d_1e_mm                             d
+ *  wl_nm                               wl
+ *  tau_s                               tau
+ *  prf_hz                              prf
+ *  pulse_energy_J                      Ep
+ *  avg_power_W                         P
+ *  is_cw                               cw
+ *
+ *  Returns null on invalid input (caller treats as error).
+ */
+function _lspBeamToShort(b){
+  if (!b || typeof b!=="object") return null;
+  return {
+    d:   b.d_1e_mm,
+    wl:  b.wl_nm,
+    tau: b.tau_s,
+    prf: b.prf_hz,
+    Ep:  b.pulse_energy_J,
+    P:   b.avg_power_W,
+    cw:  !!b.is_cw
+  };
+}
+
+/** Compute a display label for the Pattern Source card status badge.
+ *  Pure function; returned string is shown verbatim. */
+function _lspStatusLabel(lspState){
+  if (!lspState || lspState.phase==="idle") return "Preset: Built-in";
+  if (lspState.phase==="loading") return "Loading…";
+  if (lspState.phase==="loaded") {
+    var suffix = lspState.customPath ? " (custom path)" : "";
+    return "Imported: "+(lspState.filename||"(unknown)")+suffix;
+  }
+  if (lspState.phase==="error") return "Import failed";
+  return "Preset: Built-in";
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   LSP state plumbing (Sub-phase 1D commit 3)
+
+   The three scan-content components (General, OCT, PA) all manage the same
+   set of LSP-relevant state variables: 15 beam fields plus 16 scan/geometry
+   fields = 31 fields total.  Each component has additional component-specific
+   state (OCT's bw/nBM/nA/preset/advOpen, PA's modality/pactA/pactE/pactT etc)
+   that is NOT affected by LSP import and is therefore not part of the
+   snapshot/restore.
+
+   To avoid duplicating ~100 lines of identical state-shuffling code in each
+   component, the snapshot/apply/restore logic lives at module level and takes
+   getter/setter dicts as parameters.  Each component passes its own
+   useState[0] values (getters) and useState[1] callbacks (setters).
+
+   The custom-path branch (engineSegments instead of scanParams) is handled
+   here too: when canonicalize emits a non-empty engineSegments array with
+   scanParams=null, we store the segments in a ref provided by the caller
+   and derive sensible display values (bbox-derived lineL/scanHN, mean
+   velocity) so the rest of the calculator UI continues to render coherently.
+   The actual computation in each component's calculate() reads from this
+   ref when present and bypasses the preset-pattern segment-building path.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/** Snapshot the LSP-relevant state values into a plain object.
+ *  G is a dict of getter values (not callbacks).  All 31 fields are
+ *  captured so Eject can perform a complete restore even if the user
+ *  was mid-edit when they imported. */
+function _lspSnapshotState(G){
+  return {
+    wlS:G.wlS, wl:G.wl, dS:G.dS, dia:G.dia,
+    tauS:G.tauS, tau:G.tau, tauU:G.tauU,
+    prfS:G.prfS, prf:G.prf, prfU:G.prfU,
+    pwS:G.pwS, pw:G.pw, pwMode:G.pwMode,
+    laserMode:G.laserMode, epS:G.epS,
+    vS:G.vS, vel:G.vel, velMode:G.velMode,
+    dwellS:G.dwellS, dwellN:G.dwellN,
+    srateS:G.srateS, srateN:G.srateN,
+    frateS:G.frateS, frateN:G.frateN,
+    pat:G.pat, lLS:G.lLS, lineL:G.lineL,
+    scanHS:G.scanHS, scanHN:G.scanHN,
+    nLS:G.nLS, nLines:G.nLines, blk:G.blk
+  };
+}
+
+/** Restore from a snapshot.  S is a dict of setter callbacks.  Caller is
+ *  responsible for also calling setDirty(true) and setLspState(idle). */
+function _lspRestoreState(prev, S){
+  if (!prev) return;
+  S.setWlS(prev.wlS); S.setWl(prev.wl);
+  S.setDS(prev.dS); S.setDia(prev.dia);
+  S.setTauS(prev.tauS); S.setTau(prev.tau); S.setTauU(prev.tauU);
+  S.setPrfS(prev.prfS); S.setPrf(prev.prf); S.setPrfU(prev.prfU);
+  S.setPwS(prev.pwS); S.setPw(prev.pw); S.setPwMode(prev.pwMode);
+  S.setLaserMode(prev.laserMode); S.setEpS(prev.epS);
+  S.setVS(prev.vS); S.setVel(prev.vel); S.setVelMode(prev.velMode);
+  S.setDwellS(prev.dwellS); S.setDwellN(prev.dwellN);
+  S.setSrateS(prev.srateS); S.setSrateN(prev.srateN);
+  S.setFrateS(prev.frateS); S.setFrateN(prev.frateN);
+  S.setPat(prev.pat);
+  S.setLLS(prev.lLS); S.setLineL(prev.lineL);
+  S.setScanHS(prev.scanHS); S.setScanHN(prev.scanHN);
+  S.setNLS(prev.nLS); S.setNLines(prev.nLines);
+  S.setBlk(prev.blk);
+}
+
+/** Compute the bounding box of a set of engine segments in the canonical
+ *  {x_start_mm, y_start_mm, angle_rad, v_mm_s} format.  Each segment has
+ *  implicit length = d_1e_mm so the end point at (x + d*cos(a), y + d*sin(a))
+ *  must also be included in the bbox calculation.  Returns
+ *  {xmin, xmax, ymin, ymax} or null for an empty/invalid input. */
+function _lspComputeSegmentsBbox(segments, d_1e_mm){
+  if (!segments || segments.length === 0) return null;
+  if (!isFinite(d_1e_mm) || d_1e_mm <= 0) d_1e_mm = 1;
+  var xmin = Infinity, xmax = -Infinity, ymin = Infinity, ymax = -Infinity;
+  for (var i = 0; i < segments.length; i++) {
+    var s = segments[i];
+    if (!s) continue;
+    var x1 = s.x_start_mm, y1 = s.y_start_mm;
+    if (!isFinite(x1) || !isFinite(y1)) continue;
+    var x2 = x1 + d_1e_mm * Math.cos(s.angle_rad||0);
+    var y2 = y1 + d_1e_mm * Math.sin(s.angle_rad||0);
+    if (x1 < xmin) xmin = x1; if (x1 > xmax) xmax = x1;
+    if (x2 < xmin) xmin = x2; if (x2 > xmax) xmax = x2;
+    if (y1 < ymin) ymin = y1; if (y1 > ymax) ymax = y1;
+    if (y2 < ymin) ymin = y2; if (y2 > ymax) ymax = y2;
+  }
+  if (!isFinite(xmin) || !isFinite(xmax)) return null;
+  return {xmin:xmin, xmax:xmax, ymin:ymin, ymax:ymax};
+}
+
+/** Apply a canonicalize result to component state.
+ *
+ *  Three cases:
+ *    (a) result.scanParams is set → preset path (linear/raster/bidi):
+ *        apply beam + scan params + geometry; clear customSegsRef.
+ *    (b) result.scanParams is null AND result.engineSegments is non-empty
+ *        → custom path: apply beam only; store engineSegments + derived
+ *        bbox/velocity in customSegsRef; set derived display values for
+ *        lineL/scanHN/nLines/vel from the bbox.
+ *    (c) result.scanParams is null AND engineSegments is empty/missing
+ *        → reject with INTERNAL_ERROR (canonicalize would not normally
+ *        emit such a result).
+ *
+ *  S = dict of state setters: { setWlS, setWl, ..., setDirty }.
+ *  customSegsRef = useRef object that holds { segments, bbox, totalTime_s,
+ *                  meanVelocity_mm_s } when a custom-path LSP is loaded,
+ *                  or null otherwise.  May be passed as null if the caller
+ *                  does not yet support custom paths.
+ *
+ *  Returns:
+ *    { ok: true,  customPath: false } — preset applied
+ *    { ok: true,  customPath: true  } — custom applied
+ *    { ok: false, errors: [{code, path, message}] } — validation failure
+ */
+function _lspApplyState(result, S, customSegsRef){
+  var beam = _lspBeamToShort(result.beam);
+  if (!beam) {
+    return { ok:false, errors:[{
+      code:"INVALID_BEAM", path:"/beam",
+      message:"Canonicalize result is missing the beam object" }] };
+  }
+  // Defensive validation: canonicalize.js may produce avg_power_W = 0 if
+  // the LSP omits both pattern.default_power_w and a usable
+  // (pulse_energy_j, PRF) pair.  Without a positive power, downstream
+  // Calculate would compute bogus zero-flux results, so we reject here.
+  if (!isFinite(beam.P) || beam.P <= 0) {
+    return { ok:false, errors:[{ code:"INVALID_BEAM", path:"/beam/avg_power_W",
+      message:"LSP has no usable average power (need default_power_w or "+
+              "pulse_energy_j + prf)" }] };
+  }
+  if (!isFinite(beam.wl) || beam.wl <= 0) {
+    return { ok:false, errors:[{ code:"INVALID_BEAM", path:"/beam/wl_nm",
+      message:"Wavelength is invalid or missing" }] };
+  }
+  if (!isFinite(beam.d) || beam.d <= 0) {
+    return { ok:false, errors:[{ code:"INVALID_BEAM", path:"/beam/d_1e_mm",
+      message:"Beam diameter is invalid or missing" }] };
+  }
+  if (!beam.cw) {
+    if (!isFinite(beam.tau) || beam.tau <= 0) {
+      return { ok:false, errors:[{ code:"INVALID_BEAM", path:"/beam/tau_s",
+        message:"Pulse duration is invalid for a pulsed beam" }] };
+    }
+    if (!isFinite(beam.prf) || beam.prf <= 0) {
+      return { ok:false, errors:[{ code:"INVALID_BEAM", path:"/beam/prf_hz",
+        message:"PRF is invalid for a pulsed beam" }] };
+    }
+  }
+
+  // ═══ ATOMICITY: validate AND pre-compute branch-specific data BEFORE
+  //     any setter calls, so a rejection leaves state untouched.  An earlier
+  //     iteration applied beam params first and then validated scan/segments;
+  //     that left state half-applied (LSP beam + pre-LSP scan) on rejection
+  //     of branch (c).  The user could then click Calculate and get results
+  //     for an unintended hybrid configuration.                             ═══
+  var sp = result.scanParams;
+  var customPrep = null;  // populated if branch (b) selected
+
+  if (sp) {
+    // Branch (a): preset pattern — no extra precomputation needed.
+    // Validation of sp.pattern values is canonicalize's job.
+  } else if (result.engineSegments && result.engineSegments.length > 0) {
+    // Branch (b): pre-compute everything that could fail.
+    if (!customSegsRef) {
+      return { ok:false, errors:[{ code:"INTERNAL_ERROR", path:"",
+        message:"Custom-path LSP requires a customSegsRef to store engine "+
+                "segments, but the caller passed null" }] };
+    }
+    var bbox = _lspComputeSegmentsBbox(result.engineSegments, beam.d);
+    if (!bbox) {
+      return { ok:false, errors:[{ code:"INTERNAL_ERROR",
+        path:"/engineSegments",
+        message:"Could not compute a bounding box from the engine segments "+
+                "(all segment coordinates were non-finite)" }] };
+    }
+    // Mean velocity over non-blanked segments (display approximation only;
+    // the calculate() path uses per-segment v_mm_s from the LSP).
+    var velSum = 0, velCount = 0;
+    var anyBlanked = false;
+    for (var i = 0; i < result.engineSegments.length; i++) {
+      var seg = result.engineSegments[i];
+      if (seg && seg.blanked) { anyBlanked = true; continue; }
+      if (seg && isFinite(seg.v_mm_s) && seg.v_mm_s > 0) {
+        velSum += seg.v_mm_s; velCount++;
+      }
+    }
+    var meanVel = velCount > 0 ? (velSum / velCount) : 1;
+    // Translate segments to bbox origin so the engine grid, viz rectangle,
+    // click-to-scan handler, and worst-case overlay all share an origin-
+    // anchored coordinate frame.  Original offsets preserved for callers
+    // that may want absolute coordinates.
+    var origXmin = bbox.xmin;
+    var origYmin = bbox.ymin;
+    var translatedSegs = new Array(result.engineSegments.length);
+    for (var ti = 0; ti < result.engineSegments.length; ti++) {
+      var ts = result.engineSegments[ti];
+      // Defensive copy: don't mutate the canonicalize-owned array.
+      translatedSegs[ti] = {
+        x_start_mm: ts.x_start_mm - origXmin,
+        y_start_mm: ts.y_start_mm - origYmin,
+        angle_rad: ts.angle_rad,
+        v_mm_s: ts.v_mm_s
+      };
+      if (ts.blanked) translatedSegs[ti].blanked = true;
+    }
+    var translatedBbox = {
+      xmin: 0, ymin: 0,
+      xmax: bbox.xmax - origXmin,
+      ymax: bbox.ymax - origYmin
+    };
+    var bboxW = translatedBbox.xmax;
+    var bboxH = translatedBbox.ymax;
+    // Numerical floor for degenerate paths.
+    if (bboxW < 1e-6) bboxW = beam.d || 1e-3;
+    if (bboxH < 1e-6) bboxH = beam.d || 1e-3;
+    customPrep = {
+      translatedSegs: translatedSegs,
+      translatedBbox: translatedBbox,
+      origXmin: origXmin, origYmin: origYmin,
+      meanVel: meanVel, anyBlanked: anyBlanked,
+      bboxW: bboxW, bboxH: bboxH
+    };
+  } else {
+    // Branch (c): neither scanParams nor engineSegments — reject.
+    return { ok:false, errors:[{
+      code:"INTERNAL_ERROR", path:"",
+      message:"Canonicalize succeeded but produced neither scanParams nor a "+
+              "non-empty engineSegments array; nothing to apply" }] };
+  }
+
+  // ═══ Past this point: all validation has passed; apply all state changes.
+  //     React batches setState calls inside a single event handler / promise
+  //     callback, so the order below doesn't matter for the rendered output —
+  //     all setters fire and a single re-render observes the new state.   ═══
+
+  // ─── Apply beam parameters (identical for preset and custom paths) ───
+  S.setWlS(String(beam.wl)); S.setWl(beam.wl);
+  S.setDS(String(beam.d)); S.setDia(beam.d);
+  S.setLaserMode(beam.cw ? "cw" : "pulsed");
+  if (!beam.cw) {
+    S.setTauS(String(beam.tau*1e9)); S.setTau(beam.tau); S.setTauU("ns");
+    S.setPrfS(String(beam.prf/1000)); S.setPrf(beam.prf); S.setPrfU("kHz");
+  }
+  S.setPwS(beam.P.toPrecision(4)); S.setPw(beam.P); S.setPwMode("power");
+
+  // ─── Branch (a): preset pattern (linear / raster / bidi) ───
+  if (sp) {
+    if (customSegsRef) customSegsRef.current = null;
+    S.setVS(String(sp.v_scan_mm_s)); S.setVel(sp.v_scan_mm_s);
+    S.setVelMode("velocity");
+    S.setLLS(String(sp.line_length_mm)); S.setLineL(sp.line_length_mm);
+    if (sp.pattern==="linear") S.setPat("linear");
+    else if (sp.pattern==="raster") S.setPat("raster");
+    else if (sp.pattern==="bidi") S.setPat("bidi");
+    // Always set nLines and scanHN for state consistency, even for linear
+    // (where these are not displayed but still tracked).
+    var nL = (sp.n_lines && sp.n_lines >= 1) ? sp.n_lines : 1;
+    S.setNLS(String(nL)); S.setNLines(nL);
+    if (nL > 1 && typeof sp.hatch_mm === "number") {
+      var sh = sp.hatch_mm * (nL - 1);
+      S.setScanHS(String(sh)); S.setScanHN(sh);
+    }
+    if (typeof sp.blanking==="boolean") S.setBlk(sp.blanking);
+    S.setDirty(true);
+    return { ok:true, customPath:false };
+  }
+
+  // ─── Branch (b): custom path via engineSegments ───
+  // customPrep was populated above with all the data needed.
+  customSegsRef.current = {
+    segments: customPrep.translatedSegs,
+    bbox: customPrep.translatedBbox,
+    orig_xmin_mm: customPrep.origXmin,
+    orig_ymin_mm: customPrep.origYmin,
+    totalTime_s: result.totalTime_s,
+    meanVelocity_mm_s: customPrep.meanVel,
+    hasBlankedSegments: customPrep.anyBlanked,
+    d_1e_mm: beam.d
+  };
+  S.setLLS(customPrep.bboxW.toPrecision(4)); S.setLineL(customPrep.bboxW);
+  S.setScanHS(customPrep.bboxH.toPrecision(4)); S.setScanHN(customPrep.bboxH);
+  S.setNLS("1"); S.setNLines(1);
+  S.setVS(customPrep.meanVel.toPrecision(4)); S.setVel(customPrep.meanVel);
+  S.setVelMode("velocity");
+  // Leave pat and blk unchanged — the user's pre-import values remain in
+  // place under the disabled UI, so Eject correctly restores them.
+  S.setDirty(true);
+  return { ok:true, customPath:true };
+}
+
+/** PatternSource — dumb React component for the LSP import card.
+ *
+ *  Renders as a full-width row that fits above Region 1 of a scan-content
+ *  component.  Has three zones: status badge (left), Import/Eject buttons
+ *  (middle), warnings indicator (right) which expands into a panel on click.
+ *
+ *  Props:
+ *    T         — theme object
+ *    lspState  — current LSP state owned by parent ({phase, filename, ...})
+ *    onImport  — (file: File) => void; parent handles parsing + validation
+ *    onEject   — () => void; parent restores pre-LSP state
+ *
+ *  This component does NOT own any LSP state; it only renders and emits
+ *  events.  All validation and worker coordination happens in the parent.
+ *  This separation makes the component trivially testable.
+ */
+function PatternSource(props){
+  var T = props.T;
+  var lspState = props.lspState || {phase:"idle"};
+  var onImport = props.onImport;
+  var onEject = props.onEject;
+
+  var _showWarn = useState(false);
+  var showWarn = _showWarn[0], setShowWarn = _showWarn[1];
+  var fileRef = useRef(null);
+
+  var phase = lspState.phase || "idle";
+  var loaded = phase==="loaded";
+  var loading = phase==="loading";
+  var hasError = phase==="error";
+
+  // Combine errors + warnings for the indicator count.  Errors take priority
+  // (red dot), then warnings (yellow dot), then none (no dot).
+  var errors = lspState.errors || [];
+  var warnings = lspState.warnings || [];
+  var hasMessages = errors.length > 0 || warnings.length > 0;
+
+  var statusBg = loaded
+    ? "rgba(16,185,129,0.08)"     // green tint for "Imported"
+    : (hasError ? "rgba(220,38,38,0.08)" : "rgba(15,23,42,0.04)");
+  var statusColor = loaded ? "#047857" : (hasError ? "#b91c1c" : T.tm);
+
+  function handleFileChange(e){
+    var f = e.target.files && e.target.files[0];
+    if (f && onImport) onImport(f);
+    // Reset so the same file can be re-imported after eject
+    e.target.value = "";
+  }
+  function handleImportClick(){
+    if (fileRef.current) fileRef.current.click();
+  }
+
+  return React.createElement("div", {
+    style:{
+      background:T.card, border:"1px solid "+T.bd, borderRadius:6,
+      padding:"10px 14px", marginBottom:12,
+      fontFamily:"'IBM Plex Sans', system-ui, sans-serif"
+    }
+  },
+    React.createElement("div", {style:{display:"flex", alignItems:"center", gap:12}},
+      // Status badge
+      React.createElement("div", {
+        style:{
+          flex:"0 0 auto", padding:"4px 10px", borderRadius:4,
+          background:statusBg, color:statusColor,
+          fontSize:11, fontWeight:600, letterSpacing:"0.02em",
+          fontFamily:"'IBM Plex Mono', monospace",
+          maxWidth:340, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"
+        },
+        title:_lspStatusLabel(lspState)
+      }, _lspStatusLabel(lspState)),
+
+      // Spacer
+      React.createElement("div", {style:{flex:"1 1 auto"}}),
+
+      // Import button (hidden when LSP is loaded; shown in idle / loading /
+      // error so the user can always try another file)
+      !loaded ? React.createElement("button", {
+        onClick:handleImportClick, disabled:loading,
+        style:{
+          padding:"5px 12px", fontSize:12, fontWeight:500,
+          background:loading?T.hov:T.ac, color:loading?T.tm:"#ffffff",
+          border:"1px solid "+(loading?T.bd:T.ac), borderRadius:4,
+          cursor:loading?"default":"pointer",
+          opacity:loading?0.6:1
+        }
+      }, loading?"Loading…":"Import LSP…") : null,
+
+      // Eject button (shown when loaded OR when in error — in error state,
+      // a prior successful LSP may still have its customSegsRef alive, so
+      // Eject is the user's recovery path to a clean pre-LSP state.  Eject
+      // also dismisses the error message by transitioning to idle.)
+      (loaded || hasError) ? React.createElement("button", {
+        onClick:onEject,
+        style:{
+          padding:"5px 12px", fontSize:12, fontWeight:500,
+          background:"transparent", color:T.tx,
+          border:"1px solid "+T.bd, borderRadius:4, cursor:"pointer"
+        }
+      }, "Eject") : null,
+
+      // Warnings indicator
+      hasMessages ? React.createElement("button", {
+        onClick:function(){setShowWarn(!showWarn);},
+        style:{
+          padding:"4px 10px", fontSize:11, fontWeight:600,
+          background:errors.length>0?"rgba(220,38,38,0.08)":"rgba(217,119,6,0.08)",
+          color:errors.length>0?"#b91c1c":"#92400e",
+          border:"1px solid "+(errors.length>0?"#fca5a5":"#fcd34d"),
+          borderRadius:4, cursor:"pointer", fontFamily:"'IBM Plex Mono', monospace"
+        },
+        title:(errors.length>0?"Errors":"Warnings")+" — click to "+(showWarn?"hide":"view")
+      },
+        (errors.length>0?errors.length+" error"+(errors.length>1?"s":"")
+          : warnings.length+" warning"+(warnings.length>1?"s":""))
+        + (showWarn?" ▴":" ▾")
+      ) : null,
+
+      // Hidden file input
+      React.createElement("input", {
+        ref:fileRef, type:"file", accept:".json,.lsp.json,application/json",
+        style:{display:"none"}, onChange:handleFileChange
+      })
+    ),
+
+    // Expandable warnings/errors panel
+    showWarn && hasMessages ? React.createElement("div", {
+      style:{
+        marginTop:10, padding:"8px 12px",
+        background:errors.length>0?"#fef2f2":"#fffbeb",
+        border:"1px solid "+(errors.length>0?"#fca5a5":"#fcd34d"),
+        borderRadius:4, fontSize:12, fontFamily:"'IBM Plex Mono', monospace",
+        maxHeight:240, overflowY:"auto"
+      }
+    },
+      errors.concat(warnings).map(function(m,i){
+        return React.createElement("div", {key:i, style:{marginBottom:i<errors.length+warnings.length-1?6:0, lineHeight:1.45}},
+          React.createElement("span", {style:{fontWeight:600, color:i<errors.length?"#b91c1c":"#92400e"}},
+            "["+m.code+"] "),
+          m.path ? React.createElement("span", {style:{color:"#6b7280", fontSize:11}}, m.path+" — ") : null,
+          React.createElement("span", null, m.message||"(no message)")
+        );
+      })
+    ) : null
+  );
+}
+
+
 function si(v,u){if(!isFinite(v))return"\u2014";var a=Math.abs(v);if(a===0)return"0 "+u;if(a>=1e6)return numFmt(v,4)+" "+u;if(a>=1e3)return(v/1e3).toPrecision(4)+" k"+u;if(a>=.1)return v.toPrecision(4)+" "+u;if(a>=1e-3)return(v*1e3).toPrecision(4)+" m"+u;if(a>=1e-6)return(v*1e6).toPrecision(4)+" \u00b5"+u;if(a>=1e-9)return(v*1e9).toPrecision(4)+" n"+u;return numFmt(v,4)+" "+u;}
 
 /* ═══════ SCIENTIFIC NOTATION ═══════ */
@@ -1001,6 +1595,318 @@ function GeneralScanContent(p){
   var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
   var _workerRef=useRef(null);
 
+  /* ── LSP-JSON import state (Sub-phase 1D commit 2) ─────────────────────
+     phase:  "idle" | "loading" | "loaded" | "error"
+     When phase==="loaded", the existing scan-configuration inputs are
+     disabled and display the LSP-derived values.  Eject restores the
+     pre-import state.  The LSP worker is created lazily on first import. */
+  var _lspState=useState({phase:"idle"}),lspState=_lspState[0],setLspState=_lspState[1];
+  var _lspWorkerRef=useRef(null);
+  var _lspInitRef=useRef(null);
+  var _lspPreImportState=useRef(null);
+  var _lspReqIdRef=useRef(0);  // monotonic request ID counter (prevents Math.random collisions)
+  /* Holds the engine-format segments for a custom-path LSP (Sub-phase 1D
+     commit 3).  Non-null only while phase==="loaded" AND the LSP used a
+     segment-array authoritative path (canonicalize emitted scanParams=null
+     with non-empty engineSegments).  Shape: {segments, bbox, totalTime_s,
+     meanVelocity_mm_s, hasBlankedSegments, d_1e_mm}.                      */
+  var _lspCustomSegsRef=useRef(null);
+
+  /* Lazy worker creation + init.  Returns a Promise that resolves when the
+     worker has accepted the standard.  Three structural defenses:
+     (1) On init rejection we CLEAR _lspInitRef so the next import retries,
+         rather than permanently caching the rejected promise.
+     (2) We attach an 'error' event listener on the worker so script-load
+         failures (CSP block, malformed bundle, etc) reject the promise
+         rather than hanging forever.
+     (3) We add a 10s init timeout as a last-resort defense; in practice
+         init takes 50-200 ms in modern browsers.                          */
+  function _getLspWorkerInited(){
+    if (_lspInitRef.current) return _lspInitRef.current;
+    if (typeof __createLSPWorker!=="function") return null;
+    var w = __createLSPWorker();
+    if (!w) return null;
+    _lspWorkerRef.current = w;
+
+    // Compute stdData OUTSIDE the Promise executor.  If _E.getStandard()
+    // throws here, we can clean up the worker reference cleanly before
+    // returning a rejected Promise; throwing inside the executor would
+    // leak the worker ref because the catch path runs in a context where
+    // we've already assigned _lspWorkerRef.current = w.
+    var stdData;
+    try {
+      stdData = (typeof __STD_DATA__!=="undefined") ? __STD_DATA__ :
+                (_E && _E.getStandard ? {standard:_E.getStandard()} : null);
+    } catch (stdErr) {
+      try { w.terminate(); } catch (_) {}
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      return Promise.reject(new Error("Failed to obtain standard data: " +
+        (stdErr && stdErr.message ? stdErr.message : String(stdErr))));
+    }
+
+    var p = new Promise(function(resolve, reject){
+      var initReq = (++_lspReqIdRef.current);
+      var settled = false;
+      function settle(ok, err){
+        if (settled) return; settled = true;
+        try { w.removeEventListener("message", onInit); } catch (_) {}
+        try { w.removeEventListener("error", onError); } catch (_) {}
+        if (timeoutId) clearTimeout(timeoutId);
+        if (ok) resolve();
+        else {
+          // Terminate the failed worker to free its thread/memory; clear
+          // both refs so the next import retries with a fresh worker.
+          try { w.terminate(); } catch (_) {}
+          if (_lspWorkerRef.current === w) _lspWorkerRef.current = null;
+          _lspInitRef.current = null;
+          reject(err);
+        }
+      }
+      function onInit(ev){
+        if (!ev||!ev.data) return;
+        if (ev.data.requestId!==initReq) return;
+        // Accept both init_result and error (worker's top-level catch).
+        // Without this, a worker exception during init would silently
+        // hang us for the full 10 s timeout.
+        if (ev.data.type==="init_result") {
+          if (ev.data.ok) settle(true);
+          else settle(false, new Error(ev.data.error||"LSP worker init failed"));
+        } else if (ev.data.type==="error") {
+          var firstErr = ev.data.errors && ev.data.errors[0];
+          settle(false, new Error(
+            (firstErr && firstErr.message) ? firstErr.message :
+            "Worker emitted an error response during init"));
+        }
+        // Other response types: ignore.
+      }
+      function onError(ev){
+        // Worker script-load failure or uncaught exception inside the worker.
+        var msg = (ev && ev.message) ? ev.message :
+                  (ev && ev.filename) ? ("error in "+ev.filename) :
+                  "Worker reported an error before init completed";
+        settle(false, new Error(msg));
+      }
+      var timeoutId = setTimeout(function(){
+        settle(false, new Error("LSP worker init timed out after 10 s"));
+      }, 10000);
+      w.addEventListener("message", onInit);
+      w.addEventListener("error", onError);
+      try {
+        w.postMessage({type:"init", requestId:initReq, standard:stdData});
+      } catch (postErr) {
+        settle(false, postErr);
+      }
+    });
+    _lspInitRef.current = p;
+    return p;
+  }
+
+  /* Send a canonicalize message and wait for the matching response.  Three
+     structural defenses against M2 (handler leak): we ALWAYS remove the
+     listener via a settle() helper, even on timeout; we time out after 30s
+     (canonicalization on the largest realistic doc completes in 1-2 s); and
+     errors during postMessage are caught synchronously.                  */
+  function _canonicalizeViaWorker(doc){
+    return new Promise(function(resolve, reject){
+      var initP = _getLspWorkerInited();
+      if (!initP){
+        reject(new Error("LSP worker is not available in this environment"));
+        return;
+      }
+      initP.then(function(){
+        var w = _lspWorkerRef.current;
+        if (!w){
+          reject(new Error("LSP worker reference was cleared during init"));
+          return;
+        }
+        var req = (++_lspReqIdRef.current);
+        var settled = false;
+        function settle(ok, val){
+          if (settled) return; settled = true;
+          try { w.removeEventListener("message", onMsg); } catch (_) {}
+          try { w.removeEventListener("error", onError); } catch (_) {}
+          if (timeoutId) clearTimeout(timeoutId);
+          if (ok) resolve(val); else reject(val);
+        }
+        function onMsg(ev){
+          if (!ev||!ev.data) return;
+          if (ev.data.requestId!==req) return;
+          // Accept both canonicalize_result (normal path) and error (worker's
+          // top-level catch).  Both have matching requestId; both indicate
+          // the worker is done with this request.  Without accepting "error"
+          // here, an internal worker exception would cause us to wait the
+          // full 30 s timeout when we already have the error in hand.
+          if (ev.data.type==="canonicalize_result") {
+            settle(true, ev.data);
+          } else if (ev.data.type==="error") {
+            // Worker emitted a top-level error response.  Surface it as a
+            // structured canonicalize-style failure so the caller's existing
+            // error-handling path works uniformly.
+            settle(true, {
+              type: "canonicalize_result",
+              requestId: req,
+              ok: false,
+              errors: (ev.data.errors && ev.data.errors.length) ? ev.data.errors : [{
+                code: "INTERNAL_ERROR", path: "",
+                message: "Worker emitted an error response without details"
+              }],
+              warnings: []
+            });
+          }
+          // Other response types: ignore (defensive — unknown protocol extension).
+        }
+        function onError(ev){
+          var msg = (ev && ev.message) ? ev.message :
+                    "Worker reported an error during canonicalization";
+          settle(false, new Error(msg));
+        }
+        var timeoutId = setTimeout(function(){
+          settle(false, new Error("LSP canonicalization timed out after 30 s"));
+        }, 30000);
+        w.addEventListener("message", onMsg);
+        w.addEventListener("error", onError);
+        try {
+          w.postMessage({type:"canonicalize", requestId:req, doc:doc});
+        } catch (postErr) {
+          settle(false, postErr);
+        }
+      }, function(initErr){ reject(initErr); });
+    });
+  }
+
+  /* Build the dicts of getters/setters used by the module-level LSP helpers.
+     These dicts are recreated on every render — the helpers do not retain
+     them between calls, so the per-render cost is just object allocation. */
+  function _lspGetters(){
+    return {
+      wlS:wlS, wl:wl, dS:dS, dia:dia,
+      tauS:tauS, tau:tau, tauU:tauU,
+      prfS:prfS, prf:prf, prfU:prfU,
+      pwS:pwS, pw:pw, pwMode:pwMode,
+      laserMode:laserMode, epS:epS,
+      vS:vS, vel:vel, velMode:velMode,
+      dwellS:dwellS, dwellN:dwellN,
+      srateS:srateS, srateN:srateN,
+      frateS:frateS, frateN:frateN,
+      pat:pat, lLS:lLS, lineL:lineL,
+      scanHS:scanHS, scanHN:scanHN,
+      nLS:nLS, nLines:nLines, blk:blk
+    };
+  }
+  function _lspSetters(){
+    return {
+      setWlS:setWlS, setWl:setWl, setDS:setDS, setDia:setDia,
+      setTauS:setTauS, setTau:setTau, setTauU:setTauU,
+      setPrfS:setPrfS, setPrf:setPrf, setPrfU:setPrfU,
+      setPwS:setPwS, setPw:setPw, setPwMode:setPwMode,
+      setLaserMode:setLaserMode, setEpS:setEpS,
+      setVS:setVS, setVel:setVel, setVelMode:setVelMode,
+      setDwellS:setDwellS, setDwellN:setDwellN,
+      setSrateS:setSrateS, setSrateN:setSrateN,
+      setFrateS:setFrateS, setFrateN:setFrateN,
+      setPat:setPat, setLLS:setLLS, setLineL:setLineL,
+      setScanHS:setScanHS, setScanHN:setScanHN,
+      setNLS:setNLS, setNLines:setNLines, setBlk:setBlk,
+      setDirty:setDirty
+    };
+  }
+
+  /* M32 fix: terminate the LSP worker on unmount so tab switching doesn't
+     leak workers.  The dependency array is empty so this effect's cleanup
+     runs only at unmount.  Reading _lspWorkerRef.current at unmount is
+     correct — refs are mutable through the component's lifetime and the
+     ref captures the latest worker. */
+  useEffect(function(){
+    return function(){
+      var w = _lspWorkerRef.current;
+      if (w) { try { w.terminate(); } catch (_) {} }
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      // Clearing the custom-segs ref on unmount makes the setTimeout race
+      // guard inside calculate() short-circuit if the user switched tabs
+      // (which unmounts this component) during the 60 ms dispatch window.
+      _lspCustomSegsRef.current = null;
+    };
+  }, []);
+
+  function _handleLspImport(file){
+    setLspState({phase:"loading", filename:file && file.name});
+    _readAndValidateLSP(file).then(function(r){
+      if (!r.ok) {
+        setLspState({phase:"error", filename:file && file.name,
+          errors:r.errors||[], warnings:r.warnings||[]});
+        return;
+      }
+      _canonicalizeViaWorker(r.doc).then(function(cr){
+        if (!cr.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:cr.errors||[], warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        // Snapshot pre-import state ONLY if we're entering loaded from idle
+        // or error.  If we were already loaded (user re-importing without
+        // ejecting), the existing snapshot still holds the true pre-LSP
+        // state — keep it so Eject restores to manual values, not to the
+        // previous LSP.
+        if (lspState.phase==="idle" || lspState.phase==="error") {
+          _lspPreImportState.current = _lspSnapshotState(_lspGetters());
+        }
+        // _lspApplyState handles both preset and custom-segment paths.  It
+        // populates _lspCustomSegsRef.current when the LSP uses a custom
+        // path (scanParams=null + engineSegments present), or clears it
+        // for preset paths.
+        var applyResult = _lspApplyState(cr, _lspSetters(), _lspCustomSegsRef);
+        if (!applyResult.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:applyResult.errors||[{code:"INTERNAL_ERROR", path:"",
+              message:"Failed to apply LSP-derived values"}],
+            warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        setLspState({phase:"loaded", filename:file && file.name, doc:r.doc,
+          customPath:applyResult.customPath,
+          beam:cr.beam, engineSegments:cr.engineSegments, scanParams:cr.scanParams,
+          totalTime_s:cr.totalTime_s, warnings:(r.warnings||[]).concat(cr.warnings||[])});
+      }, function(workerErr){
+        // Differentiate error codes based on the actual failure mode.
+        // The Promise rejector inside _getLspWorkerInited / _canonicalizeViaWorker
+        // throws Error objects with specific messages.  We pattern-match the
+        // message to assign the right code so users see a meaningful error.
+        // Patterns are deliberately broad: any timeout → WORKER_TIMEOUT;
+        // any init-related failure → WORKER_INIT_FAILED; everything else
+        // (including post-init worker exceptions and structured-clone errors)
+        // falls through to WORKER_UNAVAILABLE.
+        var errMsg = String(workerErr && workerErr.message || workerErr);
+        var code = "WORKER_UNAVAILABLE";
+        if (/timed out/i.test(errMsg)) {
+          code = "WORKER_TIMEOUT";
+        } else if (/\binit\b|standard data/i.test(errMsg)) {
+          // Matches: "init failed", "init result", "during init",
+          // "before init completed", "Failed to obtain standard data"
+          code = "WORKER_INIT_FAILED";
+        }
+        setLspState({phase:"error", filename:file && file.name,
+          errors:[{code:code, path:"", message:errMsg}],
+          warnings:r.warnings||[]});
+      });
+    });
+  }
+
+  function _handleLspEject(){
+    _lspRestoreState(_lspPreImportState.current, _lspSetters());
+    setDirty(true);
+    _lspPreImportState.current = null;
+    _lspCustomSegsRef.current = null;
+    setLspState({phase:"idle"});
+  }
+  var lspLoaded = lspState.phase==="loaded";
+  /* During the "loading" phase the worker is canonicalizing the LSP and the
+     state values are about to be overwritten by _lspApplyState. Disabling
+     the fieldset during loading prevents the user from making edits that
+     would be silently clobbered when the canonicalization resolves.        */
+  var lspLocked = lspLoaded || lspState.phase==="loading";
+
   /* ── Web Worker: runs scanning computation off the main thread ── */
   function getWorker(){
     if(_workerRef.current)return _workerRef.current;
@@ -1171,6 +2077,53 @@ function GeneralScanContent(p){
     }
     setCmp(true);setDirty(false);setPerfNote("");
 
+    // ── Custom-path LSP: bypass parametric segment-building and use the
+    //    LSP's engine segments directly via main-thread computation.
+    //    Skipping the Worker keeps the implementation simple — the Worker's
+    //    code template builds its own segments from pat/lineL/nLines, which
+    //    is wrong for custom paths.  Custom-path LSPs typically have <50000
+    //    segments (canonicalize.js caps at maxEngineSegments), well within
+    //    main-thread performance.  See web/lsp/canonicalize.js mode 2/3.
+    if (_lspCustomSegsRef.current) {
+      var _customData = _lspCustomSegsRef.current;
+      var _customNotes = [];
+      if (_customData.hasBlankedSegments) {
+        _customNotes.push("Custom path includes blanked (flyback) segments; these advance time but deposit no fluence");
+      }
+      _customNotes.push("Custom-path LSP: " + _customData.segments.length +
+        " engine segments, main-thread computation");
+      // Abandon any in-flight Worker from a previous (non-custom) Calculate.
+      // We TERMINATE rather than just detach handlers, because the worker may
+      // have a message queued or in-flight whose result would otherwise be
+      // received by the next preset Calculate's reassigned onmessage handler
+      // (the worker queues messages and processes them in order, posting
+      // replies to whatever main-thread handler is currently installed).
+      // The next preset Calculate creates a fresh worker via getWorker(),
+      // costing ~50 ms one time per "custom → preset" transition.
+      if (_workerRef.current) {
+        try { _workerRef.current.terminate(); } catch (_) {}
+        _workerRef.current = null;
+      }
+      if (_workerTimeout.current) {
+        clearTimeout(_workerTimeout.current);
+        _workerTimeout.current = null;
+      }
+      setTimeout(function(){
+        // Race-condition guard: the user may have clicked Eject during the
+        // 60 ms timeout (the Calculate button sits outside the lspLocked
+        // fieldset and so is enabled even while LSP is loaded).  If the ref
+        // has been cleared or replaced, abort: the post-Eject state no
+        // longer matches the captured custom segments, and proceeding would
+        // mix data from two different scan configurations.
+        if (_lspCustomSegsRef.current !== _customData) {
+          setCmp(false);
+          return;
+        }
+        calculateMainThread(_customData.segments, 8, 3, 0, _customNotes);
+      }, 60);
+      return;
+    }
+
     // ── Performance estimation ──
     // For separable-eligible scans, compute estimates from params directly
     // (avoids OOM from segment construction for micro-beams)
@@ -1279,8 +2232,12 @@ function GeneralScanContent(p){
       var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
       var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
 
-      // Build separable params if applicable (same logic as Worker)
-      var canSep=((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      // Build separable params if applicable (same logic as Worker).
+      // For custom-path LSPs, force canSep=false so we use the segment-array
+      // path with the LSP's actual engine segments rather than building from
+      // pat/lineL/nLines (which would describe a rectangular raster).
+      var _isLspCustom = !!_lspCustomSegsRef.current;
+      var canSep=!_isLspCustom && ((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
       function mkSepP(vv,ep,optP){
         if(!canSep)return null;
         return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,avg_power_W:optP!==undefined?optP:pw,v_scan_mm_s:vv,
@@ -1302,10 +2259,17 @@ function GeneralScanContent(p){
           if(!isCW&&calcPrf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,calcTau)*calcPrf*Math.PI*w22*w22/(2*100);
             if(maxPr1<maxP)maxP=maxPr1;}
         }
-        var minVel=0;
-        if(!canSep&&effNLines<=10000){
+        // Custom-path: no single velocity to scale uniformly (per-segment
+        // velocities), so the "minimum safe velocity" question doesn't apply.
+        // Use Infinity so display shows "—" rather than misleading "0 mm/s".
+        var minVel=_isLspCustom?Infinity:0;
+        if(!canSep&&effNLines<=10000&&!_isLspCustom){
           // Only run bisection on the main thread for brute-force paths
-          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
+          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze).
+          // Custom-path LSPs are also skipped: each segment has its own velocity
+          // (per-segment v_mm_s from the LSP), so a single "minimum safe velocity"
+          // value isn't meaningful — scaling all segments uniformly to find a safe
+          // velocity would silently misrepresent the user's intended scan pattern.
           function testV(tv){
             var ts;
             if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
@@ -1322,9 +2286,35 @@ function GeneralScanContent(p){
             minVel=vHi;}else{minVel=Infinity;}
         }
 
-        // Generate pulse positions and viz segments from scan params (not from segment array)
+        // Generate pulse positions and viz segments.
+        // For preset patterns: derive from pat/lineL/nLines/hatch (parametric).
+        // For custom-path LSPs: derive from the LSP's actual engine segments
+        // (sub-sampled for performance) so the visualization shows the real
+        // scan trajectory rather than a fictitious raster.
         var pulseArr=[];
-        if(!isCW&&calcPrf>0){
+        var vizSegs2=[];
+        var MAX_VIZ2=5000;
+        if (_isLspCustom) {
+          // Custom path: stride-sample the LSP segments for viz.  Each segment
+          // already has {x_start_mm, y_start_mm, angle_rad, v_mm_s} so we add
+          // short-name aliases (x, y, a, v) inline to match the renderer's
+          // expectations without mutating the LSP-owned array.
+          var _customSegs = _lspCustomSegsRef.current.segments;
+          var _cStride = Math.max(1, Math.ceil(_customSegs.length / MAX_VIZ2));
+          for (var _ci = 0; _ci < _customSegs.length && vizSegs2.length < MAX_VIZ2; _ci += _cStride) {
+            var _cs = _customSegs[_ci];
+            if (_cs && !_cs.blanked) {
+              vizSegs2.push({
+                x: _cs.x_start_mm, y: _cs.y_start_mm,
+                a: _cs.angle_rad, v: _cs.v_mm_s
+              });
+            }
+          }
+          // Pulse positions: for custom paths we don't generate a per-pulse
+          // array (the timing diagram assumes a regular raster lattice).  The
+          // worst-case point overlay still works because it reads from the
+          // grid, not the pulse array.
+        } else if(!isCW&&calcPrf>0){
           var maxSP2=5000,ps_mm2=effVel/calcPrf;
           var nPL2=Math.max(1,Math.floor((lineL/effVel)*calcPrf));
           var nLV=pat==="linear"?1:effNLines;
@@ -1339,17 +2329,18 @@ function GeneralScanContent(p){
             tAcc2+=lineL/effVel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:effHatch)/(effVel*5);
           }
         }
-        // Capped viz segments
-        var vizSegs2=[];
-        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:effNLines;
-        var ppl2=Math.ceil(lineL/dia);
-        var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
-        var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
-        for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
-          var vly2=vl2*(pat==="linear"?0:effHatch);
-          var nVP2=Math.ceil(ppl2/vStp2);
-          for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
-            vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+        // Capped viz segments (parametric path; custom path filled above)
+        if (!_isLspCustom) {
+          var nLV2=pat==="linear"?1:effNLines;
+          var ppl2=Math.ceil(lineL/dia);
+          var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
+          var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
+          for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
+            var vly2=vl2*(pat==="linear"?0:effHatch);
+            var nVP2=Math.ceil(ppl2/vStp2);
+            for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
+              vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+            }
           }
         }
 
@@ -1399,6 +2390,10 @@ function GeneralScanContent(p){
   useEffect(function(){
     if(!res||!ptTimRef.current||typeof echarts==="undefined")return;
     if(prf<=0||pw<=0)return;
+    /* Custom-path LSPs don't form a regular raster, so the parametric pulse
+       arrival math below (which iterates over lines and pulse spacings)
+       doesn't apply.  The JSX renders a placeholder card instead.          */
+    if(_lspCustomSegsRef.current)return;
 
     var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
     var Ep=pw/prf;
@@ -1667,7 +2662,15 @@ function GeneralScanContent(p){
   var svPlW=svW_c-svPd_l-svPd_r, svPlH=svH_c-svPd_t-svPd_b;
   /* Independent x/y scaling */
   var svPatW=Math.max(lineL,0.001);
-  var svPatH=pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001);
+  // For custom-path LSPs, ALWAYS use the actual bbox height — regardless of
+  // the user's pre-import `pat` value (which is preserved under the disabled
+  // UI and may still be "linear" even though the imported path is 2D).  The
+  // parametric-pattern branch keeps its existing logic: "linear" gets a 35%
+  // aspect ratio (since scanHN is irrelevant for a single-line scan), other
+  // patterns use scanHN.
+  var svPatH=_lspCustomSegsRef.current
+    ? Math.max(scanHN||1,0.001)
+    : (pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001));
   var svScX=(svPlW*0.85)/svPatW;
   var svScY=(svPlH*0.85)/svPatH;
   var svOx=svPd_l+(svPlW-svPatW*svScX)/2;
@@ -1693,7 +2696,80 @@ function GeneralScanContent(p){
   }
   var svDecCount=svDecIndices?svDecIndices.length:0;
   var svMarks=[],svJumps=[];
-  if(pat==="linear"){
+  /* Custom-path LSP: replace the parametric raster lines with the actual
+     LSP segments, polyline-style.  For SHORT paths (≤800 segments) every
+     segment renders as its own short line, giving a continuous path.  For
+     LONG paths we stride-sample and connect consecutive sampled positions
+     so the viz remains a continuous polyline (rather than sparse dots).
+     Blanked segments end the current polyline so flybacks render as gaps.
+     Segments were already translated to bbox origin in _lspApplyState, so
+     the same svOx/svOy/svScX/svScY mapping as parametric paths applies.   */
+  if (_lspCustomSegsRef.current) {
+    var _customSegs_sv = _lspCustomSegsRef.current.segments;
+    var _customD_sv = _lspCustomSegsRef.current.d_1e_mm || dia || 0.001;
+    var _svMaxCustom = 800;  // cap polyline points so SVG stays responsive
+    var _svCustomStride = Math.max(1, Math.ceil(_customSegs_sv.length / _svMaxCustom));
+    // Helper: find the next non-blanked segment at or after index `from`,
+    // stepping by `stride`.  Returns null if none.
+    function _svNextVisible(arr, from, stride) {
+      for (var j = from; j < arr.length; j += stride) {
+        if (arr[j] && !arr[j].blanked) return { seg: arr[j], idx: j };
+      }
+      return null;
+    }
+    if (_svCustomStride === 1) {
+      // Short path: render every segment as its own beam-diameter-long line.
+      for (var _svci0 = 0; _svci0 < _customSegs_sv.length; _svci0++) {
+        var _csg0 = _customSegs_sv[_svci0];
+        if (!_csg0 || _csg0.blanked) continue;
+        var _csx10 = _csg0.x_start_mm, _csy10 = _csg0.y_start_mm;
+        var _csx20 = _csx10 + _customD_sv * Math.cos(_csg0.angle_rad || 0);
+        var _csy20 = _csy10 + _customD_sv * Math.sin(_csg0.angle_rad || 0);
+        svMarks.push({
+          x1: svOx + _csx10 * svScX, y1: svOy + _csy10 * svScY,
+          x2: svOx + _csx20 * svScX, y2: svOy + _csy20 * svScY,
+          idx: _svci0
+        });
+      }
+    } else {
+      // Long path: connect consecutive sampled positions as a polyline.
+      // A blanked segment between samples breaks the line (renders as a gap).
+      var _curAnchor = _svNextVisible(_customSegs_sv, 0, _svCustomStride);
+      while (_curAnchor) {
+        var _nextAnchor = _svNextVisible(_customSegs_sv, _curAnchor.idx + _svCustomStride, _svCustomStride);
+        if (_nextAnchor) {
+          // Detect a blanked-segment break in the interval (_curAnchor.idx, _nextAnchor.idx).
+          var _hasBreak = false;
+          for (var _bi = _curAnchor.idx + 1; _bi < _nextAnchor.idx; _bi++) {
+            if (_customSegs_sv[_bi] && _customSegs_sv[_bi].blanked) { _hasBreak = true; break; }
+          }
+          if (!_hasBreak) {
+            svMarks.push({
+              x1: svOx + _curAnchor.seg.x_start_mm * svScX,
+              y1: svOy + _curAnchor.seg.y_start_mm * svScY,
+              x2: svOx + _nextAnchor.seg.x_start_mm * svScX,
+              y2: svOy + _nextAnchor.seg.y_start_mm * svScY,
+              idx: _curAnchor.idx
+            });
+          }
+          // else: skip this mark; break in scan path renders as a gap.
+          _curAnchor = _nextAnchor;
+        } else {
+          // Final anchor — render a beam-diameter-long stub to mark the end.
+          var _endX = _curAnchor.seg.x_start_mm + _customD_sv * Math.cos(_curAnchor.seg.angle_rad || 0);
+          var _endY = _curAnchor.seg.y_start_mm + _customD_sv * Math.sin(_curAnchor.seg.angle_rad || 0);
+          svMarks.push({
+            x1: svOx + _curAnchor.seg.x_start_mm * svScX,
+            y1: svOy + _curAnchor.seg.y_start_mm * svScY,
+            x2: svOx + _endX * svScX,
+            y2: svOy + _endY * svScY,
+            idx: _curAnchor.idx
+          });
+          _curAnchor = null;
+        }
+      }
+    }
+  } else if(pat==="linear"){
     svMarks.push({x1:svOx,y1:svOy+svRH/2,x2:svOx+svRW,y2:svOy+svRH/2,idx:0});
   }else if(svTooMany){
     /* Decimated: iterate only over the small set of indices (never over all nLines) */
@@ -1779,11 +2855,27 @@ function GeneralScanContent(p){
   }
 
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Pattern Source (Sub-phase 1D commit 2) ═══ */}
+    {/* LSP-JSON import card. When loaded, the controls below become read-only
+        and display the LSP-derived values; Eject restores the previous state. */}
+    <PatternSource T={T} lspState={lspState}
+      onImport={_handleLspImport} onEject={_handleLspEject} />
+
     {/* ═══ Region 1: Configuration ═══ */}
     <div>
       <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
-    {/* ── Inputs: 2-column layout ── */}
-    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+    {/* ── Inputs: 2-column layout ──
+        fieldset with disabled={lspLoaded} natively propagates the disabled
+        state to every <input>, <select>, <button>, and <textarea> inside.
+        Borders/padding/margin/min-width:0 reset so the fieldset is
+        layout-transparent. CSS opacity is conditional so the user sees
+        the state change clearly. */}
+    <fieldset disabled={lspLocked} style={{
+      border:"none",padding:0,margin:0,minWidth:0,
+      display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start",
+      opacity:lspLocked?0.55:1,
+      pointerEvents:lspLocked?"none":"auto"
+    }}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Beam Parameters</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1998,7 +3090,7 @@ function GeneralScanContent(p){
       </div>
 
       </div>
-    </div>
+    </fieldset>
     <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
       <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
     </div>
@@ -2124,9 +3216,10 @@ function GeneralScanContent(p){
           {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
           {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
         </div>
-        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {(res.pulses && res.pulses.length>0)?res.pulses.length:(res.st.tp||0)}</div>:null}
       </div>
-      {res&&prf>0?<div>
+      {lspState.customPath?<div style={{height:300,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif",padding:"0 24px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:600,color:T.tm,marginBottom:6}}>Per-point timing not available for custom-path LSPs</div><div style={{maxWidth:480,lineHeight:1.5}}>The point-timing diagram assumes a regular raster scan; this LSP defines an arbitrary segment path. Use the safety verdict and peak fluence above for the worst-case point — these are computed correctly from the actual segments.</div></div>
+        :res&&prf>0?<div>
         <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
       </div>
         :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
@@ -2233,6 +3326,318 @@ function OCTScanContent(p){
 
   var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
   var _workerRef=useRef(null);
+
+  /* ── LSP-JSON import state (Sub-phase 1D commit 2) ─────────────────────
+     phase:  "idle" | "loading" | "loaded" | "error"
+     When phase==="loaded", the existing scan-configuration inputs are
+     disabled and display the LSP-derived values.  Eject restores the
+     pre-import state.  The LSP worker is created lazily on first import. */
+  var _lspState=useState({phase:"idle"}),lspState=_lspState[0],setLspState=_lspState[1];
+  var _lspWorkerRef=useRef(null);
+  var _lspInitRef=useRef(null);
+  var _lspPreImportState=useRef(null);
+  var _lspReqIdRef=useRef(0);  // monotonic request ID counter (prevents Math.random collisions)
+  /* Holds the engine-format segments for a custom-path LSP (Sub-phase 1D
+     commit 3).  Non-null only while phase==="loaded" AND the LSP used a
+     segment-array authoritative path (canonicalize emitted scanParams=null
+     with non-empty engineSegments).  Shape: {segments, bbox, totalTime_s,
+     meanVelocity_mm_s, hasBlankedSegments, d_1e_mm}.                      */
+  var _lspCustomSegsRef=useRef(null);
+
+  /* Lazy worker creation + init.  Returns a Promise that resolves when the
+     worker has accepted the standard.  Three structural defenses:
+     (1) On init rejection we CLEAR _lspInitRef so the next import retries,
+         rather than permanently caching the rejected promise.
+     (2) We attach an 'error' event listener on the worker so script-load
+         failures (CSP block, malformed bundle, etc) reject the promise
+         rather than hanging forever.
+     (3) We add a 10s init timeout as a last-resort defense; in practice
+         init takes 50-200 ms in modern browsers.                          */
+  function _getLspWorkerInited(){
+    if (_lspInitRef.current) return _lspInitRef.current;
+    if (typeof __createLSPWorker!=="function") return null;
+    var w = __createLSPWorker();
+    if (!w) return null;
+    _lspWorkerRef.current = w;
+
+    // Compute stdData OUTSIDE the Promise executor.  If _E.getStandard()
+    // throws here, we can clean up the worker reference cleanly before
+    // returning a rejected Promise; throwing inside the executor would
+    // leak the worker ref because the catch path runs in a context where
+    // we've already assigned _lspWorkerRef.current = w.
+    var stdData;
+    try {
+      stdData = (typeof __STD_DATA__!=="undefined") ? __STD_DATA__ :
+                (_E && _E.getStandard ? {standard:_E.getStandard()} : null);
+    } catch (stdErr) {
+      try { w.terminate(); } catch (_) {}
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      return Promise.reject(new Error("Failed to obtain standard data: " +
+        (stdErr && stdErr.message ? stdErr.message : String(stdErr))));
+    }
+
+    var p = new Promise(function(resolve, reject){
+      var initReq = (++_lspReqIdRef.current);
+      var settled = false;
+      function settle(ok, err){
+        if (settled) return; settled = true;
+        try { w.removeEventListener("message", onInit); } catch (_) {}
+        try { w.removeEventListener("error", onError); } catch (_) {}
+        if (timeoutId) clearTimeout(timeoutId);
+        if (ok) resolve();
+        else {
+          // Terminate the failed worker to free its thread/memory; clear
+          // both refs so the next import retries with a fresh worker.
+          try { w.terminate(); } catch (_) {}
+          if (_lspWorkerRef.current === w) _lspWorkerRef.current = null;
+          _lspInitRef.current = null;
+          reject(err);
+        }
+      }
+      function onInit(ev){
+        if (!ev||!ev.data) return;
+        if (ev.data.requestId!==initReq) return;
+        // Accept both init_result and error (worker's top-level catch).
+        // Without this, a worker exception during init would silently
+        // hang us for the full 10 s timeout.
+        if (ev.data.type==="init_result") {
+          if (ev.data.ok) settle(true);
+          else settle(false, new Error(ev.data.error||"LSP worker init failed"));
+        } else if (ev.data.type==="error") {
+          var firstErr = ev.data.errors && ev.data.errors[0];
+          settle(false, new Error(
+            (firstErr && firstErr.message) ? firstErr.message :
+            "Worker emitted an error response during init"));
+        }
+        // Other response types: ignore.
+      }
+      function onError(ev){
+        // Worker script-load failure or uncaught exception inside the worker.
+        var msg = (ev && ev.message) ? ev.message :
+                  (ev && ev.filename) ? ("error in "+ev.filename) :
+                  "Worker reported an error before init completed";
+        settle(false, new Error(msg));
+      }
+      var timeoutId = setTimeout(function(){
+        settle(false, new Error("LSP worker init timed out after 10 s"));
+      }, 10000);
+      w.addEventListener("message", onInit);
+      w.addEventListener("error", onError);
+      try {
+        w.postMessage({type:"init", requestId:initReq, standard:stdData});
+      } catch (postErr) {
+        settle(false, postErr);
+      }
+    });
+    _lspInitRef.current = p;
+    return p;
+  }
+
+  /* Send a canonicalize message and wait for the matching response.  Three
+     structural defenses against M2 (handler leak): we ALWAYS remove the
+     listener via a settle() helper, even on timeout; we time out after 30s
+     (canonicalization on the largest realistic doc completes in 1-2 s); and
+     errors during postMessage are caught synchronously.                  */
+  function _canonicalizeViaWorker(doc){
+    return new Promise(function(resolve, reject){
+      var initP = _getLspWorkerInited();
+      if (!initP){
+        reject(new Error("LSP worker is not available in this environment"));
+        return;
+      }
+      initP.then(function(){
+        var w = _lspWorkerRef.current;
+        if (!w){
+          reject(new Error("LSP worker reference was cleared during init"));
+          return;
+        }
+        var req = (++_lspReqIdRef.current);
+        var settled = false;
+        function settle(ok, val){
+          if (settled) return; settled = true;
+          try { w.removeEventListener("message", onMsg); } catch (_) {}
+          try { w.removeEventListener("error", onError); } catch (_) {}
+          if (timeoutId) clearTimeout(timeoutId);
+          if (ok) resolve(val); else reject(val);
+        }
+        function onMsg(ev){
+          if (!ev||!ev.data) return;
+          if (ev.data.requestId!==req) return;
+          // Accept both canonicalize_result (normal path) and error (worker's
+          // top-level catch).  Both have matching requestId; both indicate
+          // the worker is done with this request.  Without accepting "error"
+          // here, an internal worker exception would cause us to wait the
+          // full 30 s timeout when we already have the error in hand.
+          if (ev.data.type==="canonicalize_result") {
+            settle(true, ev.data);
+          } else if (ev.data.type==="error") {
+            // Worker emitted a top-level error response.  Surface it as a
+            // structured canonicalize-style failure so the caller's existing
+            // error-handling path works uniformly.
+            settle(true, {
+              type: "canonicalize_result",
+              requestId: req,
+              ok: false,
+              errors: (ev.data.errors && ev.data.errors.length) ? ev.data.errors : [{
+                code: "INTERNAL_ERROR", path: "",
+                message: "Worker emitted an error response without details"
+              }],
+              warnings: []
+            });
+          }
+          // Other response types: ignore (defensive — unknown protocol extension).
+        }
+        function onError(ev){
+          var msg = (ev && ev.message) ? ev.message :
+                    "Worker reported an error during canonicalization";
+          settle(false, new Error(msg));
+        }
+        var timeoutId = setTimeout(function(){
+          settle(false, new Error("LSP canonicalization timed out after 30 s"));
+        }, 30000);
+        w.addEventListener("message", onMsg);
+        w.addEventListener("error", onError);
+        try {
+          w.postMessage({type:"canonicalize", requestId:req, doc:doc});
+        } catch (postErr) {
+          settle(false, postErr);
+        }
+      }, function(initErr){ reject(initErr); });
+    });
+  }
+
+  /* Build the dicts of getters/setters used by the module-level LSP helpers.
+     These dicts are recreated on every render — the helpers do not retain
+     them between calls, so the per-render cost is just object allocation. */
+  function _lspGetters(){
+    return {
+      wlS:wlS, wl:wl, dS:dS, dia:dia,
+      tauS:tauS, tau:tau, tauU:tauU,
+      prfS:prfS, prf:prf, prfU:prfU,
+      pwS:pwS, pw:pw, pwMode:pwMode,
+      laserMode:laserMode, epS:epS,
+      vS:vS, vel:vel, velMode:velMode,
+      dwellS:dwellS, dwellN:dwellN,
+      srateS:srateS, srateN:srateN,
+      frateS:frateS, frateN:frateN,
+      pat:pat, lLS:lLS, lineL:lineL,
+      scanHS:scanHS, scanHN:scanHN,
+      nLS:nLS, nLines:nLines, blk:blk
+    };
+  }
+  function _lspSetters(){
+    return {
+      setWlS:setWlS, setWl:setWl, setDS:setDS, setDia:setDia,
+      setTauS:setTauS, setTau:setTau, setTauU:setTauU,
+      setPrfS:setPrfS, setPrf:setPrf, setPrfU:setPrfU,
+      setPwS:setPwS, setPw:setPw, setPwMode:setPwMode,
+      setLaserMode:setLaserMode, setEpS:setEpS,
+      setVS:setVS, setVel:setVel, setVelMode:setVelMode,
+      setDwellS:setDwellS, setDwellN:setDwellN,
+      setSrateS:setSrateS, setSrateN:setSrateN,
+      setFrateS:setFrateS, setFrateN:setFrateN,
+      setPat:setPat, setLLS:setLLS, setLineL:setLineL,
+      setScanHS:setScanHS, setScanHN:setScanHN,
+      setNLS:setNLS, setNLines:setNLines, setBlk:setBlk,
+      setDirty:setDirty
+    };
+  }
+
+  /* M32 fix: terminate the LSP worker on unmount so tab switching doesn't
+     leak workers.  The dependency array is empty so this effect's cleanup
+     runs only at unmount.  Reading _lspWorkerRef.current at unmount is
+     correct — refs are mutable through the component's lifetime and the
+     ref captures the latest worker. */
+  useEffect(function(){
+    return function(){
+      var w = _lspWorkerRef.current;
+      if (w) { try { w.terminate(); } catch (_) {} }
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      // Clearing the custom-segs ref on unmount makes the setTimeout race
+      // guard inside calculate() short-circuit if the user switched tabs
+      // (which unmounts this component) during the 60 ms dispatch window.
+      _lspCustomSegsRef.current = null;
+    };
+  }, []);
+
+  function _handleLspImport(file){
+    setLspState({phase:"loading", filename:file && file.name});
+    _readAndValidateLSP(file).then(function(r){
+      if (!r.ok) {
+        setLspState({phase:"error", filename:file && file.name,
+          errors:r.errors||[], warnings:r.warnings||[]});
+        return;
+      }
+      _canonicalizeViaWorker(r.doc).then(function(cr){
+        if (!cr.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:cr.errors||[], warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        // Snapshot pre-import state ONLY if we're entering loaded from idle
+        // or error.  If we were already loaded (user re-importing without
+        // ejecting), the existing snapshot still holds the true pre-LSP
+        // state — keep it so Eject restores to manual values, not to the
+        // previous LSP.
+        if (lspState.phase==="idle" || lspState.phase==="error") {
+          _lspPreImportState.current = _lspSnapshotState(_lspGetters());
+        }
+        // _lspApplyState handles both preset and custom-segment paths.  It
+        // populates _lspCustomSegsRef.current when the LSP uses a custom
+        // path (scanParams=null + engineSegments present), or clears it
+        // for preset paths.
+        var applyResult = _lspApplyState(cr, _lspSetters(), _lspCustomSegsRef);
+        if (!applyResult.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:applyResult.errors||[{code:"INTERNAL_ERROR", path:"",
+              message:"Failed to apply LSP-derived values"}],
+            warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        setLspState({phase:"loaded", filename:file && file.name, doc:r.doc,
+          customPath:applyResult.customPath,
+          beam:cr.beam, engineSegments:cr.engineSegments, scanParams:cr.scanParams,
+          totalTime_s:cr.totalTime_s, warnings:(r.warnings||[]).concat(cr.warnings||[])});
+      }, function(workerErr){
+        // Differentiate error codes based on the actual failure mode.
+        // The Promise rejector inside _getLspWorkerInited / _canonicalizeViaWorker
+        // throws Error objects with specific messages.  We pattern-match the
+        // message to assign the right code so users see a meaningful error.
+        // Patterns are deliberately broad: any timeout → WORKER_TIMEOUT;
+        // any init-related failure → WORKER_INIT_FAILED; everything else
+        // (including post-init worker exceptions and structured-clone errors)
+        // falls through to WORKER_UNAVAILABLE.
+        var errMsg = String(workerErr && workerErr.message || workerErr);
+        var code = "WORKER_UNAVAILABLE";
+        if (/timed out/i.test(errMsg)) {
+          code = "WORKER_TIMEOUT";
+        } else if (/\binit\b|standard data/i.test(errMsg)) {
+          // Matches: "init failed", "init result", "during init",
+          // "before init completed", "Failed to obtain standard data"
+          code = "WORKER_INIT_FAILED";
+        }
+        setLspState({phase:"error", filename:file && file.name,
+          errors:[{code:code, path:"", message:errMsg}],
+          warnings:r.warnings||[]});
+      });
+    });
+  }
+
+  function _handleLspEject(){
+    _lspRestoreState(_lspPreImportState.current, _lspSetters());
+    setDirty(true);
+    _lspPreImportState.current = null;
+    _lspCustomSegsRef.current = null;
+    setLspState({phase:"idle"});
+  }
+  var lspLoaded = lspState.phase==="loaded";
+  /* During the "loading" phase the worker is canonicalizing the LSP and the
+     state values are about to be overwritten by _lspApplyState. Disabling
+     the fieldset during loading prevents the user from making edits that
+     would be silently clobbered when the canonicalization resolves.        */
+  var lspLocked = lspLoaded || lspState.phase==="loading";
 
   /* ── Web Worker: runs scanning computation off the main thread ── */
   function getWorker(){
@@ -2409,6 +3814,53 @@ function OCTScanContent(p){
     }
     setCmp(true);setDirty(false);setPerfNote("");
 
+    // ── Custom-path LSP: bypass parametric segment-building and use the
+    //    LSP's engine segments directly via main-thread computation.
+    //    Skipping the Worker keeps the implementation simple — the Worker's
+    //    code template builds its own segments from pat/lineL/nLines, which
+    //    is wrong for custom paths.  Custom-path LSPs typically have <50000
+    //    segments (canonicalize.js caps at maxEngineSegments), well within
+    //    main-thread performance.  See web/lsp/canonicalize.js mode 2/3.
+    if (_lspCustomSegsRef.current) {
+      var _customData = _lspCustomSegsRef.current;
+      var _customNotes = [];
+      if (_customData.hasBlankedSegments) {
+        _customNotes.push("Custom path includes blanked (flyback) segments; these advance time but deposit no fluence");
+      }
+      _customNotes.push("Custom-path LSP: " + _customData.segments.length +
+        " engine segments, main-thread computation");
+      // Abandon any in-flight Worker from a previous (non-custom) Calculate.
+      // We TERMINATE rather than just detach handlers, because the worker may
+      // have a message queued or in-flight whose result would otherwise be
+      // received by the next preset Calculate's reassigned onmessage handler
+      // (the worker queues messages and processes them in order, posting
+      // replies to whatever main-thread handler is currently installed).
+      // The next preset Calculate creates a fresh worker via getWorker(),
+      // costing ~50 ms one time per "custom → preset" transition.
+      if (_workerRef.current) {
+        try { _workerRef.current.terminate(); } catch (_) {}
+        _workerRef.current = null;
+      }
+      if (_workerTimeout.current) {
+        clearTimeout(_workerTimeout.current);
+        _workerTimeout.current = null;
+      }
+      setTimeout(function(){
+        // Race-condition guard: the user may have clicked Eject during the
+        // 60 ms timeout (the Calculate button sits outside the lspLocked
+        // fieldset and so is enabled even while LSP is loaded).  If the ref
+        // has been cleared or replaced, abort: the post-Eject state no
+        // longer matches the captured custom segments, and proceeding would
+        // mix data from two different scan configurations.
+        if (_lspCustomSegsRef.current !== _customData) {
+          setCmp(false);
+          return;
+        }
+        calculateMainThread(_customData.segments, 8, 3, 0, _customNotes);
+      }, 60);
+      return;
+    }
+
     // ── Performance estimation ──
     // For separable-eligible scans, compute estimates from params directly
     // (avoids OOM from segment construction for micro-beams)
@@ -2548,8 +4000,12 @@ function OCTScanContent(p){
       var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
       var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
 
-      // Build separable params if applicable (same logic as Worker)
-      var canSep=((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      // Build separable params if applicable (same logic as Worker).
+      // For custom-path LSPs, force canSep=false so we use the segment-array
+      // path with the LSP's actual engine segments rather than building from
+      // pat/lineL/nLines (which would describe a rectangular raster).
+      var _isLspCustom = !!_lspCustomSegsRef.current;
+      var canSep=!_isLspCustom && ((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
       function mkSepP(vv,ep,optP){
         if(!canSep)return null;
         return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,avg_power_W:optP!==undefined?optP:pw,v_scan_mm_s:vv,
@@ -2571,10 +4027,17 @@ function OCTScanContent(p){
           if(!isCW&&calcPrf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,calcTau)*calcPrf*Math.PI*w22*w22/(2*100);
             if(maxPr1<maxP)maxP=maxPr1;}
         }
-        var minVel=0;
-        if(!canSep&&effNLines<=10000){
+        // Custom-path: no single velocity to scale uniformly (per-segment
+        // velocities), so the "minimum safe velocity" question doesn't apply.
+        // Use Infinity so display shows "—" rather than misleading "0 mm/s".
+        var minVel=_isLspCustom?Infinity:0;
+        if(!canSep&&effNLines<=10000&&!_isLspCustom){
           // Only run bisection on the main thread for brute-force paths
-          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
+          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze).
+          // Custom-path LSPs are also skipped: each segment has its own velocity
+          // (per-segment v_mm_s from the LSP), so a single "minimum safe velocity"
+          // value isn't meaningful — scaling all segments uniformly to find a safe
+          // velocity would silently misrepresent the user's intended scan pattern.
           function testV(tv){
             var ts;
             if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
@@ -2591,9 +4054,35 @@ function OCTScanContent(p){
             minVel=vHi;}else{minVel=Infinity;}
         }
 
-        // Generate pulse positions and viz segments from scan params (not from segment array)
+        // Generate pulse positions and viz segments.
+        // For preset patterns: derive from pat/lineL/nLines/hatch (parametric).
+        // For custom-path LSPs: derive from the LSP's actual engine segments
+        // (sub-sampled for performance) so the visualization shows the real
+        // scan trajectory rather than a fictitious raster.
         var pulseArr=[];
-        if(!isCW&&calcPrf>0){
+        var vizSegs2=[];
+        var MAX_VIZ2=5000;
+        if (_isLspCustom) {
+          // Custom path: stride-sample the LSP segments for viz.  Each segment
+          // already has {x_start_mm, y_start_mm, angle_rad, v_mm_s} so we add
+          // short-name aliases (x, y, a, v) inline to match the renderer's
+          // expectations without mutating the LSP-owned array.
+          var _customSegs = _lspCustomSegsRef.current.segments;
+          var _cStride = Math.max(1, Math.ceil(_customSegs.length / MAX_VIZ2));
+          for (var _ci = 0; _ci < _customSegs.length && vizSegs2.length < MAX_VIZ2; _ci += _cStride) {
+            var _cs = _customSegs[_ci];
+            if (_cs && !_cs.blanked) {
+              vizSegs2.push({
+                x: _cs.x_start_mm, y: _cs.y_start_mm,
+                a: _cs.angle_rad, v: _cs.v_mm_s
+              });
+            }
+          }
+          // Pulse positions: for custom paths we don't generate a per-pulse
+          // array (the timing diagram assumes a regular raster lattice).  The
+          // worst-case point overlay still works because it reads from the
+          // grid, not the pulse array.
+        } else if(!isCW&&calcPrf>0){
           var maxSP2=5000,ps_mm2=effVel/calcPrf;
           var nPL2=Math.max(1,Math.floor((lineL/effVel)*calcPrf));
           var nLV=pat==="linear"?1:effNLines;
@@ -2608,17 +4097,18 @@ function OCTScanContent(p){
             tAcc2+=lineL/effVel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:effHatch)/(effVel*5);
           }
         }
-        // Capped viz segments
-        var vizSegs2=[];
-        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:effNLines;
-        var ppl2=Math.ceil(lineL/dia);
-        var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
-        var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
-        for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
-          var vly2=vl2*(pat==="linear"?0:effHatch);
-          var nVP2=Math.ceil(ppl2/vStp2);
-          for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
-            vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+        // Capped viz segments (parametric path; custom path filled above)
+        if (!_isLspCustom) {
+          var nLV2=pat==="linear"?1:effNLines;
+          var ppl2=Math.ceil(lineL/dia);
+          var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
+          var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
+          for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
+            var vly2=vl2*(pat==="linear"?0:effHatch);
+            var nVP2=Math.ceil(ppl2/vStp2);
+            for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
+              vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+            }
           }
         }
 
@@ -2686,6 +4176,10 @@ function OCTScanContent(p){
   useEffect(function(){
     if(!res||!ptTimRef.current||typeof echarts==="undefined")return;
     if(prf<=0||pw<=0)return;
+    /* Custom-path LSPs don't form a regular raster, so the parametric pulse
+       arrival math below (which iterates over lines and pulse spacings)
+       doesn't apply.  The JSX renders a placeholder card instead.          */
+    if(_lspCustomSegsRef.current)return;
 
     var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
     /* OCT: per-sweep energy uses duty-cycle-corrected average power.
@@ -2958,7 +4452,15 @@ function OCTScanContent(p){
   var svPlW=svW_c-svPd_l-svPd_r, svPlH=svH_c-svPd_t-svPd_b;
   /* Independent x/y scaling */
   var svPatW=Math.max(lineL,0.001);
-  var svPatH=pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001);
+  // For custom-path LSPs, ALWAYS use the actual bbox height — regardless of
+  // the user's pre-import `pat` value (which is preserved under the disabled
+  // UI and may still be "linear" even though the imported path is 2D).  The
+  // parametric-pattern branch keeps its existing logic: "linear" gets a 35%
+  // aspect ratio (since scanHN is irrelevant for a single-line scan), other
+  // patterns use scanHN.
+  var svPatH=_lspCustomSegsRef.current
+    ? Math.max(scanHN||1,0.001)
+    : (pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001));
   var svScX=(svPlW*0.85)/svPatW;
   var svScY=(svPlH*0.85)/svPatH;
   var svOx=svPd_l+(svPlW-svPatW*svScX)/2;
@@ -2984,7 +4486,80 @@ function OCTScanContent(p){
   }
   var svDecCount=svDecIndices?svDecIndices.length:0;
   var svMarks=[],svJumps=[];
-  if(pat==="linear"){
+  /* Custom-path LSP: replace the parametric raster lines with the actual
+     LSP segments, polyline-style.  For SHORT paths (≤800 segments) every
+     segment renders as its own short line, giving a continuous path.  For
+     LONG paths we stride-sample and connect consecutive sampled positions
+     so the viz remains a continuous polyline (rather than sparse dots).
+     Blanked segments end the current polyline so flybacks render as gaps.
+     Segments were already translated to bbox origin in _lspApplyState, so
+     the same svOx/svOy/svScX/svScY mapping as parametric paths applies.   */
+  if (_lspCustomSegsRef.current) {
+    var _customSegs_sv = _lspCustomSegsRef.current.segments;
+    var _customD_sv = _lspCustomSegsRef.current.d_1e_mm || dia || 0.001;
+    var _svMaxCustom = 800;  // cap polyline points so SVG stays responsive
+    var _svCustomStride = Math.max(1, Math.ceil(_customSegs_sv.length / _svMaxCustom));
+    // Helper: find the next non-blanked segment at or after index `from`,
+    // stepping by `stride`.  Returns null if none.
+    function _svNextVisible(arr, from, stride) {
+      for (var j = from; j < arr.length; j += stride) {
+        if (arr[j] && !arr[j].blanked) return { seg: arr[j], idx: j };
+      }
+      return null;
+    }
+    if (_svCustomStride === 1) {
+      // Short path: render every segment as its own beam-diameter-long line.
+      for (var _svci0 = 0; _svci0 < _customSegs_sv.length; _svci0++) {
+        var _csg0 = _customSegs_sv[_svci0];
+        if (!_csg0 || _csg0.blanked) continue;
+        var _csx10 = _csg0.x_start_mm, _csy10 = _csg0.y_start_mm;
+        var _csx20 = _csx10 + _customD_sv * Math.cos(_csg0.angle_rad || 0);
+        var _csy20 = _csy10 + _customD_sv * Math.sin(_csg0.angle_rad || 0);
+        svMarks.push({
+          x1: svOx + _csx10 * svScX, y1: svOy + _csy10 * svScY,
+          x2: svOx + _csx20 * svScX, y2: svOy + _csy20 * svScY,
+          idx: _svci0
+        });
+      }
+    } else {
+      // Long path: connect consecutive sampled positions as a polyline.
+      // A blanked segment between samples breaks the line (renders as a gap).
+      var _curAnchor = _svNextVisible(_customSegs_sv, 0, _svCustomStride);
+      while (_curAnchor) {
+        var _nextAnchor = _svNextVisible(_customSegs_sv, _curAnchor.idx + _svCustomStride, _svCustomStride);
+        if (_nextAnchor) {
+          // Detect a blanked-segment break in the interval (_curAnchor.idx, _nextAnchor.idx).
+          var _hasBreak = false;
+          for (var _bi = _curAnchor.idx + 1; _bi < _nextAnchor.idx; _bi++) {
+            if (_customSegs_sv[_bi] && _customSegs_sv[_bi].blanked) { _hasBreak = true; break; }
+          }
+          if (!_hasBreak) {
+            svMarks.push({
+              x1: svOx + _curAnchor.seg.x_start_mm * svScX,
+              y1: svOy + _curAnchor.seg.y_start_mm * svScY,
+              x2: svOx + _nextAnchor.seg.x_start_mm * svScX,
+              y2: svOy + _nextAnchor.seg.y_start_mm * svScY,
+              idx: _curAnchor.idx
+            });
+          }
+          // else: skip this mark; break in scan path renders as a gap.
+          _curAnchor = _nextAnchor;
+        } else {
+          // Final anchor — render a beam-diameter-long stub to mark the end.
+          var _endX = _curAnchor.seg.x_start_mm + _customD_sv * Math.cos(_curAnchor.seg.angle_rad || 0);
+          var _endY = _curAnchor.seg.y_start_mm + _customD_sv * Math.sin(_curAnchor.seg.angle_rad || 0);
+          svMarks.push({
+            x1: svOx + _curAnchor.seg.x_start_mm * svScX,
+            y1: svOy + _curAnchor.seg.y_start_mm * svScY,
+            x2: svOx + _endX * svScX,
+            y2: svOy + _endY * svScY,
+            idx: _curAnchor.idx
+          });
+          _curAnchor = null;
+        }
+      }
+    }
+  } else if(pat==="linear"){
     svMarks.push({x1:svOx,y1:svOy+svRH/2,x2:svOx+svRW,y2:svOy+svRH/2,idx:0});
   }else if(svTooMany){
     /* Decimated: iterate only over the small set of indices (never over all nLines) */
@@ -3070,11 +4645,27 @@ function OCTScanContent(p){
   }
 
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Pattern Source (Sub-phase 1D commit 3) ═══ */}
+    {/* LSP-JSON import card. When loaded, the controls below become read-only
+        and display the LSP-derived values; Eject restores the previous state. */}
+    <PatternSource T={T} lspState={lspState}
+      onImport={_handleLspImport} onEject={_handleLspEject} />
+
     {/* ═══ Region 1: Configuration ═══ */}
     <div>
       <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
-    {/* ── Inputs: 2-column layout ── */}
-    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+    {/* ── Inputs: 2-column layout ──
+        fieldset with disabled={lspLocked} natively propagates the disabled
+        state to every <input>, <select>, <button>, and <textarea> inside.
+        Borders/padding/margin/min-width:0 reset so the fieldset is
+        layout-transparent. CSS opacity is conditional so the user sees
+        the state change clearly. */}
+    <fieldset disabled={lspLocked} style={{
+      border:"none",padding:0,margin:0,minWidth:0,
+      display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start",
+      opacity:lspLocked?0.55:1,
+      pointerEvents:lspLocked?"none":"auto"
+    }}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>OCT Source</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -3345,7 +4936,7 @@ function OCTScanContent(p){
       </div>
 
       </div>
-    </div>
+    </fieldset>
     <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
       <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
     </div>
@@ -3505,9 +5096,10 @@ function OCTScanContent(p){
           {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
           {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
         </div>
-        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {(res.pulses && res.pulses.length>0)?res.pulses.length:(res.st.tp||0)}</div>:null}
       </div>
-      {res&&prf>0?<div>
+      {lspState.customPath?<div style={{height:300,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif",padding:"0 24px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:600,color:T.tm,marginBottom:6}}>Per-point timing not available for custom-path LSPs</div><div style={{maxWidth:480,lineHeight:1.5}}>The point-timing diagram assumes a regular raster scan; this LSP defines an arbitrary segment path. Use the safety verdict and peak fluence above for the worst-case point — these are computed correctly from the actual segments.</div></div>
+        :res&&prf>0?<div>
         <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
       </div>
         :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}
@@ -3615,6 +5207,318 @@ function PAScanContent(p){
 
   var _perfNote=useState(""),perfNote=_perfNote[0],setPerfNote=_perfNote[1];
   var _workerRef=useRef(null);
+
+  /* ── LSP-JSON import state (Sub-phase 1D commit 2) ─────────────────────
+     phase:  "idle" | "loading" | "loaded" | "error"
+     When phase==="loaded", the existing scan-configuration inputs are
+     disabled and display the LSP-derived values.  Eject restores the
+     pre-import state.  The LSP worker is created lazily on first import. */
+  var _lspState=useState({phase:"idle"}),lspState=_lspState[0],setLspState=_lspState[1];
+  var _lspWorkerRef=useRef(null);
+  var _lspInitRef=useRef(null);
+  var _lspPreImportState=useRef(null);
+  var _lspReqIdRef=useRef(0);  // monotonic request ID counter (prevents Math.random collisions)
+  /* Holds the engine-format segments for a custom-path LSP (Sub-phase 1D
+     commit 3).  Non-null only while phase==="loaded" AND the LSP used a
+     segment-array authoritative path (canonicalize emitted scanParams=null
+     with non-empty engineSegments).  Shape: {segments, bbox, totalTime_s,
+     meanVelocity_mm_s, hasBlankedSegments, d_1e_mm}.                      */
+  var _lspCustomSegsRef=useRef(null);
+
+  /* Lazy worker creation + init.  Returns a Promise that resolves when the
+     worker has accepted the standard.  Three structural defenses:
+     (1) On init rejection we CLEAR _lspInitRef so the next import retries,
+         rather than permanently caching the rejected promise.
+     (2) We attach an 'error' event listener on the worker so script-load
+         failures (CSP block, malformed bundle, etc) reject the promise
+         rather than hanging forever.
+     (3) We add a 10s init timeout as a last-resort defense; in practice
+         init takes 50-200 ms in modern browsers.                          */
+  function _getLspWorkerInited(){
+    if (_lspInitRef.current) return _lspInitRef.current;
+    if (typeof __createLSPWorker!=="function") return null;
+    var w = __createLSPWorker();
+    if (!w) return null;
+    _lspWorkerRef.current = w;
+
+    // Compute stdData OUTSIDE the Promise executor.  If _E.getStandard()
+    // throws here, we can clean up the worker reference cleanly before
+    // returning a rejected Promise; throwing inside the executor would
+    // leak the worker ref because the catch path runs in a context where
+    // we've already assigned _lspWorkerRef.current = w.
+    var stdData;
+    try {
+      stdData = (typeof __STD_DATA__!=="undefined") ? __STD_DATA__ :
+                (_E && _E.getStandard ? {standard:_E.getStandard()} : null);
+    } catch (stdErr) {
+      try { w.terminate(); } catch (_) {}
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      return Promise.reject(new Error("Failed to obtain standard data: " +
+        (stdErr && stdErr.message ? stdErr.message : String(stdErr))));
+    }
+
+    var p = new Promise(function(resolve, reject){
+      var initReq = (++_lspReqIdRef.current);
+      var settled = false;
+      function settle(ok, err){
+        if (settled) return; settled = true;
+        try { w.removeEventListener("message", onInit); } catch (_) {}
+        try { w.removeEventListener("error", onError); } catch (_) {}
+        if (timeoutId) clearTimeout(timeoutId);
+        if (ok) resolve();
+        else {
+          // Terminate the failed worker to free its thread/memory; clear
+          // both refs so the next import retries with a fresh worker.
+          try { w.terminate(); } catch (_) {}
+          if (_lspWorkerRef.current === w) _lspWorkerRef.current = null;
+          _lspInitRef.current = null;
+          reject(err);
+        }
+      }
+      function onInit(ev){
+        if (!ev||!ev.data) return;
+        if (ev.data.requestId!==initReq) return;
+        // Accept both init_result and error (worker's top-level catch).
+        // Without this, a worker exception during init would silently
+        // hang us for the full 10 s timeout.
+        if (ev.data.type==="init_result") {
+          if (ev.data.ok) settle(true);
+          else settle(false, new Error(ev.data.error||"LSP worker init failed"));
+        } else if (ev.data.type==="error") {
+          var firstErr = ev.data.errors && ev.data.errors[0];
+          settle(false, new Error(
+            (firstErr && firstErr.message) ? firstErr.message :
+            "Worker emitted an error response during init"));
+        }
+        // Other response types: ignore.
+      }
+      function onError(ev){
+        // Worker script-load failure or uncaught exception inside the worker.
+        var msg = (ev && ev.message) ? ev.message :
+                  (ev && ev.filename) ? ("error in "+ev.filename) :
+                  "Worker reported an error before init completed";
+        settle(false, new Error(msg));
+      }
+      var timeoutId = setTimeout(function(){
+        settle(false, new Error("LSP worker init timed out after 10 s"));
+      }, 10000);
+      w.addEventListener("message", onInit);
+      w.addEventListener("error", onError);
+      try {
+        w.postMessage({type:"init", requestId:initReq, standard:stdData});
+      } catch (postErr) {
+        settle(false, postErr);
+      }
+    });
+    _lspInitRef.current = p;
+    return p;
+  }
+
+  /* Send a canonicalize message and wait for the matching response.  Three
+     structural defenses against M2 (handler leak): we ALWAYS remove the
+     listener via a settle() helper, even on timeout; we time out after 30s
+     (canonicalization on the largest realistic doc completes in 1-2 s); and
+     errors during postMessage are caught synchronously.                  */
+  function _canonicalizeViaWorker(doc){
+    return new Promise(function(resolve, reject){
+      var initP = _getLspWorkerInited();
+      if (!initP){
+        reject(new Error("LSP worker is not available in this environment"));
+        return;
+      }
+      initP.then(function(){
+        var w = _lspWorkerRef.current;
+        if (!w){
+          reject(new Error("LSP worker reference was cleared during init"));
+          return;
+        }
+        var req = (++_lspReqIdRef.current);
+        var settled = false;
+        function settle(ok, val){
+          if (settled) return; settled = true;
+          try { w.removeEventListener("message", onMsg); } catch (_) {}
+          try { w.removeEventListener("error", onError); } catch (_) {}
+          if (timeoutId) clearTimeout(timeoutId);
+          if (ok) resolve(val); else reject(val);
+        }
+        function onMsg(ev){
+          if (!ev||!ev.data) return;
+          if (ev.data.requestId!==req) return;
+          // Accept both canonicalize_result (normal path) and error (worker's
+          // top-level catch).  Both have matching requestId; both indicate
+          // the worker is done with this request.  Without accepting "error"
+          // here, an internal worker exception would cause us to wait the
+          // full 30 s timeout when we already have the error in hand.
+          if (ev.data.type==="canonicalize_result") {
+            settle(true, ev.data);
+          } else if (ev.data.type==="error") {
+            // Worker emitted a top-level error response.  Surface it as a
+            // structured canonicalize-style failure so the caller's existing
+            // error-handling path works uniformly.
+            settle(true, {
+              type: "canonicalize_result",
+              requestId: req,
+              ok: false,
+              errors: (ev.data.errors && ev.data.errors.length) ? ev.data.errors : [{
+                code: "INTERNAL_ERROR", path: "",
+                message: "Worker emitted an error response without details"
+              }],
+              warnings: []
+            });
+          }
+          // Other response types: ignore (defensive — unknown protocol extension).
+        }
+        function onError(ev){
+          var msg = (ev && ev.message) ? ev.message :
+                    "Worker reported an error during canonicalization";
+          settle(false, new Error(msg));
+        }
+        var timeoutId = setTimeout(function(){
+          settle(false, new Error("LSP canonicalization timed out after 30 s"));
+        }, 30000);
+        w.addEventListener("message", onMsg);
+        w.addEventListener("error", onError);
+        try {
+          w.postMessage({type:"canonicalize", requestId:req, doc:doc});
+        } catch (postErr) {
+          settle(false, postErr);
+        }
+      }, function(initErr){ reject(initErr); });
+    });
+  }
+
+  /* Build the dicts of getters/setters used by the module-level LSP helpers.
+     These dicts are recreated on every render — the helpers do not retain
+     them between calls, so the per-render cost is just object allocation. */
+  function _lspGetters(){
+    return {
+      wlS:wlS, wl:wl, dS:dS, dia:dia,
+      tauS:tauS, tau:tau, tauU:tauU,
+      prfS:prfS, prf:prf, prfU:prfU,
+      pwS:pwS, pw:pw, pwMode:pwMode,
+      laserMode:laserMode, epS:epS,
+      vS:vS, vel:vel, velMode:velMode,
+      dwellS:dwellS, dwellN:dwellN,
+      srateS:srateS, srateN:srateN,
+      frateS:frateS, frateN:frateN,
+      pat:pat, lLS:lLS, lineL:lineL,
+      scanHS:scanHS, scanHN:scanHN,
+      nLS:nLS, nLines:nLines, blk:blk
+    };
+  }
+  function _lspSetters(){
+    return {
+      setWlS:setWlS, setWl:setWl, setDS:setDS, setDia:setDia,
+      setTauS:setTauS, setTau:setTau, setTauU:setTauU,
+      setPrfS:setPrfS, setPrf:setPrf, setPrfU:setPrfU,
+      setPwS:setPwS, setPw:setPw, setPwMode:setPwMode,
+      setLaserMode:setLaserMode, setEpS:setEpS,
+      setVS:setVS, setVel:setVel, setVelMode:setVelMode,
+      setDwellS:setDwellS, setDwellN:setDwellN,
+      setSrateS:setSrateS, setSrateN:setSrateN,
+      setFrateS:setFrateS, setFrateN:setFrateN,
+      setPat:setPat, setLLS:setLLS, setLineL:setLineL,
+      setScanHS:setScanHS, setScanHN:setScanHN,
+      setNLS:setNLS, setNLines:setNLines, setBlk:setBlk,
+      setDirty:setDirty
+    };
+  }
+
+  /* M32 fix: terminate the LSP worker on unmount so tab switching doesn't
+     leak workers.  The dependency array is empty so this effect's cleanup
+     runs only at unmount.  Reading _lspWorkerRef.current at unmount is
+     correct — refs are mutable through the component's lifetime and the
+     ref captures the latest worker. */
+  useEffect(function(){
+    return function(){
+      var w = _lspWorkerRef.current;
+      if (w) { try { w.terminate(); } catch (_) {} }
+      _lspWorkerRef.current = null;
+      _lspInitRef.current = null;
+      // Clearing the custom-segs ref on unmount makes the setTimeout race
+      // guard inside calculate() short-circuit if the user switched tabs
+      // (which unmounts this component) during the 60 ms dispatch window.
+      _lspCustomSegsRef.current = null;
+    };
+  }, []);
+
+  function _handleLspImport(file){
+    setLspState({phase:"loading", filename:file && file.name});
+    _readAndValidateLSP(file).then(function(r){
+      if (!r.ok) {
+        setLspState({phase:"error", filename:file && file.name,
+          errors:r.errors||[], warnings:r.warnings||[]});
+        return;
+      }
+      _canonicalizeViaWorker(r.doc).then(function(cr){
+        if (!cr.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:cr.errors||[], warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        // Snapshot pre-import state ONLY if we're entering loaded from idle
+        // or error.  If we were already loaded (user re-importing without
+        // ejecting), the existing snapshot still holds the true pre-LSP
+        // state — keep it so Eject restores to manual values, not to the
+        // previous LSP.
+        if (lspState.phase==="idle" || lspState.phase==="error") {
+          _lspPreImportState.current = _lspSnapshotState(_lspGetters());
+        }
+        // _lspApplyState handles both preset and custom-segment paths.  It
+        // populates _lspCustomSegsRef.current when the LSP uses a custom
+        // path (scanParams=null + engineSegments present), or clears it
+        // for preset paths.
+        var applyResult = _lspApplyState(cr, _lspSetters(), _lspCustomSegsRef);
+        if (!applyResult.ok) {
+          setLspState({phase:"error", filename:file && file.name,
+            errors:applyResult.errors||[{code:"INTERNAL_ERROR", path:"",
+              message:"Failed to apply LSP-derived values"}],
+            warnings:(r.warnings||[]).concat(cr.warnings||[])});
+          return;
+        }
+        setLspState({phase:"loaded", filename:file && file.name, doc:r.doc,
+          customPath:applyResult.customPath,
+          beam:cr.beam, engineSegments:cr.engineSegments, scanParams:cr.scanParams,
+          totalTime_s:cr.totalTime_s, warnings:(r.warnings||[]).concat(cr.warnings||[])});
+      }, function(workerErr){
+        // Differentiate error codes based on the actual failure mode.
+        // The Promise rejector inside _getLspWorkerInited / _canonicalizeViaWorker
+        // throws Error objects with specific messages.  We pattern-match the
+        // message to assign the right code so users see a meaningful error.
+        // Patterns are deliberately broad: any timeout → WORKER_TIMEOUT;
+        // any init-related failure → WORKER_INIT_FAILED; everything else
+        // (including post-init worker exceptions and structured-clone errors)
+        // falls through to WORKER_UNAVAILABLE.
+        var errMsg = String(workerErr && workerErr.message || workerErr);
+        var code = "WORKER_UNAVAILABLE";
+        if (/timed out/i.test(errMsg)) {
+          code = "WORKER_TIMEOUT";
+        } else if (/\binit\b|standard data/i.test(errMsg)) {
+          // Matches: "init failed", "init result", "during init",
+          // "before init completed", "Failed to obtain standard data"
+          code = "WORKER_INIT_FAILED";
+        }
+        setLspState({phase:"error", filename:file && file.name,
+          errors:[{code:code, path:"", message:errMsg}],
+          warnings:r.warnings||[]});
+      });
+    });
+  }
+
+  function _handleLspEject(){
+    _lspRestoreState(_lspPreImportState.current, _lspSetters());
+    setDirty(true);
+    _lspPreImportState.current = null;
+    _lspCustomSegsRef.current = null;
+    setLspState({phase:"idle"});
+  }
+  var lspLoaded = lspState.phase==="loaded";
+  /* During the "loading" phase the worker is canonicalizing the LSP and the
+     state values are about to be overwritten by _lspApplyState. Disabling
+     the fieldset during loading prevents the user from making edits that
+     would be silently clobbered when the canonicalization resolves.        */
+  var lspLocked = lspLoaded || lspState.phase==="loading";
 
   /* ── Web Worker: runs scanning computation off the main thread ── */
   function getWorker(){
@@ -3791,6 +5695,53 @@ function PAScanContent(p){
     }
     setCmp(true);setDirty(false);setPerfNote("");
 
+    // ── Custom-path LSP: bypass parametric segment-building and use the
+    //    LSP's engine segments directly via main-thread computation.
+    //    Skipping the Worker keeps the implementation simple — the Worker's
+    //    code template builds its own segments from pat/lineL/nLines, which
+    //    is wrong for custom paths.  Custom-path LSPs typically have <50000
+    //    segments (canonicalize.js caps at maxEngineSegments), well within
+    //    main-thread performance.  See web/lsp/canonicalize.js mode 2/3.
+    if (_lspCustomSegsRef.current) {
+      var _customData = _lspCustomSegsRef.current;
+      var _customNotes = [];
+      if (_customData.hasBlankedSegments) {
+        _customNotes.push("Custom path includes blanked (flyback) segments; these advance time but deposit no fluence");
+      }
+      _customNotes.push("Custom-path LSP: " + _customData.segments.length +
+        " engine segments, main-thread computation");
+      // Abandon any in-flight Worker from a previous (non-custom) Calculate.
+      // We TERMINATE rather than just detach handlers, because the worker may
+      // have a message queued or in-flight whose result would otherwise be
+      // received by the next preset Calculate's reassigned onmessage handler
+      // (the worker queues messages and processes them in order, posting
+      // replies to whatever main-thread handler is currently installed).
+      // The next preset Calculate creates a fresh worker via getWorker(),
+      // costing ~50 ms one time per "custom → preset" transition.
+      if (_workerRef.current) {
+        try { _workerRef.current.terminate(); } catch (_) {}
+        _workerRef.current = null;
+      }
+      if (_workerTimeout.current) {
+        clearTimeout(_workerTimeout.current);
+        _workerTimeout.current = null;
+      }
+      setTimeout(function(){
+        // Race-condition guard: the user may have clicked Eject during the
+        // 60 ms timeout (the Calculate button sits outside the lspLocked
+        // fieldset and so is enabled even while LSP is loaded).  If the ref
+        // has been cleared or replaced, abort: the post-Eject state no
+        // longer matches the captured custom segments, and proceeding would
+        // mix data from two different scan configurations.
+        if (_lspCustomSegsRef.current !== _customData) {
+          setCmp(false);
+          return;
+        }
+        calculateMainThread(_customData.segments, 8, 3, 0, _customNotes);
+      }, 60);
+      return;
+    }
+
     // ── Performance estimation ──
     // For separable-eligible scans, compute estimates from params directly
     // (avoids OOM from segment construction for micro-beams)
@@ -3919,8 +5870,12 @@ function PAScanContent(p){
       var effHatch=pat!=="linear"&&nLines>1?scanHN/(nLines-1):scanHN;
       var effVel=velMode==="dwell"?dia/(dwellN*1e-6):velMode==="scanrate"?srateN*lineL:velMode==="framerate"?lineL*(pat==="linear"?1:nLines)*frateN:vel;
 
-      // Build separable params if applicable (same logic as Worker)
-      var canSep=((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
+      // Build separable params if applicable (same logic as Worker).
+      // For custom-path LSPs, force canSep=false so we use the segment-array
+      // path with the LSP's actual engine segments rather than building from
+      // pat/lineL/nLines (which would describe a rectangular raster).
+      var _isLspCustom = !!_lspCustomSegsRef.current;
+      var canSep=!_isLspCustom && ((!isCW&&calcPrf>0)||(isCW&&pw>0))&&(pat==="linear"||pat==="raster"||pat==="bidi");
       function mkSepP(vv,ep,optP){
         if(!canSep)return null;
         return{d_1e_mm:dia,prf_hz:calcPrf,pulse_energy_J:ep||Ep,avg_power_W:optP!==undefined?optP:pw,v_scan_mm_s:vv,
@@ -3942,10 +5897,17 @@ function PAScanContent(p){
           if(!isCW&&calcPrf>0){var w22=dia/Math.sqrt(2);var maxPr1=skinMPE(wl,calcTau)*calcPrf*Math.PI*w22*w22/(2*100);
             if(maxPr1<maxP)maxP=maxPr1;}
         }
-        var minVel=0;
-        if(!canSep&&effNLines<=10000){
+        // Custom-path: no single velocity to scale uniformly (per-segment
+        // velocities), so the "minimum safe velocity" question doesn't apply.
+        // Use Infinity so display shows "—" rather than misleading "0 mm/s".
+        var minVel=_isLspCustom?Infinity:0;
+        if(!canSep&&effNLines<=10000&&!_isLspCustom){
           // Only run bisection on the main thread for brute-force paths
-          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze)
+          // (separable scans use the Worker; if it fails, skip bisection to prevent UI freeze).
+          // Custom-path LSPs are also skipped: each segment has its own velocity
+          // (per-segment v_mm_s from the LSP), so a single "minimum safe velocity"
+          // value isn't meaningful — scaling all segments uniformly to find a safe
+          // velocity would silently misrepresent the user's intended scan pattern.
           function testV(tv){
             var ts;
             if(pat==="linear")ts=scanBuildLinear(0,0,0,lineL,tv,dia);
@@ -3962,9 +5924,35 @@ function PAScanContent(p){
             minVel=vHi;}else{minVel=Infinity;}
         }
 
-        // Generate pulse positions and viz segments from scan params (not from segment array)
+        // Generate pulse positions and viz segments.
+        // For preset patterns: derive from pat/lineL/nLines/hatch (parametric).
+        // For custom-path LSPs: derive from the LSP's actual engine segments
+        // (sub-sampled for performance) so the visualization shows the real
+        // scan trajectory rather than a fictitious raster.
         var pulseArr=[];
-        if(!isCW&&calcPrf>0){
+        var vizSegs2=[];
+        var MAX_VIZ2=5000;
+        if (_isLspCustom) {
+          // Custom path: stride-sample the LSP segments for viz.  Each segment
+          // already has {x_start_mm, y_start_mm, angle_rad, v_mm_s} so we add
+          // short-name aliases (x, y, a, v) inline to match the renderer's
+          // expectations without mutating the LSP-owned array.
+          var _customSegs = _lspCustomSegsRef.current.segments;
+          var _cStride = Math.max(1, Math.ceil(_customSegs.length / MAX_VIZ2));
+          for (var _ci = 0; _ci < _customSegs.length && vizSegs2.length < MAX_VIZ2; _ci += _cStride) {
+            var _cs = _customSegs[_ci];
+            if (_cs && !_cs.blanked) {
+              vizSegs2.push({
+                x: _cs.x_start_mm, y: _cs.y_start_mm,
+                a: _cs.angle_rad, v: _cs.v_mm_s
+              });
+            }
+          }
+          // Pulse positions: for custom paths we don't generate a per-pulse
+          // array (the timing diagram assumes a regular raster lattice).  The
+          // worst-case point overlay still works because it reads from the
+          // grid, not the pulse array.
+        } else if(!isCW&&calcPrf>0){
           var maxSP2=5000,ps_mm2=effVel/calcPrf;
           var nPL2=Math.max(1,Math.floor((lineL/effVel)*calcPrf));
           var nLV=pat==="linear"?1:effNLines;
@@ -3979,17 +5967,18 @@ function PAScanContent(p){
             tAcc2+=lineL/effVel;if(li2<nLV-1)tAcc2+=(pat==="linear"?0:effHatch)/(effVel*5);
           }
         }
-        // Capped viz segments
-        var vizSegs2=[];
-        var MAX_VIZ2=5000,nLV2=pat==="linear"?1:effNLines;
-        var ppl2=Math.ceil(lineL/dia);
-        var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
-        var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
-        for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
-          var vly2=vl2*(pat==="linear"?0:effHatch);
-          var nVP2=Math.ceil(ppl2/vStp2);
-          for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
-            vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+        // Capped viz segments (parametric path; custom path filled above)
+        if (!_isLspCustom) {
+          var nLV2=pat==="linear"?1:effNLines;
+          var ppl2=Math.ceil(lineL/dia);
+          var lStr2=Math.max(1,Math.ceil(nLV2*Math.min(ppl2,200)/MAX_VIZ2));
+          var vStp2=Math.max(1,Math.ceil(ppl2/Math.min(200,Math.floor(MAX_VIZ2/Math.ceil(nLV2/lStr2)))));
+          for(var vl2=0;vl2<nLV2&&vizSegs2.length<MAX_VIZ2;vl2+=lStr2){
+            var vly2=vl2*(pat==="linear"?0:effHatch);
+            var nVP2=Math.ceil(ppl2/vStp2);
+            for(var vs2=0;vs2<=nVP2&&vizSegs2.length<MAX_VIZ2;vs2++){
+              vizSegs2.push({x:vs2*vStp2*dia,y:vly2,a:0,v:effVel});
+            }
           }
         }
 
@@ -4057,6 +6046,10 @@ function PAScanContent(p){
   useEffect(function(){
     if(!res||!ptTimRef.current||typeof echarts==="undefined")return;
     if(prf<=0||pw<=0)return;
+    /* Custom-path LSPs don't form a regular raster, so the parametric pulse
+       arrival math below (which iterates over lines and pulse spacings)
+       doesn't apply.  The JSX renders a placeholder card instead.          */
+    if(_lspCustomSegsRef.current)return;
 
     var w=dia/Math.sqrt(2),sigma=dia/(2*Math.sqrt(2)),w2=w*w;
     var Ep=pw/prf;
@@ -4325,7 +6318,15 @@ function PAScanContent(p){
   var svPlW=svW_c-svPd_l-svPd_r, svPlH=svH_c-svPd_t-svPd_b;
   /* Independent x/y scaling */
   var svPatW=Math.max(lineL,0.001);
-  var svPatH=pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001);
+  // For custom-path LSPs, ALWAYS use the actual bbox height — regardless of
+  // the user's pre-import `pat` value (which is preserved under the disabled
+  // UI and may still be "linear" even though the imported path is 2D).  The
+  // parametric-pattern branch keeps its existing logic: "linear" gets a 35%
+  // aspect ratio (since scanHN is irrelevant for a single-line scan), other
+  // patterns use scanHN.
+  var svPatH=_lspCustomSegsRef.current
+    ? Math.max(scanHN||1,0.001)
+    : (pat==="linear"?Math.max(svPatW*0.35,Math.max(dia,0.001)*4):Math.max(scanHN||1,0.001));
   var svScX=(svPlW*0.85)/svPatW;
   var svScY=(svPlH*0.85)/svPatH;
   var svOx=svPd_l+(svPlW-svPatW*svScX)/2;
@@ -4351,7 +6352,80 @@ function PAScanContent(p){
   }
   var svDecCount=svDecIndices?svDecIndices.length:0;
   var svMarks=[],svJumps=[];
-  if(pat==="linear"){
+  /* Custom-path LSP: replace the parametric raster lines with the actual
+     LSP segments, polyline-style.  For SHORT paths (≤800 segments) every
+     segment renders as its own short line, giving a continuous path.  For
+     LONG paths we stride-sample and connect consecutive sampled positions
+     so the viz remains a continuous polyline (rather than sparse dots).
+     Blanked segments end the current polyline so flybacks render as gaps.
+     Segments were already translated to bbox origin in _lspApplyState, so
+     the same svOx/svOy/svScX/svScY mapping as parametric paths applies.   */
+  if (_lspCustomSegsRef.current) {
+    var _customSegs_sv = _lspCustomSegsRef.current.segments;
+    var _customD_sv = _lspCustomSegsRef.current.d_1e_mm || dia || 0.001;
+    var _svMaxCustom = 800;  // cap polyline points so SVG stays responsive
+    var _svCustomStride = Math.max(1, Math.ceil(_customSegs_sv.length / _svMaxCustom));
+    // Helper: find the next non-blanked segment at or after index `from`,
+    // stepping by `stride`.  Returns null if none.
+    function _svNextVisible(arr, from, stride) {
+      for (var j = from; j < arr.length; j += stride) {
+        if (arr[j] && !arr[j].blanked) return { seg: arr[j], idx: j };
+      }
+      return null;
+    }
+    if (_svCustomStride === 1) {
+      // Short path: render every segment as its own beam-diameter-long line.
+      for (var _svci0 = 0; _svci0 < _customSegs_sv.length; _svci0++) {
+        var _csg0 = _customSegs_sv[_svci0];
+        if (!_csg0 || _csg0.blanked) continue;
+        var _csx10 = _csg0.x_start_mm, _csy10 = _csg0.y_start_mm;
+        var _csx20 = _csx10 + _customD_sv * Math.cos(_csg0.angle_rad || 0);
+        var _csy20 = _csy10 + _customD_sv * Math.sin(_csg0.angle_rad || 0);
+        svMarks.push({
+          x1: svOx + _csx10 * svScX, y1: svOy + _csy10 * svScY,
+          x2: svOx + _csx20 * svScX, y2: svOy + _csy20 * svScY,
+          idx: _svci0
+        });
+      }
+    } else {
+      // Long path: connect consecutive sampled positions as a polyline.
+      // A blanked segment between samples breaks the line (renders as a gap).
+      var _curAnchor = _svNextVisible(_customSegs_sv, 0, _svCustomStride);
+      while (_curAnchor) {
+        var _nextAnchor = _svNextVisible(_customSegs_sv, _curAnchor.idx + _svCustomStride, _svCustomStride);
+        if (_nextAnchor) {
+          // Detect a blanked-segment break in the interval (_curAnchor.idx, _nextAnchor.idx).
+          var _hasBreak = false;
+          for (var _bi = _curAnchor.idx + 1; _bi < _nextAnchor.idx; _bi++) {
+            if (_customSegs_sv[_bi] && _customSegs_sv[_bi].blanked) { _hasBreak = true; break; }
+          }
+          if (!_hasBreak) {
+            svMarks.push({
+              x1: svOx + _curAnchor.seg.x_start_mm * svScX,
+              y1: svOy + _curAnchor.seg.y_start_mm * svScY,
+              x2: svOx + _nextAnchor.seg.x_start_mm * svScX,
+              y2: svOy + _nextAnchor.seg.y_start_mm * svScY,
+              idx: _curAnchor.idx
+            });
+          }
+          // else: skip this mark; break in scan path renders as a gap.
+          _curAnchor = _nextAnchor;
+        } else {
+          // Final anchor — render a beam-diameter-long stub to mark the end.
+          var _endX = _curAnchor.seg.x_start_mm + _customD_sv * Math.cos(_curAnchor.seg.angle_rad || 0);
+          var _endY = _curAnchor.seg.y_start_mm + _customD_sv * Math.sin(_curAnchor.seg.angle_rad || 0);
+          svMarks.push({
+            x1: svOx + _curAnchor.seg.x_start_mm * svScX,
+            y1: svOy + _curAnchor.seg.y_start_mm * svScY,
+            x2: svOx + _endX * svScX,
+            y2: svOy + _endY * svScY,
+            idx: _curAnchor.idx
+          });
+          _curAnchor = null;
+        }
+      }
+    }
+  } else if(pat==="linear"){
     svMarks.push({x1:svOx,y1:svOy+svRH/2,x2:svOx+svRW,y2:svOy+svRH/2,idx:0});
   }else if(svTooMany){
     /* Decimated: iterate only over the small set of indices (never over all nLines) */
@@ -4595,11 +6669,27 @@ function PAScanContent(p){
   }
 
   return (<div style={{display:"flex",flexDirection:"column",gap:16}}>
+    {/* ═══ Pattern Source (Sub-phase 1D commit 3) ═══ */}
+    {/* LSP-JSON import card. When loaded, the controls below become read-only
+        and display the LSP-derived values; Eject restores the previous state. */}
+    <PatternSource T={T} lspState={lspState}
+      onImport={_handleLspImport} onEject={_handleLspEject} />
+
     {/* ═══ Region 1: Configuration ═══ */}
     <div>
       <div style={{fontSize:13,fontWeight:600,color:T.tx,letterSpacing:"-0.005em",marginBottom:12,paddingBottom:6,borderBottom:"1px solid "+T.bd}}>Scan Configuration</div>
-    {/* ── Inputs: 2-column layout ── */}
-    <div style={{display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start"}}>
+    {/* ── Inputs: 2-column layout ──
+        fieldset with disabled={lspLocked} natively propagates the disabled
+        state to every <input>, <select>, <button>, and <textarea> inside.
+        Borders/padding/margin/min-width:0 reset so the fieldset is
+        layout-transparent. CSS opacity is conditional so the user sees
+        the state change clearly. */}
+    <fieldset disabled={lspLocked} style={{
+      border:"none",padding:0,margin:0,minWidth:0,
+      display:"grid",gridTemplateColumns:"0.43fr 1fr",gap:12,alignItems:"start",
+      opacity:lspLocked?0.55:1,
+      pointerEvents:lspLocked?"none":"auto"
+    }}>
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:14}}>
         <div style={secH}>Photoacoustic Source</div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -4855,7 +6945,7 @@ function PAScanContent(p){
       </div>
 
       </div>
-    </div>
+    </fieldset>
     <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
       <button onClick={calculate} style={{height:36,padding:"0 24px",fontSize:13,fontWeight:500,background:dirty?T.ac:T.a2,color:"#fff",border:"none",borderRadius:4,cursor:"pointer",letterSpacing:"-0.005em"}}>{cmp?"Computing...":dirty?"Calculate":"Calculated \u2713"}</button>
     </div>
@@ -4993,9 +7083,10 @@ function PAScanContent(p){
           {selPt?"Observing ("+selPt.x.toFixed(3)+", "+selPt.y.toFixed(3)+") mm":"Showing worst-case point"}
           {selPt?" \u2014 select a different point in the scan pattern above or enter coordinates.":"."}
         </div>
-        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {res.pulses?res.pulses.length:res.st.tp||0}</div>:null}
+        {res?<div style={{fontSize:10,color:T.td,fontFamily:"'IBM Plex Mono', monospace",fontVariantNumeric:"tabular-nums"}}>Grid: {res.g.nx}{"\u00d7"}{res.g.ny} {"\u00b7"} Pulses: {(res.pulses && res.pulses.length>0)?res.pulses.length:(res.st.tp||0)}</div>:null}
       </div>
-      {res&&prf>0?<div>
+      {lspState.customPath?<div style={{height:300,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif",padding:"0 24px",textAlign:"center"}}><div style={{fontSize:13,fontWeight:600,color:T.tm,marginBottom:6}}>Per-point timing not available for custom-path LSPs</div><div style={{maxWidth:480,lineHeight:1.5}}>The point-timing diagram assumes a regular raster scan; this LSP defines an arbitrary segment path. Use the safety verdict and peak fluence above for the worst-case point — these are computed correctly from the actual segments.</div></div>
+        :res&&prf>0?<div>
         <div ref={ptTimRef} style={{width:"100%",height:420,borderRadius:4}}/>
       </div>
         :<div style={{height:300,display:"flex",alignItems:"center",justifyContent:"center",background:T.bgI,borderRadius:6,color:T.td,fontSize:12,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}}>{res?"CW mode \u2014 no discrete pulses":"Click Calculate to generate timing diagram"}</div>}

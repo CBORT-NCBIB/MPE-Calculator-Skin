@@ -64,9 +64,12 @@ jobs:
       - name: Run engine.js tests
         run: node tests/test_engine_js.mjs
 
-      - name: Install Ajv for LSP Node-side tests
+      - name: Install dependencies for LSP Node-side tests
         working-directory: web
-        run: npm install ajv
+        run: npm install
+        # web/package.json declares ajv as a devDependency; npm install
+        # picks it up for the LSP validator tests (which use the Node-side
+        # Ajv loader).  esbuild is also pulled but not used in this job.
 
       - name: Run LSP validator tests
         run: node tests/lsp/test_validate.mjs
@@ -76,6 +79,120 @@ jobs:
 
       - name: Run LSP canonicalization tests
         run: node tests/lsp/test_canonicalize.mjs
+
+      - name: Run LSP worker tests
+        run: node tests/lsp/test_worker.mjs
+
+  # ── Browser end-to-end tests (Playwright) ──────────────────
+  # Runs the e2e suite that exercises the real web/index.html in a real
+  # headless Chromium against the real React + Recharts + echarts CDN
+  # stack.  Covers all three branches of the LSP-JSON import pipeline
+  # (preset, custom-segments, schema-validation-error) plus the
+  # framework-smoke checks.  The Playwright config (playwright.config.ts)
+  # is CI-aware: it enables `forbidOnly`, sets retries to 2, caps workers
+  # at 2, and adds the `github` reporter so failures annotate the PR diff
+  # view directly.
+  #
+  # Independent of the python-tests and js-tests jobs — fails on its own
+  # without blocking them or being blocked by them.  Not in the `build`
+  # job's `needs` because e2e does its own bundle build (same script,
+  # web/build.py) and its failure shouldn't suppress the build job's
+  # independent signal about bundle integrity.
+  e2e-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Set up Python (for webServer in playwright.config.ts)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependencies (Babel)
+        working-directory: web
+        run: npm install
+        # web/build.py needs @babel/core and @babel/preset-react to
+        # pre-compile JSX.  Same step as the `build` job.
+
+      - name: Build index.html
+        run: python web/build.py
+        # The Playwright webServer serves web/index.html.  We rebuild it
+        # here so e2e exercises the same bundle CI would ship.
+
+      - name: Install root devDependencies (@playwright/test)
+        run: npm install
+        # The root package.json declares @playwright/test and @types/node
+        # as devDependencies.  We use `npm install` (not `npm ci`) because
+        # package-lock.json is gitignored per the repo's existing
+        # convention; this matches what the other JS jobs do.
+
+      # Cache the Chromium binary keyed by the resolved Playwright version
+      # so cache invalidates correctly when Playwright is upgraded.  The
+      # default install location is ~/.cache/ms-playwright; we read the
+      # exact version from node_modules to make the key precise.
+      - name: Resolve Playwright version
+        id: pw-version
+        run: |
+          set -euo pipefail
+          PW_VERSION="$(node -p "require('@playwright/test/package.json').version")"
+          if [ -z "${PW_VERSION}" ]; then
+            echo "FAIL: Could not resolve Playwright version (empty output)" >&2
+            exit 1
+          fi
+          echo "version=${PW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved Playwright version: ${PW_VERSION}"
+
+      - name: Cache Playwright Chromium binary
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw-version.outputs.version }}
+          # No restore-keys: a cache miss should download the exact
+          # version, not a stale older one.
+
+      - name: Install Chromium (and system dependencies)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+        # --with-deps installs the apt packages Chromium needs on Linux
+        # (libnss3, libatk-bridge2.0-0, etc.).  Only runs on cache miss
+        # to keep typical CI runs under ~10s for this step.
+
+      # Even on cache hit, system dependencies (apt packages) are not
+      # cached because they live in /var/lib/apt, not ~/.cache.  Re-run
+      # the deps-only install to ensure the runner has them.
+      - name: Install Chromium system dependencies (cache-hit path)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Run Playwright e2e tests
+        run: npm run test:e2e
+        env:
+          CI: "true"
+          # Explicitly set CI=true so playwright.config.ts picks up
+          # IS_CI=!!process.env.CI.  GitHub Actions already exports CI=true
+          # by default but we make it explicit for clarity.
+
+      # Always upload artifacts on failure for post-mortem debugging.
+      # `if: failure()` catches both test failures and earlier-step
+      # failures (e.g. webServer didn't start).  Artifacts include
+      # screenshots, traces, videos, and the HTML report.
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
 
   # ── Build verification ─────────────────────────────────────
   build:
@@ -89,6 +206,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js (for Babel + bundle smoke test)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install build dependencies (Babel)
+        working-directory: web
+        run: npm install
+        # web/package.json lists @babel/core and @babel/preset-react as
+        # devDependencies; npm install pulls them in so build.py can
+        # pre-compile JSX rather than falling back to runtime Babel.
+
       - name: Build index.html
         run: python web/build.py
 
@@ -97,4 +226,17 @@ jobs:
           test -f web/index.html || { echo "FAIL: index.html not found"; exit 1; }
           grep -q 'ReactDOM' web/index.html || { echo "FAIL: ReactDOM not in output"; exit 1; }
           grep -q 'MPEEngine' web/index.html || { echo "FAIL: MPEEngine not in output"; exit 1; }
+          grep -q '__LSP_CANONICALIZE_SRC__' web/index.html || { echo "FAIL: LSP canonicalize source not in output"; exit 1; }
+          grep -q '__LSP_WORKER_SRC__' web/index.html || { echo "FAIL: LSP worker source not in output"; exit 1; }
+          grep -q '__createLSPWorker' web/index.html || { echo "FAIL: LSP worker factory not in output"; exit 1; }
+          grep -q 'Ajv2020' web/index.html || { echo "FAIL: Ajv2020 bundle not in output"; exit 1; }
+          grep -q 'var LSP_SCHEMA' web/index.html || { echo "FAIL: LSP_SCHEMA not in output"; exit 1; }
+          grep -q 'LSPValidate' web/index.html || { echo "FAIL: LSPValidate not in output"; exit 1; }
+          grep -q 'PatternSource' web/index.html || { echo "FAIL: PatternSource component not in output"; exit 1; }
           echo "Build OK: index.html contains expected markers"
+
+      - name: Validate bundle (syntax + worker round-trip)
+        run: node tests/lsp/test_bundle.mjs
+
+      - name: Run LSP UI helper tests
+        run: node tests/lsp/test_ui_helpers.mjs

@@ -9,10 +9,17 @@
     "type": "git",
     "url": "https://github.com/itgall/MPE-Calculator-Skin"
   },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^20.0.0"
+  },
   "scripts": {
     "build": "cd web && python3 build.py",
     "test:py": "pytest tests/ -v",
     "test:js": "node tests/test_engine_js.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
+    "test:e2e:ui": "playwright test --ui",
     "test": "npm run test:js"
   }
 }

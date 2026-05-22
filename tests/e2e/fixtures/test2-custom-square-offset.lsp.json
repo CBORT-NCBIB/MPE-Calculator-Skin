@@ -1,0 +1,63 @@
+{
+  "lsp_version": "1.0.0",
+  "meta": {
+    "name": "Smoke test 2: custom square at non-zero origin",
+    "description": "4 line segments forming a 5x5 mm square at (10,5) mm world coords. Bug #1: segments must be translated to bbox origin so engine grid, viz, and click coords all align. After import: lineL=5mm, scanHN=5mm; viz shows a square; clicking the viz should select coords in [0,5]x[0,5].",
+    "author": "Manual smoke test",
+    "units": { "length": "mm", "time": "s", "power": "W" }
+  },
+  "laser": {
+    "wavelength_nm": 1060,
+    "beam_diameter_mm": 0.025,
+    "pulse_mode": "pulsed",
+    "pulse": {
+      "repetition_rate_hz": 100000,
+      "pulse_duration_s": 1e-8,
+      "pulse_energy_j": 1.8e-8
+    }
+  },
+  "exposure": {
+    "tissue": "skin",
+    "exposure_duration_s": 0.1
+  },
+  "pattern": {
+    "representation": "segments",
+    "authoritative": "segments",
+    "default_power_w": 0.0018,
+    "default_velocity_mm_s": 200,
+    "segments": [
+      {
+        "id": 0,
+        "type": "line",
+        "p0": [10, 5],
+        "p1": [15, 5],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 }
+      },
+      {
+        "id": 1,
+        "type": "line",
+        "p0": [15, 5],
+        "p1": [15, 10],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 }
+      },
+      {
+        "id": 2,
+        "type": "line",
+        "p0": [15, 10],
+        "p1": [10, 10],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 }
+      },
+      {
+        "id": 3,
+        "type": "line",
+        "p0": [10, 10],
+        "p1": [10, 5],
+        "velocity": { "mode": "constant", "value_mm_per_s": 200 },
+        "power": { "mode": "constant", "value": 0.0018 }
+      }
+    ]
+  }
+}
