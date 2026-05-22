@@ -155,13 +155,13 @@ print(f"{radiant_exposure_convert(H, 'mJ/cm2')} mJ/cm²")
 
 ## Testing
 
-### Python tests (71 checks)
+### Python tests (126 checks)
 
 ```bash
 pytest tests/ -v
 ```
 
-### JavaScript engine tests (62 checks)
+### JavaScript engine tests (78 checks)
 
 ```bash
 node tests/test_engine_js.mjs
@@ -169,12 +169,23 @@ node tests/test_engine_js.mjs
 
 Covers: core MPE computation, correction factors, repetitive-pulse rules, band classification, photoacoustic functions, beam geometry, scanning engine (pulsed + CW), analytical cross-check, flyback blanking, input validation edge cases, and cross-language equivalence (20 boundary points verified against Python).
 
+### Browser end-to-end tests (25 checks)
+
+```bash
+npm install
+npm run test:e2e:install
+npm run test:e2e
+```
+
+Exercises the real `web/index.html` in a real headless Chromium against the real React, Recharts, and echarts CDN stack. Covers all three branches of the LSP-JSON import pipeline (preset, custom-segments, schema-validation-error) plus framework-smoke checks. See [`docs/e2e-testing.md`](docs/e2e-testing.md) for the full guide including how to add tests, debugging, and CI integration.
+
 ### CI
 
-GitHub Actions runs all tests automatically on every push:
+GitHub Actions runs all tests automatically on every push to any branch and every pull request to main:
 - Python tests across Python 3.9–3.12
 - Python linting (ruff)
 - JavaScript engine tests (Node.js 20)
+- Browser end-to-end tests (Playwright + Chromium)
 - Build verification (index.html generation + content check)
 
 Python test outputs are available in [`tests/outputs/`](tests/outputs/).
@@ -202,14 +213,16 @@ MPE-Calculator-Skin/
 │   └── README.md                # Web deployment guide
 ├── tests/
 │   ├── outputs/                 # Full test output logs
-│   ├── test_engine_js.mjs       # JavaScript engine tests (62 checks)
-│   └── *.py                     # 4 Python test suites (71 checks)
+│   ├── e2e/                     # Browser end-to-end tests (Playwright)
+│   ├── test_engine_js.mjs       # JavaScript engine tests (78 checks)
+│   └── *.py                     # 4 Python test suites (126 checks)
 ├── examples/
 │   ├── README.md                # What each example does
 │   ├── outputs/                 # Expected output for cross-checking
 │   └── *.py                     # 4 example scripts
 ├── docs/
 │   ├── API.md                   # Complete API reference
+│   ├── e2e-testing.md           # End-to-end test guide
 │   └── images/                  # Figures
 ├── LICENSE                      # MIT
 ├── README.md
