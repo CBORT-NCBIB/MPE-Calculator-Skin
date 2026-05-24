@@ -69,7 +69,8 @@ function scanCompute(beam,segs,ppd,sepP){
   if(!r)return null;
   var eg=r.grid,s=r.stats;
   var g={nx:eg.nx,ny:eg.ny,dx:eg.dx_mm,xn:eg.x_min_mm,yn:eg.y_min_mm,
-    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s};
+    flu:eg.fluence,pc:eg.pulse_count,ppH:eg.peak_pulse_H,lvt:eg.last_visit_t,mrv:eg.min_revisit_s,
+    fvt:eg.first_visit_t};
   var st={tt:s.total_time_s,tp:s.total_pulses||0,method:s.method};
   if(s.min_velocity!==undefined)st.mv=s.min_velocity;
   return{g:g,st:st};
@@ -77,14 +78,17 @@ function scanCompute(beam,segs,ppd,sepP){
 
 function scanSafety(g,beam,T,dwMode,minV,scanP){
   var eg={nx:g.nx,ny:g.ny,dx_mm:g.dx,x_min_mm:g.xn,y_min_mm:g.yn,
-    fluence:g.flu,pulse_count:g.pc,peak_pulse_H:g.ppH,last_visit_t:g.lvt,min_revisit_s:g.mrv};
+    fluence:g.flu,pulse_count:g.pc,peak_pulse_H:g.ppH,last_visit_t:g.lvt,min_revisit_s:g.mrv,
+    first_visit_t:g.fvt};
   var eb={wl_nm:beam.wl,d_1e_mm:beam.d,tau_s:beam.tau,is_cw:beam.cw,
     pulse_energy_J:beam.Ep,prf_hz:beam.prf,avg_power_W:beam.P};
   var r=_E.evaluateScanSafety(eg,eb,T,dwMode,minV,scanP);
   return{safe:r.safe,wr:r.worst_ratio,wx:r.worst_x_mm,wy:r.worst_y_mm,
     br:r.binding_rule,sm:r.safety_margin,mt:r.mpe_tau,mT:r.mpe_T,
+    mTp:r.mpe_T_point,Tpw:r.T_point_worst_s,
     pF:r.peak_fluence,ppM:r.peak_pulse_H_max,mP:r.max_pulses,
     r1m:r.rule1_max_ratio,r2m:r.rule2_max_ratio,
+    r2mTt:r.rule2_max_ratio_Ttotal,
     minRv:r.min_revisit_s,rvPts:r.revisit_points,tauR:r.thermal_relax_s,rvOk:r.revisit_adequate,
     anPeak:r.analytical_peak,anUsed:r.analytical_used};
 }

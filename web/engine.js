@@ -658,6 +658,11 @@ function createFluenceGridFromParams(sp, ppd) {
       var a = new Float32Array(nx * ny);
       for (var i = 0; i < a.length; i++) a[i] = 1e30;
       return a;
+    })(),
+    first_visit_t: (function() {          // time of first energy deposit (s)
+      var a = new Float32Array(nx * ny);
+      for (var i = 0; i < a.length; i++) a[i] = 1e30;
+      return a;
     })()
   };
 }
@@ -725,6 +730,11 @@ function createFluenceGrid(d_1e_mm, segments, ppd) {
       var a = new Float32Array(nx * ny);
       for (var i = 0; i < a.length; i++) a[i] = 1e30;
       return a;
+    })(),
+    first_visit_t: (function() {              // time of first energy deposit (s)
+      var a = new Float32Array(nx * ny);
+      for (var i = 0; i < a.length; i++) a[i] = 1e30;
+      return a;
     })()
   };
 }
@@ -763,7 +773,7 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
   var dx = grid.dx_mm;
   var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
   var flu = grid.fluence, pc = grid.pulse_count, ppH = grid.peak_pulse_H;
-  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s;
+  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s, fvt = grid.first_visit_t;
 
   var t_elapsed = 0;
   var total_pulses = 0;
@@ -872,6 +882,7 @@ function computeScanFluencePulsed(grid, d_1e_mm, prf_hz, pulse_energy_J, segment
           if (gap > revisit_threshold && lvt[idx] > -1e29) {
             if (gap < mrv[idx]) mrv[idx] = gap;
           }
+          if (fvt[idx] > 1e29) fvt[idx] = t_k;
           lvt[idx] = t_k;
         }
       }
@@ -914,17 +925,27 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
   var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
   var flu = grid.fluence;
   var ppH = grid.peak_pulse_H; // reused for peak single-sweep fluence in CW
-  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s;
+  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s, fvt = grid.first_visit_t;
 
-  // Merge consecutive segments with same angle, velocity, AND position continuity
+  // Merge consecutive segments with same angle, velocity, AND position continuity.
+  // Blanked segments (flyback, repositioning) are included with a blanked flag
+  // so that they contribute to elapsed time without depositing energy.
   var sweeps = [];
   var si = 0;
   while (si < segments.length) {
     var s0 = segments[si];
+    if (s0.blanked) {
+      // Blanked segment: record as a time gap
+      var L_bl = s0.length_mm || d_1e_mm;
+      sweeps.push({ L: L_bl, v: s0.v_mm_s, blanked: true });
+      si++;
+      continue;
+    }
     var a = s0.angle_rad, v = s0.v_mm_s;
     var cos_a = Math.cos(a), sin_a = Math.sin(a);
     var n_merged = 1;
     while (si + n_merged < segments.length &&
+           !segments[si + n_merged].blanked &&
            segments[si + n_merged].angle_rad === a &&
            segments[si + n_merged].v_mm_s === v) {
       // Check position continuity: expected end of current chain
@@ -953,6 +974,7 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
   // Revisit threshold for CW: max sweep time across all sweeps
   var cw_revisit_threshold = 0;
   for (var rti = 0; rti < sweeps.length; rti++) {
+    if (sweeps[rti].blanked) continue;
     var rt = sweeps[rti].L / sweeps[rti].v;
     if (rt > cw_revisit_threshold) cw_revisit_threshold = rt;
   }
@@ -960,6 +982,10 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
 
   for (var wi = 0; wi < sweeps.length; wi++) {
     var sw = sweeps[wi];
+    if (sw.blanked) {
+      total_time += sw.L / sw.v;
+      continue;
+    }
     var coeff = coeff_base / sw.v * 100; // J/cm²
     if (sw.v < min_velocity) min_velocity = sw.v;
     var sweep_t0 = total_time; // time when this sweep begins
@@ -994,14 +1020,16 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
           var idx = iy * nx + ix;
           flu[idx] += F;
           if (F > ppH[idx]) ppH[idx] = F;
-          // Revisit tracking: visit time = sweep start + clamped t_par / v
-          var t_clamped = t_par < 0 ? 0 : (t_par > sw.L ? sw.L : t_par);
-          var t_visit = sweep_t0 + t_clamped / sw.v;
-          var gap = t_visit - lvt[idx];
+          // CW timing: energy is deposited throughout the sweep, not
+          // just at the moment of closest approach. Record the sweep's
+          // time window [sweep_t0, sweep_t0 + L/v] as the visit interval.
+          var t_sweep_end = sweep_t0 + sw.L / sw.v;
+          var gap = sweep_t0 - lvt[idx];
           if (gap > cw_revisit_threshold && lvt[idx] > -1e29) {
             if (gap < mrv[idx]) mrv[idx] = gap;
           }
-          lvt[idx] = t_visit;
+          if (fvt[idx] > 1e29) fvt[idx] = sweep_t0;
+          lvt[idx] = t_sweep_end;
         }
       }
     }
@@ -1133,6 +1161,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
   var flu = grid.fluence;
   var ppH = grid.peak_pulse_H;
   var lvt = grid.last_visit_t;
+  var fvt = grid.first_visit_t;
   var w2 = w * w;
 
   // Peak single-pulse fluence at beam center (J/cm²)
@@ -1186,6 +1215,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
             var xi0 = qx * sux + qy * suy;
             var xi_clamped = xi0 < 0 ? 0 : (xi0 > seg_ell ? seg_ell : xi0);
             var t_visit = t_seg_start + xi_clamped / seg.v_mm_s;
+            if (fvt[idx] > 1e29) fvt[idx] = t_visit;
             lvt[idx] = t_visit; // last visit (overwritten by later segments)
 
             // Peak single-pulse fluence: H0 × exp(-2d²/w²)
@@ -1255,6 +1285,7 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
             var idx_d = iy2 * nx + ix2;
             flu[idx_d] += Hp_d;
             if (Hp_d > ppH[idx_d]) ppH[idx_d] = Hp_d;
+            if (fvt[idx_d] > 1e29) fvt[idx_d] = t_pulse;
             lvt[idx_d] = t_pulse;
           }
         }
@@ -1402,7 +1433,7 @@ function computeScanFluenceSeparable(grid, sp) {
   var dx = grid.dx_mm;
   var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
   var flu = grid.fluence, pc = grid.pulse_count, ppH = grid.peak_pulse_H;
-  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s;
+  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s, fvt = grid.first_visit_t;
 
   var n_lines = sp.n_lines || 1;
   var hatch = sp.hatch_mm || 0;
@@ -1457,6 +1488,43 @@ function computeScanFluenceSeparable(grid, sp) {
     var flyback_cw = sp.pattern === "linear" ? 0 :
       (sp.pattern === "bidi" ? (hatch / jump_v_cw) : (L / jump_v_cw + hatch / jump_v_cw));
     var total_time_cw = n_lines * line_dur_cw + (n_lines - 1) * flyback_cw;
+    var line_cycle_cw = line_dur_cw + flyback_cw;
+
+    // First/last visit timing for CW separable.
+    // Same inter-line logic as pulsed: find first/last contributing line.
+    if (sp.pattern === "linear") {
+      // Single line: every cell in range sees the beam from t=0 to t=line_dur.
+      // T_point = line_dur for cells on the line, but more precisely it's the
+      // erf integral duration. Use 0 and line_dur as bounds.
+      for (var iy_cwt = 0; iy_cwt < ny; iy_cwt++) {
+        var gy_cwt = ymin + iy_cwt * dx;
+        var dy_cwt = gy_cwt - y0;
+        if (dy_cwt * dy_cwt > trunc_mm * trunc_mm) continue;
+        for (var ix_cwt = 0; ix_cwt < nx; ix_cwt++) {
+          var _cwt_idx = iy_cwt * nx + ix_cwt;
+          fvt[_cwt_idx] = 0;
+          lvt[_cwt_idx] = line_dur_cw;
+        }
+      }
+    } else {
+      // Multi-line: find first/last contributing line for each row
+      for (var iy_cwt2 = 0; iy_cwt2 < ny; iy_cwt2++) {
+        var gy_cwt2 = ymin + iy_cwt2 * dx;
+        var mc_cwt = (gy_cwt2 - y0) / hatch;
+        var mr_cwt = trunc_mm / hatch;
+        var mlo_cwt = Math.max(0, Math.ceil(mc_cwt - mr_cwt));
+        var mhi_cwt = Math.min(n_lines - 1, Math.floor(mc_cwt + mr_cwt));
+        if (mhi_cwt < mlo_cwt) continue;
+        for (var ix_cwt2 = 0; ix_cwt2 < nx; ix_cwt2++) {
+          var _cwt2_idx = iy_cwt2 * nx + ix_cwt2;
+          fvt[_cwt2_idx] = mlo_cwt * line_cycle_cw;
+          lvt[_cwt2_idx] = mhi_cwt * line_cycle_cw + line_dur_cw;
+          if (mhi_cwt > mlo_cwt && line_cycle_cw < mrv[_cwt2_idx]) {
+            mrv[_cwt2_idx] = line_cycle_cw;
+          }
+        }
+      }
+    }
 
     return {
       total_pulses: 0,
@@ -1480,7 +1548,7 @@ function computeScanFluenceSeparable(grid, sp) {
   var dx = grid.dx_mm;
   var xmin = grid.x_min_mm, ymin = grid.y_min_mm;
   var flu = grid.fluence, pc = grid.pulse_count, ppH = grid.peak_pulse_H;
-  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s;
+  var lvt = grid.last_visit_t, mrv = grid.min_revisit_s, fvt = grid.first_visit_t;
 
   var n_lines = sp.n_lines || 1;
   var hatch = sp.hatch_mm || 0;
@@ -1499,6 +1567,7 @@ function computeScanFluenceSeparable(grid, sp) {
       }
     }
     // Pulse count: at each point, count how many pulses are within truncation radius
+    // Also compute first_visit_t and last_visit_t from the first/last contributing pulse.
     for (var iy2 = 0; iy2 < ny; iy2++) {
       var gy = ymin + iy2 * dx;
       var dy_line = gy - y0;
@@ -1509,7 +1578,12 @@ function computeScanFluenceSeparable(grid, sp) {
         var k_r = trunc_mm / pulse_spacing;
         var k_lo = Math.max(0, Math.ceil(k_center - k_r));
         var k_hi = Math.min(n_pulses_per_line - 1, Math.floor(k_center + k_r));
-        if (k_hi >= k_lo) pc[iy2 * nx + ix2] = k_hi - k_lo + 1;
+        if (k_hi >= k_lo) {
+          var _lin_idx = iy2 * nx + ix2;
+          pc[_lin_idx] = k_hi - k_lo + 1;
+          fvt[_lin_idx] = k_lo / sp.prf_hz;
+          lvt[_lin_idx] = k_hi / sp.prf_hz;
+        }
       }
     }
     // Peak single-pulse fluence at each grid point (from nearest pulse)
@@ -1579,28 +1653,43 @@ function computeScanFluenceSeparable(grid, sp) {
       }
     }
 
-    // Revisit tracking: time between consecutive scan line passes
-    // For a raster, the revisit interval at a point is approximately
-    // the time to scan one line + flyback time
+    // Revisit tracking and first/last visit timing.
+    // For each cell, find the first and last contributing line indices
+    // (m_lo, m_hi) to compute accurate first_visit_t and last_visit_t.
+    // For a unidirectional raster, all lines scan L→R at the same velocity,
+    // so the within-line time offset at a given x cancels between lines:
+    // T_point = (m_hi - m_lo) × line_cycle_time (exactly).
     if (!sp.blanking) {
       // Without blanking, return pulses also contribute (handled by brute-force fallback)
       // This path should only be reached WITH blanking for raster scans
     }
-    var jump_v = sp.v_scan_mm_s * 5; // assumed jump velocity
+    var jump_v = sp.v_jump_mm_s || sp.v_scan_mm_s * 5;
     var flyback_time = sp.line_length_mm / jump_v + hatch / jump_v;
     var line_cycle_time = line_dur + flyback_time;
 
     for (var iy_rv = 0; iy_rv < ny; iy_rv++) {
       var gy_rv = ymin + iy_rv * dx;
-      var m_near = Math.round((gy_rv - y0) / hatch);
-      if (m_near < 0 || m_near >= n_lines) continue;
-      var dy_rv = gy_rv - (y0 + m_near * hatch);
-      if (dy_rv * dy_rv > trunc_mm * trunc_mm) continue;
+      // Find range of contributing lines (same logic as pulse count loop)
+      var m_center_rv = (gy_rv - y0) / hatch;
+      var m_range_rv = trunc_mm / hatch;
+      var m_lo_rv = Math.max(0, Math.ceil(m_center_rv - m_range_rv));
+      var m_hi_rv = Math.min(n_lines - 1, Math.floor(m_center_rv + m_range_rv));
+      if (m_hi_rv < m_lo_rv) continue;
+
+      // Min revisit: line_cycle_time if multiple lines contribute
+      if (m_hi_rv > m_lo_rv) {
+        if (line_cycle_time < mrv[iy_rv * nx]) {
+          // Set for entire row (uniform in x for raster)
+        }
+      }
+
       for (var ix_rv = 0; ix_rv < nx; ix_rv++) {
-        // For a single-pass raster, no true revisits (each line visits once)
-        // Revisit only occurs if there are multiple passes
-        // Mark last visit time based on nearest line
-        lvt[iy_rv * nx + ix_rv] = m_near * line_cycle_time;
+        var _rv_idx = iy_rv * nx + ix_rv;
+        fvt[_rv_idx] = m_lo_rv * line_cycle_time;
+        lvt[_rv_idx] = m_hi_rv * line_cycle_time;
+        if (m_hi_rv > m_lo_rv && line_cycle_time < mrv[_rv_idx]) {
+          mrv[_rv_idx] = line_cycle_time;
+        }
       }
     }
 
@@ -1698,17 +1787,58 @@ function computeScanFluenceSeparable(grid, sp) {
       }
     }
 
-    // Revisit tracking for bidi
-    var jump_v_b = sp.v_scan_mm_s * 5;
+    // Revisit tracking and first/last visit timing for bidi.
+    // Even sub-grid index e → physical line 2e, time = 2e × line_cycle.
+    // Odd sub-grid index o → physical line 2o+1, time = (2o+1) × line_cycle.
+    // Find the earliest and latest physical line contributing to each cell.
+    var jump_v_b = sp.v_jump_mm_s || sp.v_scan_mm_s * 5;
     var jump_time_b = hatch / jump_v_b;
+    var line_cycle_b = line_dur + jump_time_b;
+
     for (var iy_brv = 0; iy_brv < ny; iy_brv++) {
       var gy_brv = ymin + iy_brv * dx;
-      var m_near_b = Math.round((gy_brv - y0) / hatch);
-      if (m_near_b < 0 || m_near_b >= n_lines) continue;
-      var dy_brv = gy_brv - (y0 + m_near_b * hatch);
-      if (dy_brv * dy_brv > trunc_mm * trunc_mm) continue;
+
+      // Even contributing line range (sub-grid indices)
+      var mc_e_rv = (gy_brv - y0) / (2 * hatch);
+      var mr_e_rv = trunc_mm / (2 * hatch);
+      var mlo_e_rv = Math.max(0, Math.ceil(mc_e_rv - mr_e_rv));
+      var mhi_e_rv = Math.min(n_even - 1, Math.floor(mc_e_rv + mr_e_rv));
+      var has_even = mhi_e_rv >= mlo_e_rv;
+
+      // Odd contributing line range (sub-grid indices)
+      var mc_o_rv = (gy_brv - y0 - hatch) / (2 * hatch);
+      var mr_o_rv = trunc_mm / (2 * hatch);
+      var mlo_o_rv = Math.max(0, Math.ceil(mc_o_rv - mr_o_rv));
+      var mhi_o_rv = Math.min(n_odd - 1, Math.floor(mc_o_rv + mr_o_rv));
+      var has_odd = mhi_o_rv >= mlo_o_rv;
+
+      if (!has_even && !has_odd) continue;
+
+      // Map to physical line indices
+      var phys_first = 1e30, phys_last = -1;
+      if (has_even) {
+        var pe_first = 2 * mlo_e_rv;
+        var pe_last = 2 * mhi_e_rv;
+        if (pe_first < phys_first) phys_first = pe_first;
+        if (pe_last > phys_last) phys_last = pe_last;
+      }
+      if (has_odd) {
+        var po_first = 2 * mlo_o_rv + 1;
+        var po_last = 2 * mhi_o_rv + 1;
+        if (po_first < phys_first) phys_first = po_first;
+        if (po_last > phys_last) phys_last = po_last;
+      }
+
+      var t_first_brv = phys_first * line_cycle_b;
+      var t_last_brv = phys_last * line_cycle_b;
+
       for (var ix_brv = 0; ix_brv < nx; ix_brv++) {
-        lvt[iy_brv * nx + ix_brv] = m_near_b * (line_dur + jump_time_b);
+        var _brv_idx = iy_brv * nx + ix_brv;
+        fvt[_brv_idx] = t_first_brv;
+        lvt[_brv_idx] = t_last_brv;
+        if (phys_last > phys_first && line_cycle_b < mrv[_brv_idx]) {
+          mrv[_brv_idx] = line_cycle_b;
+        }
       }
     }
 
@@ -1983,10 +2113,32 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
     rule1_limit = mpe_tau;
   }
 
+  // ── Per-point T_point setup ──
+  // T_point = last_visit_t - first_visit_t at each cell.
+  // skinMPE(wl, T) is monotonically non-decreasing, so using the shorter
+  // T_point (vs T_total) produces a smaller MPE denominator and a more
+  // conservative (higher) Rule 2 ratio. This is the physically correct
+  // time window: the duration over which energy actually accumulates at
+  // that specific point.
+  var has_fvt = grid.first_visit_t && grid.first_visit_t.length > 0;
+  var tau_floor = beam.is_cw ? 1e-9 : (beam.tau_s || 1e-9);
+
+  // Cache skinMPE calls: wl is constant, only T varies. Quantize T to
+  // 6 significant figures to bound cache size while preserving accuracy.
+  var _mpeCache = {};
+  function _cachedMPE(t) {
+    var key = t.toPrecision(6);
+    if (_mpeCache[key] !== undefined) return _mpeCache[key];
+    var v = skinMPE(beam.wl_nm, t);
+    _mpeCache[key] = v;
+    return v;
+  }
+
   var n = grid.nx * grid.ny;
-  var worstR1 = 0, worstR2 = 0;
+  var worstR1 = 0, worstR2 = 0, worstR2_Ttotal = 0;
   var worstIdx = 0, worstVal = 0;
   var worstVisitTime = Infinity;
+  var worstTpoint = T_s;
   var peakF = 0, maxPulses = 0;
 
   // Tie-breaking tolerance: cells within this relative fraction of the
@@ -2001,10 +2153,24 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
 
     var r1 = isFinite(rule1_limit) && rule1_limit > 0 ?
       (grid.peak_pulse_H[i] / rule1_limit) : 0;
-    var r2 = isFinite(mpe_T) ? (grid.fluence[i] / mpe_T) : 0;
+
+    // ── Rule 2: per-point T_point (binding for safety) ──
+    var T_i;
+    if (has_fvt && grid.first_visit_t[i] < 1e29 && grid.last_visit_t[i] > -1e29) {
+      T_i = grid.last_visit_t[i] - grid.first_visit_t[i];
+      if (T_i < tau_floor) T_i = tau_floor;
+    } else {
+      T_i = T_s; // unvisited or missing fvt → fallback to total scan time
+    }
+    var mpe_T_i = _cachedMPE(T_i);
+    var r2 = isFinite(mpe_T_i) && mpe_T_i > 0 ? (grid.fluence[i] / mpe_T_i) : 0;
+
+    // ── Rule 2: T_total (for display / comparison only) ──
+    var r2_total = isFinite(mpe_T) && mpe_T > 0 ? (grid.fluence[i] / mpe_T) : 0;
 
     if (r1 > worstR1) worstR1 = r1;
     if (r2 > worstR2) worstR2 = r2;
+    if (r2_total > worstR2_Ttotal) worstR2_Ttotal = r2_total;
 
     var worst = r1 > r2 ? r1 : r2;
 
@@ -2017,6 +2183,7 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
       worstVal = worst;
       worstIdx = i;
       worstVisitTime = grid.last_visit_t[i];
+      worstTpoint = T_i;
     } else if (worst >= worstVal * (1 - TIE_TOL) && worstVal > 0) {
       // Within tolerance — tie-break by earliest visit time
       var t_i = grid.last_visit_t[i];
@@ -2024,6 +2191,7 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
         worstVal = worst;
         worstIdx = i;
         worstVisitTime = t_i;
+        worstTpoint = T_i;
       }
     }
   }
@@ -2033,6 +2201,13 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   // and use max(grid_peak, analytical_peak) for conservative safety.
   // This guarantees that grid aliasing or subsampling never causes
   // an underestimate of the true peak fluence.
+  //
+  // NOTE: The analytical cross-check uses mpe_T (T_total), not T_point.
+  // This is correct: the analytical peak represents the worst-case point
+  // in a uniform raster where all lines contribute, so T_point ≈ T_total.
+  // For custom paths, scan_params may describe a fictitious raster (see
+  // engine archaeology report), so this cross-check adds conservatism
+  // that may not match the actual geometry.
   var analyticalPeak = NaN;
   var analyticalUsed = false;
   if (scan_params && scan_params.v_mm_s > 0) {
@@ -2047,11 +2222,18 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
     if (isFinite(analyticalPeak) && analyticalPeak > peakF) {
       peakF = analyticalPeak;
       analyticalUsed = true;
-      // Recompute Rule 2 ratio with analytical peak
+      // Recompute Rule 2 ratios with analytical peak
       if (isFinite(mpe_T) && mpe_T > 0) {
-        var analyticalR2 = analyticalPeak / mpe_T;
-        if (analyticalR2 > worstR2) worstR2 = analyticalR2;
-        if (analyticalR2 > worstVal) worstVal = analyticalR2;
+        var analyticalR2_total = analyticalPeak / mpe_T;
+        if (analyticalR2_total > worstR2_Ttotal) worstR2_Ttotal = analyticalR2_total;
+        // For T_point-based ratio, the analytical peak at the raster center
+        // has T_point ≈ T_total, so use mpe_T here too (conservative).
+        if (analyticalR2_total > worstR2) worstR2 = analyticalR2_total;
+        if (analyticalR2_total > worstVal) {
+          worstVal = analyticalR2_total;
+          // Analytical peak represents raster center; T_point ≈ T_total there.
+          worstTpoint = T_s;
+        }
       }
     }
   }
@@ -2094,12 +2276,15 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
     binding_rule: worstR1 >= worstR2 ? "Rule 1" : "Rule 2",
     safety_margin: 1.0 - worstVal,
     mpe_tau: mpe_tau,
-    mpe_T: mpe_T,
+    mpe_T: mpe_T,                                // MPE(T_total) — for display
+    mpe_T_point: _cachedMPE(worstTpoint),         // MPE(T_point) at worst cell
+    T_point_worst_s: worstTpoint,                 // T_point at worst-case cell (s)
     peak_fluence: peakF,
     peak_pulse_H_max: grid.peak_pulse_H[worstIdx],
     max_pulses: maxPulses,
     rule1_max_ratio: worstR1,
-    rule2_max_ratio: worstR2,
+    rule2_max_ratio: worstR2,                     // per-point T_point (binding)
+    rule2_max_ratio_Ttotal: worstR2_Ttotal,       // T_total (for comparison)
     min_revisit_s: globalMinRevisit,
     revisit_points: revisitPoints,
     thermal_relax_s: thermal_relax_s,
