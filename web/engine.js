@@ -1020,16 +1020,19 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
           var idx = iy * nx + ix;
           flu[idx] += F;
           if (F > ppH[idx]) ppH[idx] = F;
-          // CW timing: energy is deposited throughout the sweep, not
-          // just at the moment of closest approach. Record the sweep's
-          // time window [sweep_t0, sweep_t0 + L/v] as the visit interval.
-          var t_sweep_end = sweep_t0 + sw.L / sw.v;
-          var gap = sweep_t0 - lvt[idx];
+          // CW timing: use the closest-approach time at this (x,y), which
+          // captures the x-dependent arrival time. For a bidi scan, this
+          // means the right-edge point gets timestamps from consecutive
+          // lines that are only jump_time apart, while interior points
+          // get timestamps that are ~line_duration apart.
+          var t_clamped = t_par < 0 ? 0 : (t_par > sw.L ? sw.L : t_par);
+          var t_visit = sweep_t0 + t_clamped / sw.v;
+          var gap = t_visit - lvt[idx];
           if (gap > cw_revisit_threshold && lvt[idx] > -1e29) {
             if (gap < mrv[idx]) mrv[idx] = gap;
           }
-          if (fvt[idx] > 1e29) fvt[idx] = sweep_t0;
-          lvt[idx] = t_sweep_end;
+          if (fvt[idx] > 1e29) fvt[idx] = t_visit;
+          lvt[idx] = t_visit;
         }
       }
     }
@@ -2161,7 +2164,19 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   // time window: the duration over which energy actually accumulates at
   // that specific point.
   var has_fvt = grid.first_visit_t && grid.first_visit_t.length > 0;
-  var tau_floor = beam.is_cw ? 1e-9 : (beam.tau_s || 1e-9);
+  var tau_floor;
+  if (beam.is_cw) {
+    // For CW, the minimum meaningful T_point is the beam dwell time —
+    // the time for the beam to traverse its own diameter at scan velocity.
+    // This is the shortest interval over which energy is deposited at a point.
+    if (isFinite(min_velocity) && min_velocity > 0) {
+      tau_floor = scanDwellGaussian(beam.d_1e_mm, min_velocity);
+    } else {
+      tau_floor = 1e-6; // 1 μs fallback for CW without velocity info
+    }
+  } else {
+    tau_floor = beam.tau_s || 1e-9;
+  }
 
   // Cache skinMPE calls: wl is constant, only T varies. Quantize T to
   // 6 significant figures to bound cache size while preserving accuracy.
