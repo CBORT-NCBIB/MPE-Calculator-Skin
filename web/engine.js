@@ -1654,11 +1654,14 @@ function computeScanFluenceSeparable(grid, sp) {
     }
 
     // Revisit tracking and first/last visit timing.
-    // For each cell, find the first and last contributing line indices
-    // (m_lo, m_hi) to compute accurate first_visit_t and last_visit_t.
-    // For a unidirectional raster, all lines scan L→R at the same velocity,
-    // so the within-line time offset at a given x cancels between lines:
-    // T_point = (m_hi - m_lo) × line_cycle_time (exactly).
+    // For each cell, compute the absolute time of the FIRST contributing pulse
+    // and the LAST contributing pulse. This combines:
+    //   - Cross-scan: which lines contribute (m_lo to m_hi)
+    //   - Along-scan: which pulses within each line contribute (k_lo to k_hi)
+    // For a unidirectional raster (all lines scan L→R at the same velocity),
+    // the along-scan pulse indices are the same for each line at a given x.
+    // First pulse time: m_lo × line_cycle + k_lo / PRF
+    // Last pulse time:  m_hi × line_cycle + k_hi / PRF
     if (!sp.blanking) {
       // Without blanking, return pulses also contribute (handled by brute-force fallback)
       // This path should only be reached WITH blanking for raster scans
@@ -1669,24 +1672,28 @@ function computeScanFluenceSeparable(grid, sp) {
 
     for (var iy_rv = 0; iy_rv < ny; iy_rv++) {
       var gy_rv = ymin + iy_rv * dx;
-      // Find range of contributing lines (same logic as pulse count loop)
+      // Cross-scan: range of contributing lines
       var m_center_rv = (gy_rv - y0) / hatch;
       var m_range_rv = trunc_mm / hatch;
       var m_lo_rv = Math.max(0, Math.ceil(m_center_rv - m_range_rv));
       var m_hi_rv = Math.min(n_lines - 1, Math.floor(m_center_rv + m_range_rv));
       if (m_hi_rv < m_lo_rv) continue;
 
-      // Min revisit: line_cycle_time if multiple lines contribute
-      if (m_hi_rv > m_lo_rv) {
-        if (line_cycle_time < mrv[iy_rv * nx]) {
-          // Set for entire row (uniform in x for raster)
-        }
-      }
-
       for (var ix_rv = 0; ix_rv < nx; ix_rv++) {
         var _rv_idx = iy_rv * nx + ix_rv;
-        fvt[_rv_idx] = m_lo_rv * line_cycle_time;
-        lvt[_rv_idx] = m_hi_rv * line_cycle_time;
+        // Along-scan: range of contributing pulses at this x
+        var gx_rv = xmin + ix_rv * dx;
+        var k_center_rv = (gx_rv - x0) / pulse_spacing;
+        var k_range_rv = trunc_mm / pulse_spacing;
+        var k_lo_rv = Math.max(0, Math.ceil(k_center_rv - k_range_rv));
+        var k_hi_rv = Math.min(n_pulses_per_line - 1, Math.floor(k_center_rv + k_range_rv));
+        if (k_hi_rv < k_lo_rv) { k_lo_rv = 0; k_hi_rv = 0; }
+
+        // First contributing pulse: first line, first pulse along that line
+        fvt[_rv_idx] = m_lo_rv * line_cycle_time + k_lo_rv / sp.prf_hz;
+        // Last contributing pulse: last line, last pulse along that line
+        lvt[_rv_idx] = m_hi_rv * line_cycle_time + k_hi_rv / sp.prf_hz;
+
         if (m_hi_rv > m_lo_rv && line_cycle_time < mrv[_rv_idx]) {
           mrv[_rv_idx] = line_cycle_time;
         }
@@ -1834,8 +1841,41 @@ function computeScanFluenceSeparable(grid, sp) {
 
       for (var ix_brv = 0; ix_brv < nx; ix_brv++) {
         var _brv_idx = iy_brv * nx + ix_brv;
-        fvt[_brv_idx] = t_first_brv;
-        lvt[_brv_idx] = t_last_brv;
+        var gx_brv = xmin + ix_brv * dx;
+
+        // Along-scan pulse timing for the first and last contributing lines.
+        // Even lines scan L→R: pulse k is at x = x0 + k × pulse_spacing
+        // Odd lines scan R→L: pulse k is at x = x0 + L - k × pulse_spacing
+        var k_range_brv = trunc_mm / pulse_spacing;
+
+        // Pulse timing for the first physical line
+        var t_along_first;
+        if (phys_first % 2 === 0) {
+          // Even line (L→R)
+          var kc_f = (gx_brv - x0) / pulse_spacing;
+          var klo_f = Math.max(0, Math.ceil(kc_f - k_range_brv));
+          t_along_first = klo_f / sp.prf_hz;
+        } else {
+          // Odd line (R→L)
+          var kc_f_o = (x0 + sp.line_length_mm - gx_brv) / pulse_spacing;
+          var klo_f_o = Math.max(0, Math.ceil(kc_f_o - k_range_brv));
+          t_along_first = klo_f_o / sp.prf_hz;
+        }
+
+        // Pulse timing for the last physical line
+        var t_along_last;
+        if (phys_last % 2 === 0) {
+          var kc_l = (gx_brv - x0) / pulse_spacing;
+          var khi_l = Math.min(n_pulses_per_line - 1, Math.floor(kc_l + k_range_brv));
+          t_along_last = khi_l / sp.prf_hz;
+        } else {
+          var kc_l_o = (x0 + sp.line_length_mm - gx_brv) / pulse_spacing;
+          var khi_l_o = Math.min(n_pulses_per_line - 1, Math.floor(kc_l_o + k_range_brv));
+          t_along_last = khi_l_o / sp.prf_hz;
+        }
+
+        fvt[_brv_idx] = t_first_brv + t_along_first;
+        lvt[_brv_idx] = t_last_brv + t_along_last;
         if (phys_last > phys_first && line_cycle_b < mrv[_brv_idx]) {
           mrv[_brv_idx] = line_cycle_b;
         }

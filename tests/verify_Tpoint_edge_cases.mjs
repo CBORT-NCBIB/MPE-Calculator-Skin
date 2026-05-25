@@ -92,9 +92,10 @@ test("Raster wide-spacing: on-line T_point ~ dwell", function() {
   e.computeScanFluenceSeparable(grid, sp);
   // Cell on line 2 (y=2.0) — only line 2 contributes (hatch >> beam)
   var c = getCell(grid, 2.5, 2.0);
-  assert(c.Tp <= tau * 1.1, "On-line T_point (" + c.Tp.toExponential(3) +
-    ") should be ~ tau (single line, fvt=lvt)");
-  console.log("  Raster wide: T_point=" + c.Tp.toExponential(3) + ", tau=" + tau);
+  assert(c.Tp > tau * 100, "On-line T_point (" + c.Tp.toExponential(3) +
+    ") should be along-scan dwell (>> tau)");
+  assert(c.Tp < 0.01, "On-line T_point should be < 10ms");
+  console.log("  Raster wide: T_point=" + c.Tp.toExponential(3) + " (along-scan dwell)");
 });
 
 // ─── Test 4: CW linear — T_point = line_dur ──
