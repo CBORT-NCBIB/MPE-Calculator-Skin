@@ -109,6 +109,327 @@ function _downloadJSON(doc, filename) {
   URL.revokeObjectURL(url);
 }
 
+function _downloadHTML(html, filename) {
+  var blob = new Blob([html], {type: "text/html;charset=utf-8"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename || "mpe-report.html";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ── Hazard Evaluation Worksheet generator ──
+ * Produces a self-contained HTML document from a trace document,
+ * following the section order used by institutional laser safety
+ * worksheets (MIT, MSU, UCF, SLAC, LBNL):
+ *   1. Identification (engine, standard, timestamp)
+ *   2. Laser parameters (from trace inputs)
+ *   3. MPE derivation (full formula chain from trace steps)
+ *   4. Scanning results (if applicable)
+ *   5. Standard integrity (SHA-256, metadata)
+ *   6. Reproducibility footer
+ *   7. Signature lines
+ */
+function _generateTraceReport(doc) {
+  var snap = doc.standard_snapshot;
+  var eng = doc.engine;
+  var inp = doc.inputs || {};
+  var res = doc.result || {};
+  var steps = doc.steps || [];
+
+  function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function sci(v,n) { if (v===undefined||v===null||!isFinite(v)) return String(v); return v.toExponential(n||4); }
+  function fix(v,n) { if (v===undefined||v===null||!isFinite(v)) return String(v); return v.toFixed(n===undefined?4:n); }
+  function findS(type) {
+    for (var i=0;i<steps.length;i++) {
+      if (steps[i].step_type===type) return steps[i];
+      if (steps[i].sub_steps) { for (var j=0;j<steps[i].sub_steps.length;j++) { if (steps[i].sub_steps[j].step_type===type) return steps[i].sub_steps[j]; } }
+    }
+    return null;
+  }
+  function row(label, value, cls) {
+    // Labels are hardcoded HTML (never user-supplied). Values are pre-escaped by callers.
+    return '<tr><td class="lbl">' + label + '</td><td class="val' + (cls?" "+cls:"") + '">' + value + '</td></tr>';
+  }
+
+  var css = [
+    'body{font-family:Helvetica,Arial,sans-serif;max-width:800px;margin:30px auto;color:#171717;line-height:1.5;padding:0 24px;font-size:11px}',
+    'h1{font-size:18px;margin:0 0 4px;color:#0f172a}',
+    'h2{font-size:13px;color:#334155;margin:20px 0 8px;padding-bottom:4px;border-bottom:2px solid #e2e8f0;text-transform:uppercase;letter-spacing:0.06em}',
+    'h3{font-size:11px;color:#475569;margin:12px 0 4px}',
+    '.meta{color:#64748b;font-size:10px;margin-bottom:16px}',
+    'table{border-collapse:collapse;width:100%;margin:6px 0}',
+    'td{padding:4px 10px;border-bottom:1px solid #f1f5f9;font-size:11px;vertical-align:top}',
+    '.lbl{color:#64748b;width:220px;font-weight:500}',
+    '.val{font-family:Menlo,Consolas,monospace;color:#0f172a}',
+    '.pass{color:#166534;font-weight:700}',
+    '.fail{color:#991b1b;font-weight:700}',
+    '.chain{background:#f8fafc;border:1px solid #e2e8f0;border-radius:4px;padding:10px 14px;margin:6px 0;font-family:Menlo,Consolas,monospace;font-size:10px;line-height:1.7;color:#334155}',
+    '.chain .step{margin:2px 0}',
+    '.chain .arrow{color:#94a3b8}',
+    '.verdict{font-size:14px;font-weight:700;padding:10px 16px;border-radius:6px;text-align:center;margin:12px 0}',
+    '.verdict.pass{background:#dcfce7;color:#166534;border:2px solid #86efac}',
+    '.verdict.fail{background:#fee2e2;color:#991b1b;border:2px solid #fca5a5}',
+    '.sha{font-family:Menlo,Consolas,monospace;font-size:9px;word-break:break-all;color:#64748b}',
+    '.sig{border-top:1px solid #171717;width:280px;margin-top:40px;padding-top:4px;font-size:10px;color:#64748b}',
+    '.footer{margin-top:24px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:9px;color:#94a3b8}',
+    '@media print{body{margin:0;padding:12px}h1{font-size:16px}.verdict{page-break-before:avoid}}'
+  ].join('\n');
+
+  var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Laser Safety Hazard Evaluation Worksheet</title><style>' + css + '</style></head><body>';
+
+  // ── 1. Identification ──
+  html += '<h1>Laser Safety Hazard Evaluation Worksheet</h1>';
+  html += '<p class="meta">' + esc(snap.metadata.name || "Unknown Standard") +
+    ' &mdash; Generated ' + esc(doc.timestamp) +
+    ' &mdash; Engine: ' + esc(eng.name) + ' v' + esc(eng.version) +
+    (eng.build_hash ? ' (' + esc(eng.build_hash) + ')' : '') + '</p>';
+
+  // ── 2. Computation Inputs ──
+  html += '<h2>Computation Inputs</h2><table>';
+  if (inp.wl_nm !== undefined) html += row("Wavelength", fix(inp.wl_nm, 1) + " nm");
+  if (inp.t_s !== undefined) html += row("Exposure duration", sci(inp.t_s) + " s");
+  if (inp.dur_s !== undefined) html += row("Pulse duration", sci(inp.dur_s) + " s");
+  if (inp.tau_s !== undefined) html += row("Pulse duration", sci(inp.tau_s) + " s");
+  if (inp.prf_hz !== undefined) html += row("Repetition rate", fix(inp.prf_hz, 0) + " Hz");
+  if (inp.T_s !== undefined) html += row("Total exposure", sci(inp.T_s) + " s");
+  if (inp.pipeline) html += row("Pipeline", esc(inp.pipeline));
+  html += '</table>';
+
+  // ── 3. MPE Derivation Chain ──
+  html += '<h2>MPE Derivation</h2>';
+
+  var bandStep = findS("band_match");
+  var modeStep = findS("mode_dispatch");
+  var regionStep = findS("region_match");
+  var formulaStep = findS("formula_eval");
+  var caStep = findS("ca_lookup");
+  var dualStep = findS("dual_limit_eval");
+  var uvStep = findS("uv_discrete_lookup");
+
+  if (bandStep || regionStep || formulaStep) {
+    html += '<div class="chain">';
+    if (bandStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Band:</b> ' +
+        esc(bandStep.matched_entry.value.name) +
+        ' [' + esc(bandStep.matched_entry.value.wl_min_nm) + '&ndash;' +
+        esc(bandStep.matched_entry.value.wl_max_nm) + ' nm]' +
+        (bandStep.matched_entry.value.note ? ' &mdash; ' + esc(bandStep.matched_entry.value.note) : '') + '</div>';
+    }
+    if (modeStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Mode:</b> ' +
+        esc(modeStep.decision.chosen) + '</div>';
+    }
+    if (dualStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Dual limit:</b> thermal = ' +
+        sci(dualStep.inputs.thermal_value) + ', photochemical = ' +
+        sci(dualStep.inputs.photochemical_value) +
+        ' &rarr; ' + esc(dualStep.decision.chosen) + '</div>';
+    }
+    if (regionStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Region:</b> ' +
+        esc(regionStep.decision.chosen) +
+        (regionStep.matched_entry.value.note ? ' &mdash; ' + esc(regionStep.matched_entry.value.note) : '') + '</div>';
+    }
+    if (caStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>C<sub>A</sub>:</b> ' +
+        esc(caStep.formula.substituted) + ' = ' + fix(caStep.output.value, 4) + '</div>';
+    }
+    if (uvStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>UV lookup:</b> ' +
+        esc(uvStep.decision.chosen) + ' &rarr; ' + sci(uvStep.output.value) + ' ' + esc(uvStep.output.unit) + '</div>';
+    }
+    if (formulaStep) {
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Formula:</b> ' +
+        esc(formulaStep.formula.expression) + '</div>';
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Substituted:</b> ' +
+        esc(formulaStep.formula.substituted) + '</div>';
+      html += '<div class="step"><span class="arrow">\u2192</span> <b>Result:</b> ' +
+        sci(formulaStep.output.value) + ' ' + esc(formulaStep.output.unit) + '</div>';
+    }
+    html += '</div>';
+  }
+
+  // ── 3b. Repetitive pulse rules ──
+  var rp1 = findS("rep_pulse_rule1");
+  var rp2 = findS("rep_pulse_rule2");
+  var rpSel = findS("rep_pulse_select");
+  if (rp1 || rp2) {
+    html += '<h3>Repetitive Pulse Evaluation</h3><table>';
+    if (rp1) html += row("Rule 1 (single-pulse MPE)", sci(rp1.output.value) + " " + esc(rp1.output.unit));
+    if (rp2) {
+      html += row("Rule 2 (cumulative / N)", sci(rp2.output.value) + " " + esc(rp2.output.unit));
+      if (rp2.inputs.N !== undefined) html += row("N (pulses)", fix(rp2.inputs.N, 0));
+    }
+    if (rpSel) html += row("Binding rule", '<b>' + esc(rpSel.decision.chosen) + '</b> &mdash; H = ' +
+      sci(rpSel.output.value) + " " + esc(rpSel.output.unit));
+    html += '</table>';
+  }
+
+  // ── 4. Scanning Results ──
+  var pathStep = findS("scan_path_dispatch");
+  var gridStep = findS("scan_grid_summary");
+  var scanR1 = findS("scan_rule1_eval");
+  var scanR2 = findS("scan_rule2_eval");
+  var anCheck = findS("scan_analytical_check");
+  var verdict = findS("scan_verdict");
+
+  if (pathStep || verdict) {
+    html += '<h2>Scanning Safety Evaluation</h2>';
+
+    if (pathStep) {
+      html += '<table>';
+      html += row("Computation path", esc(pathStep.decision.chosen));
+      html += row("Rationale", esc(pathStep.decision.rationale));
+      html += '</table>';
+    }
+
+    if (gridStep) {
+      var gi = gridStep.inputs;
+      html += '<h3>Fluence Grid</h3><table>';
+      html += row("Grid dimensions", gi.nx + " &times; " + gi.ny + " (" + gi.total_cells + " cells)");
+      html += row("Peak fluence", sci(gi.peak_fluence_Jcm2) + " J/cm&sup2;");
+      html += row("Min revisit interval", sci(gi.min_revisit_s) + " s");
+      html += row("Thermal relaxation", sci(gi.thermal_relax_s) + " s");
+      html += row("Revisit adequate", gi.revisit_adequate ? '<span class="pass">Yes</span>' : '<span class="fail">No</span>');
+      html += '</table>';
+    }
+
+    if (scanR1) {
+      html += '<h3>Rule 1: ' + (scanR1.inputs.is_cw ? 'Single-Sweep' : 'Single-Pulse') + ' Evaluation</h3>';
+      html += '<table>';
+      if (scanR1.inputs.is_cw) {
+        html += row("Dwell mode", esc(scanR1.inputs.dwell_mode));
+        html += row("Dwell time", sci(scanR1.inputs.t_dwell_s) + " s");
+      } else {
+        html += row("Pulse duration", sci(scanR1.inputs.tau_s) + " s");
+      }
+      html += row("MPE(&tau;)", sci(scanR1.inputs.mpe_tau) + " J/cm&sup2;");
+      html += row("Peak single-" + (scanR1.inputs.is_cw ? "sweep" : "pulse") + " fluence",
+        sci(scanR1.inputs.is_cw ? scanR1.inputs.peak_single_sweep_H : scanR1.inputs.peak_single_pulse_H) + " J/cm&sup2;");
+      html += row("Ratio", fix(scanR1.output.value, 6),
+        scanR1.output.value <= 1.0 ? "pass" : "fail");
+      html += '</table>';
+
+      // Rule 1 derivation chain
+      if (scanR1.sub_steps && scanR1.sub_steps.length > 0) {
+        var r1Band = _findStep(scanR1.sub_steps, "band_match");
+        var r1Formula = _findStep(scanR1.sub_steps, "formula_eval");
+        if (r1Band || r1Formula) {
+          html += '<div class="chain">';
+          if (r1Band) html += '<div class="step"><span class="arrow">\u2192</span> Band: ' + esc(r1Band.matched_entry.value.name) + '</div>';
+          if (r1Formula) {
+            html += '<div class="step"><span class="arrow">\u2192</span> Formula: ' + esc(r1Formula.formula.expression) + '</div>';
+            html += '<div class="step"><span class="arrow">\u2192</span> ' + esc(r1Formula.formula.substituted) + ' = ' + sci(r1Formula.output.value) + ' ' + esc(r1Formula.output.unit) + '</div>';
+          }
+          html += '</div>';
+        }
+      }
+    }
+
+    if (scanR2) {
+      html += '<h3>Rule 2: Cumulative Fluence at Worst-Case Point</h3>';
+      html += '<table>';
+      html += row("Worst-case point", "(" + fix(scanR2.inputs.worst_x_mm, 2) + ", " + fix(scanR2.inputs.worst_y_mm, 2) + ") mm");
+      html += row("Cumulative fluence", sci(scanR2.inputs.cumulative_fluence_Jcm2) + " J/cm&sup2;");
+      html += row("T<sub>point</sub>", sci(scanR2.inputs.T_point_s) + " s");
+      html += row("T<sub>total</sub>", sci(scanR2.inputs.T_total_s) + " s");
+      html += row("MPE(T<sub>point</sub>)", sci(scanR2.inputs.mpe_T_point) + " J/cm&sup2;");
+      html += row("Ratio (T<sub>point</sub>)", fix(scanR2.output.value, 6),
+        scanR2.output.value <= 1.0 ? "pass" : "fail");
+      html += row("Ratio (T<sub>total</sub>)", fix(scanR2.inputs.rule2_ratio_Ttotal, 6));
+      html += '</table>';
+
+      if (scanR2.sub_steps && scanR2.sub_steps.length > 0) {
+        var r2Band = _findStep(scanR2.sub_steps, "band_match");
+        var r2Formula = _findStep(scanR2.sub_steps, "formula_eval");
+        if (r2Band || r2Formula) {
+          html += '<div class="chain">';
+          if (r2Band) html += '<div class="step"><span class="arrow">\u2192</span> Band: ' + esc(r2Band.matched_entry.value.name) + '</div>';
+          if (r2Formula) {
+            html += '<div class="step"><span class="arrow">\u2192</span> Formula: ' + esc(r2Formula.formula.expression) + '</div>';
+            html += '<div class="step"><span class="arrow">\u2192</span> ' + esc(r2Formula.formula.substituted) + ' = ' + sci(r2Formula.output.value) + ' ' + esc(r2Formula.output.unit) + '</div>';
+          }
+          html += '</div>';
+        }
+      }
+    }
+
+    if (anCheck) {
+      html += '<h3>Analytical Cross-Check</h3><table>';
+      html += row("Analytical peak fluence", sci(anCheck.inputs.analytical_peak_Jcm2) + " J/cm&sup2;");
+      html += row("Grid peak fluence", sci(anCheck.inputs.grid_peak_Jcm2) + " J/cm&sup2;");
+      html += row("Analytical overrides grid", anCheck.inputs.analytical_used ? "Yes" : "No");
+      html += '</table>';
+    }
+
+    if (verdict) {
+      var isSafe = verdict.decision.chosen === "SAFE";
+      html += '<div class="verdict ' + (isSafe ? 'pass' : 'fail') + '">' +
+        (isSafe ? '\u2713 SAFE' : '\u2717 UNSAFE') + ' &mdash; ' + esc(verdict.decision.rationale) + '</div>';
+    }
+  }
+
+  // ── 4b. PA results ──
+  var paEff = findS("pa_eff_fluence");
+  var paSNR = findS("pa_rel_snr");
+  var paOpt = findS("pa_optimal_prf");
+  if (paEff || paSNR || paOpt) {
+    html += '<h2>Photoacoustic Analysis</h2><table>';
+    if (paEff) html += row("Effective fluence per pulse", sci(paEff.output.value) + " " + esc(paEff.output.unit) + " (" + esc(paEff.decision.chosen) + ")");
+    if (paSNR) html += row("Relative SNR", fix(paSNR.output.value, 4));
+    if (paOpt) html += row("Optimal PRF", fix(paOpt.output.value, 0) + " Hz");
+    html += '</table>';
+  }
+
+  // ── 5. Final Result ──
+  if (res.mpe_Jcm2 !== undefined) {
+    html += '<h2>Result</h2><table>';
+    html += row("MPE", '<b>' + sci(res.mpe_Jcm2) + ' J/cm&sup2;</b>');
+    if (res.band) html += row("Band", esc(res.band));
+    if (res.table) html += row("Table", esc(res.table));
+    if (res.rule) html += row("Binding rule", esc(res.rule));
+    html += '</table>';
+  }
+
+  // ── 6. Standard Integrity ──
+  html += '<h2>Standard Integrity</h2><table>';
+  html += row("Standard", esc(snap.metadata.name || "Unknown"));
+  if (snap.metadata.reference) html += row("Reference", esc(snap.metadata.reference));
+  if (snap.metadata.year) html += row("Year", esc(snap.metadata.year));
+  if (snap.metadata.organization) html += row("Organization", esc(snap.metadata.organization));
+  if (snap.metadata.tables_used) html += row("Tables used", esc(snap.metadata.tables_used));
+  html += row("SHA-256 fingerprint", '<span class="sha">' + esc(snap.sha256) + '</span>');
+  html += row("File size", snap.byte_length + " bytes");
+  if (snap.filename) html += row("Filename", esc(snap.filename));
+  html += '</table>';
+
+  // ── 7. Reproducibility ──
+  html += '<h2>Reproducibility</h2><table>';
+  html += row("Trace ID", esc(doc.trace_id));
+  html += row("Engine", esc(eng.name) + " v" + esc(eng.version));
+  if (eng.build_hash) html += row("Build hash", esc(eng.build_hash));
+  html += row("Timestamp", esc(doc.timestamp));
+  html += '</table>';
+  html += '<p style="font-size:9px;color:#94a3b8">To reproduce: import the accompanying .json trace file into the MPE-Calculator engine at the version shown above.</p>';
+
+  // ── 8. Signature lines ──
+  html += '<h2>Signatures</h2>';
+  html += '<div style="display:flex;gap:60px;margin-top:10px">';
+  html += '<div><div class="sig">Principal Investigator / Operator</div><div style="font-size:9px;color:#94a3b8;margin-top:2px">Name: ___________________________&nbsp;&nbsp;&nbsp;Date: ______________</div></div>';
+  html += '<div><div class="sig">Laser Safety Officer</div><div style="font-size:9px;color:#94a3b8;margin-top:2px">Name: ___________________________&nbsp;&nbsp;&nbsp;Date: ______________</div></div>';
+  html += '</div>';
+
+  // ── 9. Footer ──
+  html += '<div class="footer">' + esc(snap.metadata.name || "ICNIRP 2013") +
+    ' &mdash; For research and educational purposes only. Not a certified safety instrument. ' +
+    'Skin MPE only &mdash; ocular limits not evaluated. ' +
+    'Verify all values against the applicable standard with a qualified Laser Safety Officer.</div>';
+
+  html += '</body></html>';
+  return html;
+}
+
 function _findStep(steps, type) {
   for (var i = 0; i < steps.length; i++) {
     if (steps[i].step_type === type) return steps[i];
@@ -286,11 +607,18 @@ function renderTracePanel(T, traceDoc, onGenerate) {
     React.createElement("div", {style:{padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+T.bd}},
       React.createElement("span", {style:{fontWeight:600,fontSize:11,color:T.tm,textTransform:"uppercase",letterSpacing:"0.06em"}},
         "\u{1F50D} Computation Trace"),
-      React.createElement("button", {
-        onClick: function() { _downloadJSON(traceDoc, "mpe-trace-" + traceDoc.trace_id.substring(0,8) + ".json"); },
-        style:{padding:"3px 10px",fontSize:10,cursor:"pointer",border:"1px solid "+T.bd,
-          borderRadius:3,background:T.card,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}
-      }, "\u2913 Download JSON")
+      React.createElement("div", {style:{display:"flex",gap:6}},
+        React.createElement("button", {
+          onClick: function() { _downloadHTML(_generateTraceReport(traceDoc), "mpe-worksheet-" + traceDoc.trace_id.substring(0,8) + ".html"); },
+          style:{padding:"3px 10px",fontSize:10,cursor:"pointer",border:"1px solid "+T.bd,
+            borderRadius:3,background:T.card,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}
+        }, "\u2913 Report"),
+        React.createElement("button", {
+          onClick: function() { _downloadJSON(traceDoc, "mpe-trace-" + traceDoc.trace_id.substring(0,8) + ".json"); },
+          style:{padding:"3px 10px",fontSize:10,cursor:"pointer",border:"1px solid "+T.bd,
+            borderRadius:3,background:T.card,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}
+        }, "\u2913 JSON")
+      )
     ),
     sections.map(function(sec, idx) {
       var color = sec.ok === true ? "#00796B" : sec.ok === false ? "#bf360c" : T.tx;
