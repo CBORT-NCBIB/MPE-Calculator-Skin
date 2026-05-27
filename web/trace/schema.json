@@ -46,7 +46,11 @@
             "band_match", "mode_dispatch", "region_match", "formula_eval",
             "ca_lookup", "uv_discrete_lookup", "dual_limit_eval",
             "rep_pulse_rule1", "rep_pulse_rule2", "rep_pulse_select",
-            "beam_eval", "area_correction", "area_select"
+            "beam_eval", "area_correction", "area_select",
+            "scan_path_dispatch", "scan_grid_summary",
+            "scan_rule1_eval", "scan_rule2_eval",
+            "scan_analytical_check", "scan_verdict",
+            "pa_eff_fluence", "pa_rel_snr", "pa_optimal_prf"
           ]
         },
         "label": { "type": "string" },

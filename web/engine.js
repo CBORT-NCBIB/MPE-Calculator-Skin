@@ -824,31 +824,79 @@ function getSTANDARD() {
 // which uses whatever standard is currently loaded.
 // ═══════════════════════════════════════════════════════════════
 
-function paEffFluence(wl_nm, tau, f, T) {
-  var rule1 = skinMPE(wl_nm, tau);
-  var hT = skinMPE(wl_nm, T);
+function paEffFluence(wl_nm, tau, f, T, trace) {
+  var r1SubTrace = trace ? trace.subTracer() : null;
+  var rule1 = skinMPE(wl_nm, tau, r1SubTrace);
+  var r2SubTrace = trace ? trace.subTracer() : null;
+  var hT = skinMPE(wl_nm, T, r2SubTrace);
   if (!isFinite(rule1) || !isFinite(hT)) return NaN;
   var N = f * T;
   if (N < 1) N = 1;
   var rule2 = hT / N;
-  return Math.min(rule1, rule2);
+  var result = Math.min(rule1, rule2);
+  var binding = rule1 <= rule2 ? "Rule 1" : "Rule 2";
+
+  if (trace) {
+    var subSteps = [];
+    if (r1SubTrace) subSteps = subSteps.concat(r1SubTrace.getSteps());
+    if (r2SubTrace) subSteps = subSteps.concat(r2SubTrace.getSteps());
+    trace.step("pa_eff_fluence", "Effective MPE-limited fluence per pulse")
+      .withInputs({ wl_nm: wl_nm, tau_s: tau, prf_hz: f, T_s: T, N: N,
+        rule1_Jcm2: rule1, rule2_Jcm2: rule2 })
+      .withFormula("min", "min(MPE(tau), MPE(T)/N)",
+        { rule1: rule1, rule2: rule2, N: N },
+        "min(" + rule1.toExponential(4) + ", " + hT.toExponential(4) + "/" + N + ")")
+      .withOutput(result, "J/cm2")
+      .withDecision(binding, 2,
+        binding + ": " + result.toExponential(4) + " J/cm2")
+      .withSubSteps(subSteps);
+  }
+  return result;
 }
 
-function paRelSNR(wl_nm, tau, f, T) {
-  var phi_single = skinMPE(wl_nm, tau);
+function paRelSNR(wl_nm, tau, f, T, trace) {
+  var phi_single = skinMPE(wl_nm, tau, trace ? trace.subTracer() : null);
   if (!isFinite(phi_single) || phi_single <= 0) return NaN;
-  var phi_eff = paEffFluence(wl_nm, tau, f, T);
+  var phi_eff = paEffFluence(wl_nm, tau, f, T, trace ? trace.subTracer() : null);
   if (!isFinite(phi_eff) || phi_eff <= 0) return NaN;
   var N = f * T;
   if (N < 1) N = 1;
-  return (phi_eff * Math.sqrt(N)) / phi_single;
+  var result = (phi_eff * Math.sqrt(N)) / phi_single;
+
+  if (trace) {
+    trace.step("pa_rel_snr", "Relative SNR (MPE-limited)")
+      .withInputs({ wl_nm: wl_nm, tau_s: tau, prf_hz: f, T_s: T, N: N,
+        phi_single: phi_single, phi_eff: phi_eff })
+      .withFormula("snr", "(phi_eff * sqrt(N)) / phi_single",
+        { phi_eff: phi_eff, N: N, phi_single: phi_single },
+        "(" + phi_eff.toExponential(4) + " * sqrt(" + N + ")) / " + phi_single.toExponential(4))
+      .withOutput(result, "dimensionless");
+  }
+  return result;
 }
 
-function paOptimalPRF(wl_nm, tau, T) {
-  var h_single = skinMPE(wl_nm, tau);
-  var h_total = skinMPE(wl_nm, T);
+function paOptimalPRF(wl_nm, tau, T, trace) {
+  var r1Sub = trace ? trace.subTracer() : null;
+  var h_single = skinMPE(wl_nm, tau, r1Sub);
+  var r2Sub = trace ? trace.subTracer() : null;
+  var h_total = skinMPE(wl_nm, T, r2Sub);
   if (!isFinite(h_single) || !isFinite(h_total) || h_single <= 0 || T <= 0) return NaN;
-  return h_total / (h_single * T);
+  var result = h_total / (h_single * T);
+
+  if (trace) {
+    var subSteps = [];
+    if (r1Sub) subSteps = subSteps.concat(r1Sub.getSteps());
+    if (r2Sub) subSteps = subSteps.concat(r2Sub.getSteps());
+    trace.step("pa_optimal_prf", "Optimal PRF for maximum SNR")
+      .withInputs({ wl_nm: wl_nm, tau_s: tau, T_s: T,
+        MPE_single: h_single, MPE_total: h_total })
+      .withFormula("division", "MPE(T) / (MPE(tau) * T)",
+        { MPE_T: h_total, MPE_tau: h_single, T: T },
+        h_total.toExponential(4) + " / (" + h_single.toExponential(4) + " * " + T + ")")
+      .withOutput(result, "Hz")
+      .withSubSteps(subSteps);
+  }
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -2402,26 +2450,30 @@ function buildPathSegments(sp) {
   return segs;
 }
 
-function computeScanFluence(beam, segments, ppd, scanParams) {
+function computeScanFluence(beam, segments, ppd, scanParams, trace) {
   if (!scanParams && (!segments || segments.length === 0)) return null;
   ppd = ppd || 8;
 
   // ── Separable fast path (preferred for uniform raster/bidi patterns) ──
-  // O(nx + ny) via 1D Gaussian sum factorization — mathematically exact.
-  // This MUST be checked first: for large line counts (>1000 lines),
-  // the general segment-erf path would build O(nLines) segment objects
-  // and iterate O(nGridPoints × nSegments), causing OOM/timeout.
   if (scanParams && canUseSeparable(scanParams)) {
     var grid_s = createFluenceGridFromParams(scanParams, ppd);
     var stats_s = computeScanFluenceSeparable(grid_s, scanParams);
+    if (trace) {
+      trace.step("scan_path_dispatch", "Select scan fluence computation path")
+        .withInputs({
+          pattern: scanParams.pattern, is_cw: scanParams.is_cw,
+          n_lines: scanParams.n_lines, n_segments: segments ? segments.length : 0
+        })
+        .withOutput(stats_s.total_time_s, "s")
+        .withDecision("separable", 3,
+          "Pattern '" + scanParams.pattern + "' is separable-eligible (uniform raster/bidi). " +
+          "Grid: " + grid_s.nx + "x" + grid_s.ny + " (" + (grid_s.nx * grid_s.ny) + " cells)");
+    }
     return { grid: grid_s, stats: stats_s };
   }
 
-  // ── Segment-superposition framework (for non-separable or CW scans) ──
-  // General O(nGridPoints × nSegments) — only used when separable
-  // factorization is not applicable (CW, non-uniform patterns).
+  // ── Segment-superposition framework ──
   if (scanParams) {
-    // Safety cap: refuse to build >50000 segments to prevent OOM
     var nSegsExpected = (scanParams.n_lines || 1) * 2;
     if (nSegsExpected <= 50000) {
       var pathSegs = buildPathSegments(scanParams);
@@ -2436,7 +2488,6 @@ function computeScanFluence(beam, segments, ppd, scanParams) {
         };
         var stats = computeScanFluenceSegmentErf(grid, pathSegs, fwBeam);
 
-        // Set total_pulses and min_velocity for safety evaluation
         if (!beam.is_cw && beam.prf_hz > 0) {
           stats.total_pulses = Math.round(stats.total_time_s * beam.prf_hz);
         } else if (beam.is_cw) {
@@ -2445,12 +2496,23 @@ function computeScanFluence(beam, segments, ppd, scanParams) {
         }
 
         stats.method = "segment-erf";
+        if (trace) {
+          trace.step("scan_path_dispatch", "Select scan fluence computation path")
+            .withInputs({
+              pattern: scanParams.pattern, is_cw: beam.is_cw,
+              n_segments: pathSegs.length
+            })
+            .withOutput(stats.total_time_s, "s")
+            .withDecision("segment-erf", 3,
+              "Parameterized but not separable-eligible. Segment-erf framework with " +
+              pathSegs.length + " segments. Grid: " + grid.nx + "x" + grid.ny);
+        }
         return { grid: grid, stats: stats };
       }
     }
   }
 
-  // ── Legacy fallback: standard segment-based path ──
+  // ── Legacy fallback ──
   if (!segments || segments.length === 0) return null;
   var grid2 = createFluenceGrid(beam.d_1e_mm, segments, ppd);
   var stats2;
@@ -2460,6 +2522,17 @@ function computeScanFluence(beam, segments, ppd, scanParams) {
   } else {
     stats2 = computeScanFluencePulsed(grid2, beam.d_1e_mm, beam.prf_hz,
       beam.pulse_energy_J, segments);
+  }
+  if (trace) {
+    trace.step("scan_path_dispatch", "Select scan fluence computation path")
+      .withInputs({
+        is_cw: beam.is_cw, n_segments: segments.length,
+        has_scanParams: !!scanParams
+      })
+      .withOutput(stats2.total_time_s, "s")
+      .withDecision(beam.is_cw ? "legacy-cw" : "legacy-pulsed", 3,
+        "Legacy " + (beam.is_cw ? "CW" : "pulsed") + " segment path with " +
+        segments.length + " segments. Grid: " + grid2.nx + "x" + grid2.ny);
   }
   return { grid: grid2, stats: stats2 };
 }
@@ -2571,7 +2644,7 @@ function analyticalPeakFluence(beam, v_mm_s, line_spacing_mm, n_lines) {
   };
 }
 
-function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_params) {
+function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_params, trace) {
   var mpe_T = skinMPE(beam.wl_nm, T_s);
   var mpe_tau, rule1_limit;
 
@@ -2758,23 +2831,146 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   var kappa_skin = KAPPA_SKIN_MM2_S;
   var thermal_relax_s = (beam.d_1e_mm * beam.d_1e_mm) / (4 * kappa_skin);
 
+  var worstXmm = grid.x_min_mm + worstIx * grid.dx_mm;
+  var worstYmm = grid.y_min_mm + worstIy * grid.dx_mm;
+  var isSafe = worstR1 <= 1.0 && worstR2 <= 1.0;
+  var bindingRule = worstR1 >= worstR2 ? "Rule 1" : "Rule 2";
+  var mpe_T_point = _cachedMPE(worstTpoint);
+
+  // ── Pass 2: traced re-evaluation of worst-case point ──
+  // This is zero-cost when trace is null/undefined.
+  if (trace) {
+    // Grid summary
+    trace.step("scan_grid_summary", "Scan fluence grid summary")
+      .withInputs({
+        nx: grid.nx, ny: grid.ny, dx_mm: grid.dx_mm,
+        total_cells: n,
+        peak_fluence_Jcm2: peakF,
+        max_pulse_count: maxPulses,
+        min_revisit_s: globalMinRevisit,
+        revisit_points: revisitPoints,
+        thermal_relax_s: thermal_relax_s,
+        revisit_adequate: globalMinRevisit >= thermal_relax_s
+      })
+      .withOutput(peakF, "J/cm2");
+
+    // Rule 1: re-run the MPE lookup with trace to get full derivation
+    var r1SubTrace = trace.subTracer();
+    if (beam.is_cw) {
+      if (isFinite(min_velocity) && min_velocity > 0) {
+        var t_dwell_trace = (dwell_mode === "geometric") ?
+          scanDwellGeometric(beam.d_1e_mm, min_velocity) :
+          scanDwellGaussian(beam.d_1e_mm, min_velocity);
+        skinMPE(beam.wl_nm, t_dwell_trace, r1SubTrace);
+        trace.step("scan_rule1_eval", "Rule 1: single-sweep fluence vs MPE(dwell)")
+          .withInputs({
+            is_cw: true, dwell_mode: dwell_mode,
+            d_1e_mm: beam.d_1e_mm, min_velocity_mm_s: min_velocity,
+            t_dwell_s: t_dwell_trace,
+            peak_single_sweep_H: grid.peak_pulse_H[worstIdx],
+            mpe_tau: mpe_tau
+          })
+          .withFormula("ratio", "peak_single_sweep_H / MPE(dwell)",
+            { numerator: grid.peak_pulse_H[worstIdx], denominator: mpe_tau },
+            grid.peak_pulse_H[worstIdx] + " / " + mpe_tau)
+          .withOutput(worstR1, "ratio")
+          .withDecision(worstR1 <= 1.0 ? "PASS" : "FAIL", 1,
+            "ratio=" + worstR1.toFixed(6) + (worstR1 <= 1.0 ? " <= 1.0" : " > 1.0"))
+          .withSubSteps(r1SubTrace.getSteps());
+      } else {
+        trace.step("scan_rule1_eval", "Rule 1: CW without velocity — not evaluable")
+          .withInputs({ is_cw: true, min_velocity_mm_s: min_velocity })
+          .withOutput(0, "ratio")
+          .withDecision("PASS (not applicable)", 1, "No velocity for CW dwell evaluation");
+      }
+    } else {
+      skinMPE(beam.wl_nm, beam.tau_s, r1SubTrace);
+      trace.step("scan_rule1_eval", "Rule 1: single-pulse fluence vs MPE(tau)")
+        .withInputs({
+          is_cw: false, tau_s: beam.tau_s,
+          peak_single_pulse_H: grid.peak_pulse_H[worstIdx],
+          mpe_tau: mpe_tau
+        })
+        .withFormula("ratio", "peak_single_pulse_H / MPE(tau)",
+          { numerator: grid.peak_pulse_H[worstIdx], denominator: mpe_tau },
+          grid.peak_pulse_H[worstIdx] + " / " + mpe_tau)
+        .withOutput(worstR1, "ratio")
+        .withDecision(worstR1 <= 1.0 ? "PASS" : "FAIL", 1,
+          "ratio=" + worstR1.toFixed(6) + (worstR1 <= 1.0 ? " <= 1.0" : " > 1.0"))
+        .withSubSteps(r1SubTrace.getSteps());
+    }
+
+    // Rule 2 (T_point): re-run skinMPE(wl, T_point) with trace
+    var r2SubTrace = trace.subTracer();
+    skinMPE(beam.wl_nm, worstTpoint, r2SubTrace);
+    trace.step("scan_rule2_eval", "Rule 2: cumulative fluence vs MPE(T_point) at worst-case cell")
+      .withInputs({
+        worst_x_mm: worstXmm, worst_y_mm: worstYmm,
+        cumulative_fluence_Jcm2: grid.fluence[worstIdx],
+        T_point_s: worstTpoint,
+        T_total_s: T_s,
+        first_visit_t: has_fvt ? grid.first_visit_t[worstIdx] : null,
+        last_visit_t: grid.last_visit_t[worstIdx],
+        tau_floor_s: tau_floor,
+        mpe_T_point: mpe_T_point,
+        mpe_T_total: mpe_T,
+        rule2_ratio_Tpoint: worstR2,
+        rule2_ratio_Ttotal: worstR2_Ttotal
+      })
+      .withFormula("ratio", "cumulative_fluence / MPE(T_point)",
+        { numerator: grid.fluence[worstIdx], denominator: mpe_T_point },
+        grid.fluence[worstIdx] + " / " + mpe_T_point)
+      .withOutput(worstR2, "ratio")
+      .withDecision(worstR2 <= 1.0 ? "PASS" : "FAIL", 1,
+        "ratio=" + worstR2.toFixed(6) + (worstR2 <= 1.0 ? " <= 1.0" : " > 1.0") +
+        " (T_total ratio=" + worstR2_Ttotal.toFixed(6) + " for comparison)")
+      .withSubSteps(r2SubTrace.getSteps());
+
+    // Analytical cross-check
+    if (isFinite(analyticalPeak)) {
+      trace.step("scan_analytical_check", "Analytical peak fluence cross-check")
+        .withInputs({
+          analytical_peak_Jcm2: analyticalPeak,
+          grid_peak_Jcm2: grid.fluence[worstIdx],
+          analytical_used: analyticalUsed
+        })
+        .withOutput(analyticalPeak, "J/cm2")
+        .withDecision(analyticalUsed ? "Analytical peak overrides grid" : "Grid peak is authoritative",
+          2, "analytical=" + analyticalPeak.toExponential(4) +
+          (analyticalUsed ? " > grid peak, used for safety" : " <= grid peak, not used"));
+    }
+
+    // Final verdict
+    trace.step("scan_verdict", "Safety verdict at worst-case point")
+      .withInputs({
+        worst_x_mm: worstXmm, worst_y_mm: worstYmm,
+        rule1_ratio: worstR1, rule2_ratio: worstR2,
+        safety_margin: 1.0 - worstVal
+      })
+      .withOutput(isSafe ? 1 : 0, isSafe ? "PASS" : "FAIL")
+      .withDecision(isSafe ? "SAFE" : "UNSAFE", 2,
+        bindingRule + " is binding: " + (bindingRule === "Rule 1" ? worstR1 : worstR2).toFixed(6) +
+        (isSafe ? " <= 1.0 → PASS" : " > 1.0 → FAIL") +
+        ", margin=" + ((1.0 - worstVal) * 100).toFixed(1) + "%");
+  }
+
   return {
-    safe: worstR1 <= 1.0 && worstR2 <= 1.0,
+    safe: isSafe,
     worst_ratio: worstVal,
-    worst_x_mm: grid.x_min_mm + worstIx * grid.dx_mm,
-    worst_y_mm: grid.y_min_mm + worstIy * grid.dx_mm,
-    binding_rule: worstR1 >= worstR2 ? "Rule 1" : "Rule 2",
+    worst_x_mm: worstXmm,
+    worst_y_mm: worstYmm,
+    binding_rule: bindingRule,
     safety_margin: 1.0 - worstVal,
     mpe_tau: mpe_tau,
-    mpe_T: mpe_T,                                // MPE(T_total) — for display
-    mpe_T_point: _cachedMPE(worstTpoint),         // MPE(T_point) at worst cell
-    T_point_worst_s: worstTpoint,                 // T_point at worst-case cell (s)
+    mpe_T: mpe_T,
+    mpe_T_point: mpe_T_point,
+    T_point_worst_s: worstTpoint,
     peak_fluence: peakF,
     peak_pulse_H_max: grid.peak_pulse_H[worstIdx],
     max_pulses: maxPulses,
     rule1_max_ratio: worstR1,
-    rule2_max_ratio: worstR2,                     // per-point T_point (binding)
-    rule2_max_ratio_Ttotal: worstR2_Ttotal,       // T_total (for comparison)
+    rule2_max_ratio: worstR2,
+    rule2_max_ratio_Ttotal: worstR2_Ttotal,
     min_revisit_s: globalMinRevisit,
     revisit_points: revisitPoints,
     thermal_relax_s: thermal_relax_s,

@@ -93,6 +93,215 @@ function scanSafety(g,beam,T,dwMode,minV,scanP){
     anPeak:r.analytical_peak,anUsed:r.analytical_used};
 }
 
+/* ── Computation Trace Panel ── */
+/* Renders a collapsible trace summary with a JSON download button.
+ * Called from each scanning/PA results section.
+ * The trace is generated ON DEMAND (not during the main computation)
+ * by re-running the lightweight safety evaluation with a tracer.
+ */
+function _downloadJSON(doc, filename) {
+  var json = JSON.stringify(doc, null, 2);
+  var blob = new Blob([json], {type: "application/json"});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url; a.download = filename || "mpe-trace.json";
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function _findStep(steps, type) {
+  for (var i = 0; i < steps.length; i++) {
+    if (steps[i].step_type === type) return steps[i];
+    if (steps[i].sub_steps) {
+      var f = _findStep(steps[i].sub_steps, type);
+      if (f) return f;
+    }
+  }
+  return null;
+}
+
+function _fmtSci(v, n) {
+  if (v === undefined || v === null || !isFinite(v)) return String(v);
+  return v.toExponential(n || 3);
+}
+
+function renderTracePanel(T, traceDoc, onGenerate) {
+  if (!traceDoc) {
+    return React.createElement("div", {style:{marginTop:10}},
+      React.createElement("button", {
+        onClick: onGenerate,
+        style:{padding:"6px 14px",fontSize:11,fontWeight:500,cursor:"pointer",
+          border:"1px solid "+T.bd,borderRadius:4,background:T.bgI,color:T.tm,
+          fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}
+      }, "\u{1F50D} Generate Computation Trace")
+    );
+  }
+
+  var steps = traceDoc.steps;
+  var snap = traceDoc.standard_snapshot;
+
+  // Build summary sections from trace steps
+  var sections = [];
+
+  // Standard
+  sections.push({
+    label: "Standard: " + (snap.metadata.name || snap.metadata.short_name || "Unknown"),
+    detail: "SHA-256: " + snap.sha256.substring(0, 16) + "\u2026 | " +
+      (snap.metadata.tables_used || "") +
+      (snap.metadata.reference ? " | " + snap.metadata.reference : "")
+  });
+
+  // Path dispatch
+  var pathStep = _findStep(steps, "scan_path_dispatch");
+  if (pathStep) {
+    sections.push({
+      label: "Computation path: " + pathStep.decision.chosen,
+      detail: pathStep.decision.rationale
+    });
+  }
+
+  // Grid summary
+  var gridStep = _findStep(steps, "scan_grid_summary");
+  if (gridStep) {
+    var gi = gridStep.inputs;
+    sections.push({
+      label: "Grid: " + gi.nx + "\u00d7" + gi.ny + " (" + gi.total_cells + " cells)",
+      detail: "Peak fluence: " + _fmtSci(gi.peak_fluence_Jcm2) + " J/cm\u00b2 | " +
+        "Max pulses: " + gi.max_pulse_count + " | " +
+        "Min revisit: " + _fmtSci(gi.min_revisit_s) + " s" +
+        (gi.revisit_adequate ? " \u2713" : " \u26a0 < thermal relaxation")
+    });
+  }
+
+  // Rule 1
+  var r1Step = _findStep(steps, "scan_rule1_eval");
+  if (r1Step) {
+    var r1Pass = r1Step.output.value <= 1.0;
+    var r1Band = r1Step.sub_steps ? _findStep(r1Step.sub_steps, "band_match") : null;
+    var r1Formula = r1Step.sub_steps ? _findStep(r1Step.sub_steps, "formula_eval") : null;
+    sections.push({
+      label: "Rule 1 \u2014 " + (r1Step.inputs.is_cw ? "Single-sweep" : "Single-pulse") +
+        ": " + r1Step.output.value.toFixed(4) + "\u00d7 " + (r1Pass ? "\u2713" : "\u2717"),
+      detail: (r1Band ? "Band: " + r1Band.matched_entry.value.name + " | " : "") +
+        (r1Step.inputs.is_cw ? "Dwell: " + _fmtSci(r1Step.inputs.t_dwell_s) + " s" :
+          "Pulse: " + _fmtSci(r1Step.inputs.tau_s) + " s") +
+        " | MPE(\u03c4) = " + _fmtSci(r1Step.inputs.mpe_tau) + " J/cm\u00b2" +
+        (r1Formula ? " | Formula: " + r1Formula.formula.expression : ""),
+      ok: r1Pass
+    });
+  }
+
+  // Rule 2
+  var r2Step = _findStep(steps, "scan_rule2_eval");
+  if (r2Step) {
+    var r2Pass = r2Step.output.value <= 1.0;
+    var r2Band = r2Step.sub_steps ? _findStep(r2Step.sub_steps, "band_match") : null;
+    var r2Formula = r2Step.sub_steps ? _findStep(r2Step.sub_steps, "formula_eval") : null;
+    sections.push({
+      label: "Rule 2 \u2014 Cumulative at (" +
+        r2Step.inputs.worst_x_mm.toFixed(2) + ", " + r2Step.inputs.worst_y_mm.toFixed(2) + ") mm: " +
+        r2Step.output.value.toFixed(4) + "\u00d7 " + (r2Pass ? "\u2713" : "\u2717"),
+      detail: "T_point = " + _fmtSci(r2Step.inputs.T_point_s) + " s (T_total = " +
+        _fmtSci(r2Step.inputs.T_total_s) + " s)" +
+        " | Fluence: " + _fmtSci(r2Step.inputs.cumulative_fluence_Jcm2) + " J/cm\u00b2" +
+        " | MPE(T_point) = " + _fmtSci(r2Step.inputs.mpe_T_point) + " J/cm\u00b2" +
+        (r2Band ? " | Band: " + r2Band.matched_entry.value.name : "") +
+        (r2Formula ? " | Formula: " + r2Formula.formula.expression : "") +
+        " | T_total ratio: " + r2Step.inputs.rule2_ratio_Ttotal.toFixed(4) + "\u00d7",
+      ok: r2Pass
+    });
+  }
+
+  // Analytical check
+  var anStep = _findStep(steps, "scan_analytical_check");
+  if (anStep) {
+    sections.push({
+      label: "Analytical cross-check: " + _fmtSci(anStep.output.value) + " J/cm\u00b2" +
+        (anStep.inputs.analytical_used ? " (overrides grid)" : " (grid authoritative)"),
+      detail: anStep.decision.rationale
+    });
+  }
+
+  // Verdict
+  var verdict = _findStep(steps, "scan_verdict");
+  if (verdict) {
+    sections.push({
+      label: "Verdict: " + verdict.decision.chosen + " (" + verdict.decision.rationale + ")",
+      detail: null,
+      ok: verdict.decision.chosen === "SAFE"
+    });
+  }
+
+  // PA steps
+  var paEff = _findStep(steps, "pa_eff_fluence");
+  if (paEff) {
+    sections.push({
+      label: "Effective fluence: " + _fmtSci(paEff.output.value) + " " + paEff.output.unit +
+        " (" + paEff.decision.chosen + ")",
+      detail: paEff.formula.substituted
+    });
+  }
+  var paSNR = _findStep(steps, "pa_rel_snr");
+  if (paSNR) {
+    sections.push({
+      label: "Relative SNR: " + paSNR.output.value.toFixed(4),
+      detail: paSNR.formula.substituted
+    });
+  }
+  var paOpt = _findStep(steps, "pa_optimal_prf");
+  if (paOpt) {
+    sections.push({
+      label: "Optimal PRF: " + paOpt.output.value.toFixed(0) + " Hz",
+      detail: paOpt.formula.substituted
+    });
+  }
+
+  // Single-point MPE steps (for non-scanning traces)
+  if (!pathStep && !verdict && !paEff) {
+    var bm = _findStep(steps, "band_match");
+    var rm = _findStep(steps, "region_match");
+    var fe = _findStep(steps, "formula_eval");
+    if (bm) sections.push({
+      label: "Band: " + bm.matched_entry.value.name,
+      detail: bm.decision.rationale
+    });
+    if (rm) sections.push({
+      label: "Region: " + rm.decision.chosen,
+      detail: rm.matched_entry.value.note || ""
+    });
+    if (fe) sections.push({
+      label: "Formula: " + fe.formula.expression + " = " + _fmtSci(fe.output.value) + " " + fe.output.unit,
+      detail: fe.formula.substituted
+    });
+    var dl = _findStep(steps, "dual_limit_eval");
+    if (dl) sections.push({
+      label: "Dual-limit: " + dl.decision.chosen,
+      detail: "thermal=" + _fmtSci(dl.inputs.thermal_value) + " photochem=" + _fmtSci(dl.inputs.photochemical_value)
+    });
+  }
+
+  // Render
+  var mono = "'IBM Plex Mono', monospace";
+  return React.createElement("div", {style:{marginTop:10,border:"1px solid "+T.bd,borderRadius:4,background:T.bgI,fontSize:11}},
+    React.createElement("div", {style:{padding:"8px 12px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+T.bd}},
+      React.createElement("span", {style:{fontWeight:600,fontSize:11,color:T.tm,textTransform:"uppercase",letterSpacing:"0.06em"}},
+        "\u{1F50D} Computation Trace"),
+      React.createElement("button", {
+        onClick: function() { _downloadJSON(traceDoc, "mpe-trace-" + traceDoc.trace_id.substring(0,8) + ".json"); },
+        style:{padding:"3px 10px",fontSize:10,cursor:"pointer",border:"1px solid "+T.bd,
+          borderRadius:3,background:T.card,color:T.tm,fontFamily:"'IBM Plex Sans', system-ui, sans-serif"}
+      }, "\u2913 Download JSON")
+    ),
+    sections.map(function(sec, idx) {
+      var color = sec.ok === true ? "#00796B" : sec.ok === false ? "#bf360c" : T.tx;
+      return React.createElement("div", {key:idx, style:{padding:"5px 12px",borderBottom:idx<sections.length-1?"1px solid "+T.bd:"none"}},
+        React.createElement("div", {style:{fontFamily:mono,color:color,fontSize:11,fontWeight:500}}, sec.label),
+        sec.detail ? React.createElement("div", {style:{fontFamily:mono,color:T.td,fontSize:10,marginTop:1}}, sec.detail) : null
+      );
+    })
+  );
+}
+
 /* Scan builders — add short-name aliases so rendering code (s.x, s.y, s.a, s.v) still works */
 function _addShortNames(segs){
   for(var i=0;i<segs.length;i++){var s=segs[i];s.x=s.x_start_mm;s.y=s.y_start_mm;s.a=s.angle_rad;s.v=s.v_mm_s;}
@@ -1546,6 +1755,7 @@ function GeneralScanContent(p){
   var _res=useState(null),res=_res[0],setRes=_res[1];
   var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
   var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
+  var _trDoc=useState(null),traceDoc=_trDoc[0],setTraceDoc=_trDoc[1];
 
   /* Scan visualization feature toggles */
   var _svGrid=useState(true),svGrid=_svGrid[0],setSvGrid=_svGrid[1];
@@ -2079,7 +2289,7 @@ function GeneralScanContent(p){
       effVel=lineL*(pat==="linear"?1:nLines)*frateN;
       if(!isFinite(effVel)||effVel<=0){alert("Invalid frame rate or scan parameters");return;}
     }
-    setCmp(true);setDirty(false);setPerfNote("");
+    setCmp(true);setDirty(false);setPerfNote("");setTraceDoc(null);
 
     // ── Custom-path LSP: bypass parametric segment-building and use the
     //    LSP's engine segments directly via main-thread computation.
@@ -3210,6 +3420,8 @@ function GeneralScanContent(p){
           </div>
         </div>;
       })()}
+    {/* ── Computation Trace ── */}
+    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp=lspState.customPath?null:{v_mm_s:vel, line_spacing_mm:hatch, n_lines:nLines}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
     </div>:null}
 
     {/* ── Point Timing Visualization ── */}
