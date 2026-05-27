@@ -17,7 +17,7 @@ import sys
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from laser_mpe.engine import skin_mpe, ca, load_standard
+from laser_mpe.engine import ca, load_standard, skin_mpe
 from laser_mpe.repetitive_pulse import per_pulse_MPE
 
 # Load corpus
