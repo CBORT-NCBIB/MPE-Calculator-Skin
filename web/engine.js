@@ -97,29 +97,300 @@ function getStandard() {
 function getValidationErrors() { return _validationErrors; }
 
 // ═══════════════════════════════════════════════════════════════
+// Traceability — opt-in computation audit trail
+// ═══════════════════════════════════════════════════════════════
+//
+// The tracer records every decision point in the MPE computation:
+// which standard band matched, which region, which formula, what
+// correction factors, and what numerical result. The trace is a
+// structured JSON document that can be validated against the
+// mpe-trace-1.0 schema and exported for audit purposes.
+//
+// USAGE:
+//   var trace = createTracer(_std);
+//   var mpe = skinMPE(wl_nm, t, trace);
+//   var doc = trace.finalize({wl_nm: wl_nm, t_s: t}, {mpe_Jcm2: mpe});
+//
+// When trace is null/undefined (the default), zero trace logic executes.
+// ═══════════════════════════════════════════════════════════════
+
+var _ENGINE_VERSION = "2.7.0";
+var _ENGINE_BUILD_HASH = null; // set at build time or by caller
+
+// ── SHA-256 (pure JS, FIPS 180-4) ──────────────────────────────
+// Used only at tracer creation time to fingerprint the loaded standard.
+// Not on any hot path. ~80 lines, no dependencies.
+var _SHA256_K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2
+];
+
+function _sha256(str) {
+  // Convert string to UTF-8 byte array
+  var bytes = [];
+  for (var ci = 0; ci < str.length; ci++) {
+    var code = str.charCodeAt(ci);
+    if (code < 0x80) bytes.push(code);
+    else if (code < 0x800) { bytes.push(0xc0 | (code >> 6)); bytes.push(0x80 | (code & 0x3f)); }
+    else if (code < 0x10000) { bytes.push(0xe0 | (code >> 12)); bytes.push(0x80 | ((code >> 6) & 0x3f)); bytes.push(0x80 | (code & 0x3f)); }
+    else { bytes.push(0xf0 | (code >> 18)); bytes.push(0x80 | ((code >> 12) & 0x3f)); bytes.push(0x80 | ((code >> 6) & 0x3f)); bytes.push(0x80 | (code & 0x3f)); }
+  }
+  var bitLen = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) bytes.push(0);
+  // Append 64-bit big-endian length
+  for (var li = 56; li >= 0; li -= 8) bytes.push((bitLen / Math.pow(2, li)) & 0xff);
+
+  var H = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  var W = new Array(64);
+
+  for (var bi = 0; bi < bytes.length; bi += 64) {
+    for (var wi = 0; wi < 16; wi++) {
+      W[wi] = (bytes[bi + wi * 4] << 24) | (bytes[bi + wi * 4 + 1] << 16) |
+              (bytes[bi + wi * 4 + 2] << 8) | bytes[bi + wi * 4 + 3];
+    }
+    for (var wi2 = 16; wi2 < 64; wi2++) {
+      var s0w = ((W[wi2-15] >>> 7) | (W[wi2-15] << 25)) ^ ((W[wi2-15] >>> 18) | (W[wi2-15] << 14)) ^ (W[wi2-15] >>> 3);
+      var s1w = ((W[wi2-2] >>> 17) | (W[wi2-2] << 15)) ^ ((W[wi2-2] >>> 19) | (W[wi2-2] << 13)) ^ (W[wi2-2] >>> 10);
+      W[wi2] = (W[wi2-16] + s0w + W[wi2-7] + s1w) | 0;
+    }
+    var a=H[0], b=H[1], c=H[2], d=H[3], e=H[4], f=H[5], g=H[6], h=H[7];
+    for (var ri = 0; ri < 64; ri++) {
+      var S1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+      var ch = (e & f) ^ (~e & g);
+      var temp1 = (h + S1 + ch + _SHA256_K[ri] + W[ri]) | 0;
+      var S0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+      var maj = (a & b) ^ (a & c) ^ (b & c);
+      var temp2 = (S0 + maj) | 0;
+      h=g; g=f; f=e; e=(d+temp1)|0; d=c; c=b; b=a; a=(temp1+temp2)|0;
+    }
+    H[0]=(H[0]+a)|0; H[1]=(H[1]+b)|0; H[2]=(H[2]+c)|0; H[3]=(H[3]+d)|0;
+    H[4]=(H[4]+e)|0; H[5]=(H[5]+f)|0; H[6]=(H[6]+g)|0; H[7]=(H[7]+h)|0;
+  }
+
+  var hex = "";
+  for (var hi = 0; hi < 8; hi++) {
+    hex += ("00000000" + (H[hi] >>> 0).toString(16)).slice(-8);
+  }
+  return hex;
+}
+
+// ── UUID v4 generator ──────────────────────────────────────────
+function _uuid() {
+  var h = "0123456789abcdef";
+  var s = "";
+  for (var ui = 0; ui < 36; ui++) {
+    if (ui === 8 || ui === 13 || ui === 18 || ui === 23) s += "-";
+    else if (ui === 14) s += "4";
+    else if (ui === 19) s += h[(Math.random() * 4 | 0) + 8];
+    else s += h[Math.random() * 16 | 0];
+  }
+  return s;
+}
+
+// ── Deep copy utility (for matched entry snapshots) ────────────
+function _deepCopy(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+// ── Formula expression builder ─────────────────────────────────
+// Constructs human-readable formula strings from region coefficients.
+function _formulaExpr(region) {
+  var f = region.formula;
+  if (f === "constant")     return "" + region.a;
+  if (f === "power")        return region.a + " * t^" + region.b;
+  if (f === "linear")       return region.a + " * t";
+  if (f === "ca_constant")  return region.a + " * C_A";
+  if (f === "ca_power")     return region.a + " * C_A * t^" + region.b;
+  if (f === "ca_linear")    return region.a + " * C_A * t";
+  if (f === "discrete")     return "discrete_lookup(" + (region.lookup || "uv_discrete_steps") + ")";
+  if (f === "power_offset") return region.a + " * t^" + region.b + " + " + region.c;
+  return f;
+}
+
+// ── Formula substitution builder ───────────────────────────────
+// Constructs the expression with actual values inserted.
+function _formulaSubs(region, wl_nm, t, ca_val) {
+  var f = region.formula;
+  if (f === "constant")     return "" + region.a;
+  if (f === "power")        return region.a + " * " + t + "^" + region.b;
+  if (f === "linear")       return region.a + " * " + t;
+  if (f === "ca_constant")  return region.a + " * " + ca_val;
+  if (f === "ca_power")     return region.a + " * " + ca_val + " * " + t + "^" + region.b;
+  if (f === "ca_linear")    return region.a + " * " + ca_val + " * " + t;
+  if (f === "discrete")     return "lookup(wl=" + wl_nm + ")";
+  if (f === "power_offset") return region.a + " * " + t + "^" + region.b + " + " + region.c;
+  return f;
+}
+
+// ── Formula coefficients extractor ─────────────────────────────
+function _formulaCoeffs(region) {
+  var c = {};
+  if (region.a !== undefined) c.a = region.a;
+  if (region.b !== undefined) c.b = region.b;
+  if (region.c !== undefined) c.c = region.c;
+  if (region.lookup !== undefined) c.lookup = region.lookup;
+  return c;
+}
+
+// ── Step builder (fluent interface) ────────────────────────────
+function _stepBuilder(step) {
+  return {
+    matchedEntry: function(path, value) {
+      step.matched_entry = { path: path, value: _deepCopy(value) };
+      return this;
+    },
+    withInputs: function(inputs) {
+      step.inputs = inputs;
+      return this;
+    },
+    withFormula: function(type, expression, coefficients, substituted) {
+      step.formula = { type: type, expression: expression, coefficients: coefficients, substituted: substituted };
+      return this;
+    },
+    withOutput: function(value, unit) {
+      step.output = { value: value, unit: unit };
+      return this;
+    },
+    withDecision: function(chosen, alternativesCount, rationale) {
+      step.decision = { chosen: chosen, alternatives_count: alternativesCount, rationale: rationale };
+      return this;
+    },
+    withSubSteps: function(subSteps) {
+      step.sub_steps = subSteps;
+      return this;
+    }
+  };
+}
+
+// ── Tracer constructor ─────────────────────────────────────────
+/**
+ * Create a new computation tracer. Pass the loaded standard data
+ * to fingerprint it. The tracer records steps as engine functions
+ * execute, then finalize() produces the complete trace document.
+ *
+ * @param {Object} standardData - The loaded standard JSON (_std).
+ * @returns {Object} A tracer instance with step() and finalize().
+ */
+function createTracer(standardData) {
+  var jsonStr = JSON.stringify(standardData);
+  return {
+    _steps: [],
+    _stepCounter: 0,
+    standardSnapshot: {
+      sha256: _sha256(jsonStr),
+      byte_length: jsonStr.length,
+      filename: (standardData && standardData._filename) || null,
+      metadata: _deepCopy((standardData && standardData.standard) || {})
+    },
+    step: function(stepType, label) {
+      var id = "s" + (this._stepCounter++);
+      var s = { step_id: id, step_type: stepType, label: label };
+      this._steps.push(s);
+      return _stepBuilder(s);
+    },
+    /** Create a sub-tracer that shares the step counter but has its own steps array. */
+    subTracer: function() {
+      var parent = this;
+      return {
+        _steps: [],
+        get _stepCounter() { return parent._stepCounter; },
+        set _stepCounter(v) { parent._stepCounter = v; },
+        standardSnapshot: parent.standardSnapshot,
+        step: function(stepType, label) {
+          var id = "s" + (this._stepCounter++);
+          var s = { step_id: id, step_type: stepType, label: label };
+          this._steps.push(s);
+          return _stepBuilder(s);
+        },
+        subTracer: function() {
+          var self = this;
+          return {
+            _steps: [],
+            get _stepCounter() { return self._stepCounter; },
+            set _stepCounter(v) { self._stepCounter = v; },
+            standardSnapshot: self.standardSnapshot,
+            step: function(stepType, label) {
+              var id = "s" + (this._stepCounter++);
+              var s = { step_id: id, step_type: stepType, label: label };
+              this._steps.push(s);
+              return _stepBuilder(s);
+            },
+            subTracer: function() { return this; }, // max depth 3
+            getSteps: function() { return this._steps; }
+          };
+        },
+        getSteps: function() { return this._steps; }
+      };
+    },
+    getSteps: function() { return this._steps; },
+    finalize: function(inputs, result) {
+      return {
+        trace_schema: "mpe-trace-1.0",
+        trace_id: _uuid(),
+        standard_snapshot: this.standardSnapshot,
+        engine: { name: "mpe-engine-js", version: _ENGINE_VERSION, build_hash: _ENGINE_BUILD_HASH },
+        timestamp: new Date().toISOString(),
+        inputs: inputs,
+        steps: this._steps,
+        result: result
+      };
+    }
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Correction factor C_A — evaluated from JSON data
 // ═══════════════════════════════════════════════════════════════
-function CA(wl_nm) {
+function CA(wl_nm, trace) {
   if (!_std) return 1;
   var def = _std.correction_factors.CA;
   var regions = def.regions;
+  var result = def.default_outside_range || 1;
+  var matchedIdx = -1;
+  var matchedRegion = null;
+
   for (var i = 0; i < regions.length; i++) {
     var r = regions[i];
-    if (wl_nm >= r.wl_min_nm && wl_nm < r.wl_max_nm) {
-      if (r.type === "constant") return r.value;
-      if (r.type === "power10") {
-        return Math.pow(10, r.coefficient * (wl_nm - r.offset_nm));
+    var inRange = (wl_nm >= r.wl_min_nm && wl_nm < r.wl_max_nm);
+    if (!inRange && i === regions.length - 1 && wl_nm === r.wl_max_nm) inRange = true;
+    if (!inRange) continue;
+    matchedIdx = i;
+    matchedRegion = r;
+    if (r.type === "constant") { result = r.value; break; }
+    if (r.type === "power10") { result = Math.pow(10, r.coefficient * (wl_nm - r.offset_nm)); break; }
+  }
+
+  if (trace) {
+    var sb = trace.step("ca_lookup", "Evaluate correction factor C_A")
+      .withInputs({ wl_nm: wl_nm })
+      .withOutput(result, "dimensionless");
+    if (matchedRegion) {
+      sb.matchedEntry("/correction_factors/CA/regions/" + matchedIdx, matchedRegion);
+      if (matchedRegion.type === "constant") {
+        sb.withFormula("constant", "" + matchedRegion.value, { value: matchedRegion.value },
+          "" + matchedRegion.value);
+      } else if (matchedRegion.type === "power10") {
+        sb.withFormula("power10", "10^(coefficient * (wl - offset))",
+          { coefficient: matchedRegion.coefficient, offset_nm: matchedRegion.offset_nm },
+          "10^(" + matchedRegion.coefficient + " * (" + wl_nm + " - " + matchedRegion.offset_nm + "))");
       }
-    }
-    // Handle inclusive upper bound for last region
-    if (i === regions.length - 1 && wl_nm === r.wl_max_nm) {
-      if (r.type === "constant") return r.value;
-      if (r.type === "power10") {
-        return Math.pow(10, r.coefficient * (wl_nm - r.offset_nm));
-      }
+      sb.withDecision("CA region " + matchedIdx + " (" + matchedRegion.type + ")",
+        regions.length,
+        "wl_nm=" + wl_nm + " in [" + matchedRegion.wl_min_nm + ", " + matchedRegion.wl_max_nm + ")");
+    } else {
+      sb.withDecision("default (no region matched)", regions.length,
+        "wl_nm=" + wl_nm + " outside all CA regions, using default " + result);
     }
   }
-  return def.default_outside_range || 1;
+
+  return result;
 }
 
 /**
@@ -162,38 +433,65 @@ function getLargeAreaCorrection(wl_nm, t_s) {
 // UV discrete step lookup — evaluated from JSON data
 // Supports multiple lookup tables via the tableName parameter.
 // ═══════════════════════════════════════════════════════════════
-function uvDiscreteLookup(wl_nm, tableName) {
+function uvDiscreteLookup(wl_nm, tableName, trace) {
   var key = tableName || "uv_discrete_steps";
   if (!_std || !_std[key]) return NaN;
   var ds = _std[key];
   var steps = ds.steps;
+  var result = ds.fallback_H_J_cm2;
+  var matchedIdx = -1;
   for (var i = 0; i < steps.length; i++) {
-    if (wl_nm < steps[i].wl_upper_nm) return steps[i].H_J_cm2;
+    if (wl_nm < steps[i].wl_upper_nm) { result = steps[i].H_J_cm2; matchedIdx = i; break; }
   }
-  return ds.fallback_H_J_cm2;
+  if (trace) {
+    var sb = trace.step("uv_discrete_lookup", "UV discrete step lookup")
+      .withInputs({ wl_nm: wl_nm, table: key })
+      .withOutput(result, "J/cm2");
+    if (matchedIdx >= 0) {
+      sb.matchedEntry("/" + key + "/steps/" + matchedIdx, steps[matchedIdx])
+        .withDecision("Step " + matchedIdx + " (wl < " + steps[matchedIdx].wl_upper_nm + " nm)",
+          steps.length, "wl_nm=" + wl_nm + " < " + steps[matchedIdx].wl_upper_nm);
+    } else {
+      sb.withDecision("fallback", steps.length,
+        "wl_nm=" + wl_nm + " >= all step boundaries, using fallback " + result);
+    }
+  }
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Generic formula evaluator
 // ═══════════════════════════════════════════════════════════════
-function evalFormula(region, wl_nm, t) {
+function evalFormula(region, wl_nm, t, trace, regionPath) {
   var f = region.formula;
-  if (f === "constant")      return region.a;
-  if (f === "power")         return region.a * Math.pow(t, region.b);
-  if (f === "linear")        return region.a * t;
-  if (f === "ca_constant")   return region.a * CA(wl_nm);
-  if (f === "ca_power")      return region.a * CA(wl_nm) * Math.pow(t, region.b);
-  if (f === "ca_linear")     return region.a * CA(wl_nm) * t;
-  if (f === "discrete")      return uvDiscreteLookup(wl_nm, region.lookup);
-  if (f === "power_offset")  return region.a * Math.pow(t, region.b) + region.c;
-  return NaN;
+  var result, ca_val, subTrace;
+  if (f === "constant")      result = region.a;
+  else if (f === "power")    result = region.a * Math.pow(t, region.b);
+  else if (f === "linear")   result = region.a * t;
+  else if (f === "ca_constant") { subTrace = trace ? trace.subTracer() : null; ca_val = CA(wl_nm, subTrace); result = region.a * ca_val; }
+  else if (f === "ca_power")    { subTrace = trace ? trace.subTracer() : null; ca_val = CA(wl_nm, subTrace); result = region.a * ca_val * Math.pow(t, region.b); }
+  else if (f === "ca_linear")   { subTrace = trace ? trace.subTracer() : null; ca_val = CA(wl_nm, subTrace); result = region.a * ca_val * t; }
+  else if (f === "discrete")    { subTrace = trace ? trace.subTracer() : null; result = uvDiscreteLookup(wl_nm, region.lookup, subTrace); }
+  else if (f === "power_offset") result = region.a * Math.pow(t, region.b) + region.c;
+  else result = NaN;
+
+  if (trace) {
+    var sb = trace.step("formula_eval", "Evaluate MPE formula")
+      .withInputs({ wl_nm: wl_nm, t_s: t })
+      .withFormula(f, _formulaExpr(region), _formulaCoeffs(region), _formulaSubs(region, wl_nm, t, ca_val))
+      .withOutput(result, "J/cm2");
+    if (subTrace && subTrace.getSteps().length > 0) {
+      sb.withSubSteps(subTrace.getSteps());
+    }
+  }
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Evaluate a single set of duration regions for a given t
 // Returns NaN if t is outside all defined regions.
 // ═══════════════════════════════════════════════════════════════
-function evalRegions(regions, wl_nm, t) {
+function evalRegions(regions, wl_nm, t, trace, pathPrefix) {
   for (var i = 0; i < regions.length; i++) {
     var r = regions[i];
     // Check wavelength sub-filtering (used by UV photochemical)
@@ -201,12 +499,30 @@ function evalRegions(regions, wl_nm, t) {
       if (wl_nm < r.wl_min_nm || wl_nm >= r.wl_max_nm) continue;
     }
     if (t >= r.t_min_s && t < r.t_max_s) {
-      return evalFormula(r, wl_nm, t);
+      if (trace) {
+        var regionPath = (pathPrefix || "") + "/regions/" + i;
+        // Emit matched_entry without the full regions array — just the matched region
+        var entryValue = _deepCopy(r);
+        // Strip regions from band-level to keep the entry compact
+        trace.step("region_match", "Match duration region")
+          .matchedEntry(regionPath, entryValue)
+          .withInputs({ t_s: t, wl_nm: wl_nm })
+          .withDecision("Region " + i + ": [" + r.t_min_s + ", " + r.t_max_s + ") s",
+            regions.length, "t_s=" + t + " in [" + r.t_min_s + ", " + r.t_max_s + ")");
+      }
+      return evalFormula(r, wl_nm, t, trace, (pathPrefix || "") + "/regions/" + i);
     }
     // Below t_min: check for special handling
     if (t < r.t_min_s && r.below_t_min === "not_applicable") {
-      // Only match if wavelength is in range (for sub-filtered regions)
       if (r.wl_min_nm !== undefined && (wl_nm < r.wl_min_nm || wl_nm >= r.wl_max_nm)) continue;
+      if (trace) {
+        trace.step("region_match", "Duration below region minimum — not applicable")
+          .matchedEntry((pathPrefix || "") + "/regions/" + i, _deepCopy(r))
+          .withInputs({ t_s: t })
+          .withOutput(Infinity, "J/cm2")
+          .withDecision("not_applicable", regions.length,
+            "t_s=" + t + " < t_min_s=" + r.t_min_s + " with below_t_min=not_applicable");
+      }
       return Infinity;
     }
   }
@@ -217,20 +533,41 @@ function evalRegions(regions, wl_nm, t) {
 // Dual-limit band evaluation (e.g., UV: min of thermal and
 // photochemical). Returns the most restrictive finite value.
 // ═══════════════════════════════════════════════════════════════
-function evalDualLimit(band, wl_nm, t) {
-  var th = evalRegions(band.thermal.regions, wl_nm, t);
-  var pc = evalRegions(band.photochemical.regions, wl_nm, t);
+function evalDualLimit(band, wl_nm, t, trace, bandIndex) {
+  var thTrace = trace ? trace.subTracer() : null;
+  var pcTrace = trace ? trace.subTracer() : null;
+  var pathPrefix = "/bands/" + (bandIndex !== undefined ? bandIndex : "?");
+
+  var th = evalRegions(band.thermal.regions, wl_nm, t, thTrace, pathPrefix + "/thermal");
+  var pc = evalRegions(band.photochemical.regions, wl_nm, t, pcTrace, pathPrefix + "/photochemical");
   var a = isFinite(th), b = isFinite(pc);
-  if (a && b) return Math.min(th, pc);
-  if (a) return th;
-  if (b) return pc;
-  return NaN;
+  var result;
+  if (a && b) result = Math.min(th, pc);
+  else if (a) result = th;
+  else if (b) result = pc;
+  else result = NaN;
+
+  if (trace) {
+    var binding = (a && b) ? (th <= pc ? "thermal" : "photochemical") : (a ? "thermal" : (b ? "photochemical" : "none"));
+    var sb = trace.step("dual_limit_eval", "Evaluate dual-limit band (min of thermal, photochemical)")
+      .withInputs({ wl_nm: wl_nm, t_s: t, thermal_value: th, photochemical_value: pc })
+      .withOutput(result, "J/cm2")
+      .withDecision(binding + " is binding",
+        2, "min(thermal=" + th + ", photochemical=" + pc + ") = " + result);
+    // Attach sub-traces
+    var subSteps = [];
+    if (thTrace) subSteps = subSteps.concat(thTrace.getSteps());
+    if (pcTrace) subSteps = subSteps.concat(pcTrace.getSteps());
+    if (subSteps.length > 0) sb.withSubSteps(subSteps);
+  }
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Main dispatcher: skin MPE for any wavelength and duration
 // ═══════════════════════════════════════════════════════════════
-function skinMPE(wl_nm, t) {
+function skinMPE(wl_nm, t, trace) {
   if (!_std) return NaN;
   var bands = _std.bands;
   for (var i = 0; i < bands.length; i++) {
@@ -242,11 +579,28 @@ function skinMPE(wl_nm, t) {
     }
     if (!inBand) continue;
 
+    // ── TRACE: band match ──
+    if (trace) {
+      // Copy band metadata without the full regions arrays (kept compact)
+      var bandMeta = { name: band.name, wl_min_nm: band.wl_min_nm, wl_max_nm: band.wl_max_nm, mode: band.mode };
+      if (band.note) bandMeta.note = band.note;
+      trace.step("band_match", "Match wavelength band")
+        .matchedEntry("/bands/" + i, bandMeta)
+        .withInputs({ wl_nm: wl_nm })
+        .withDecision(band.name, bands.length,
+          "wl_nm=" + wl_nm + " in [" + band.wl_min_nm + ", " + band.wl_max_nm + ")");
+
+      trace.step("mode_dispatch", "Select evaluation mode")
+        .withInputs({ mode: band.mode })
+        .withDecision(band.mode, 2,
+          "Band mode is '" + band.mode + "'" + (band.mode === "dual_limit" ? " (min of thermal, photochemical)" : " (single region set)"));
+    }
+
     if (band.mode === "dual_limit") {
-      return evalDualLimit(band, wl_nm, t);
+      return evalDualLimit(band, wl_nm, t, trace, i);
     }
     // Single-mode band: just evaluate the duration regions
-    return evalRegions(band.regions, wl_nm, t);
+    return evalRegions(band.regions, wl_nm, t, trace, "/bands/" + i);
   }
   return NaN;
 }
@@ -255,19 +609,54 @@ function skinMPE(wl_nm, t) {
 // Repetitive pulse: Rules 1 and 2 (skin only, no Rule 3)
 // This logic is standard-independent.
 // ═══════════════════════════════════════════════════════════════
-function repPulse(wl_nm, tau, prf, T) {
+function repPulse(wl_nm, tau, prf, T, trace) {
   if (!isFinite(prf) || prf < 0 || !isFinite(T) || T <= 0) {
     return { rule1: NaN, rule2: NaN, H: NaN, N: 0, binding: "Invalid" };
   }
-  var rule1 = skinMPE(wl_nm, tau);
-  var htotal = skinMPE(wl_nm, T);
+  var r1Trace = trace ? trace.subTracer() : null;
+  var rule1 = skinMPE(wl_nm, tau, r1Trace);
+
+  var r2Trace = trace ? trace.subTracer() : null;
+  var htotal = skinMPE(wl_nm, T, r2Trace);
   var N = prf * T;
+
   if (N <= 1) {
+    if (trace) {
+      trace.step("rep_pulse_rule1", "Rule 1: single-pulse MPE")
+        .withInputs({ wl_nm: wl_nm, tau_s: tau })
+        .withOutput(rule1, "J/cm2")
+        .withSubSteps(r1Trace.getSteps());
+      trace.step("rep_pulse_select", "Select binding rule (N <= 1, single pulse)")
+        .withInputs({ N: N, rule1: rule1 })
+        .withOutput(rule1, "J/cm2")
+        .withDecision("Rule 1", 1, "N=" + N + " <= 1, only Rule 1 applies");
+    }
     return { rule1: rule1, rule2: rule1, H: rule1, N: N, binding: "Rule 1" };
   }
+
   var rule2 = htotal / N;
   var H = Math.min(rule1, rule2);
   var binding = rule1 <= rule2 ? "Rule 1" : "Rule 2";
+
+  if (trace) {
+    trace.step("rep_pulse_rule1", "Rule 1: single-pulse MPE")
+      .withInputs({ wl_nm: wl_nm, tau_s: tau })
+      .withOutput(rule1, "J/cm2")
+      .withSubSteps(r1Trace.getSteps());
+
+    trace.step("rep_pulse_rule2", "Rule 2: cumulative MPE / N")
+      .withInputs({ wl_nm: wl_nm, T_s: T, prf_hz: prf, N: N, H_total: htotal })
+      .withFormula("division", "H_total / N", { H_total: htotal, N: N }, htotal + " / " + N)
+      .withOutput(rule2, "J/cm2")
+      .withSubSteps(r2Trace.getSteps());
+
+    trace.step("rep_pulse_select", "Select binding rule (most restrictive)")
+      .withInputs({ rule1: rule1, rule2: rule2, N: N })
+      .withOutput(H, "J/cm2")
+      .withDecision(binding, 2,
+        "min(Rule1=" + rule1 + ", Rule2=" + rule2 + ") = " + H + " (" + binding + ")");
+  }
+
   return { rule1: rule1, rule2: rule2, H: H, N: N, binding: binding };
 }
 
@@ -325,13 +714,46 @@ function largeAreaIrradianceLimit(wl_nm, t_s, area_cm2) {
  * @param {number} area_cm2 - Beam cross-sectional area in cm²
  * @returns {number} MPE in J/cm²
  */
-function skinMPE_area(wl_nm, t, area_cm2) {
-  var H_standard = skinMPE(wl_nm, t);
-  if (!isFinite(area_cm2) || area_cm2 <= 0) return H_standard;
+function skinMPE_area(wl_nm, t, area_cm2, trace) {
+  var mpeTrace = trace ? trace.subTracer() : null;
+  var H_standard = skinMPE(wl_nm, t, mpeTrace);
+  if (!isFinite(area_cm2) || area_cm2 <= 0) {
+    if (trace) {
+      trace.step("area_select", "No area correction (area not provided)")
+        .withInputs({ wl_nm: wl_nm, t_s: t, area_cm2: area_cm2 })
+        .withOutput(H_standard, "J/cm2")
+        .withDecision("standard MPE only", 1, "area_cm2 <= 0 or not finite")
+        .withSubSteps(mpeTrace ? mpeTrace.getSteps() : []);
+    }
+    return H_standard;
+  }
   var E_limit = largeAreaIrradianceLimit(wl_nm, t, area_cm2);
-  if (!isFinite(E_limit)) return H_standard;
-  var H_area = E_limit * t; // irradiance limit × duration = fluence limit (J/cm²)
-  return Math.min(H_standard, H_area);
+  if (!isFinite(E_limit)) {
+    if (trace) {
+      trace.step("area_select", "Large-area correction does not apply")
+        .withInputs({ wl_nm: wl_nm, t_s: t, area_cm2: area_cm2, irradiance_limit: E_limit })
+        .withOutput(H_standard, "J/cm2")
+        .withDecision("standard MPE only", 1, "large-area irradiance limit is not finite (below threshold)")
+        .withSubSteps(mpeTrace ? mpeTrace.getSteps() : []);
+    }
+    return H_standard;
+  }
+  var H_area = E_limit * t;
+  var result = Math.min(H_standard, H_area);
+  if (trace) {
+    var binding = H_standard <= H_area ? "standard MPE" : "area-corrected MPE";
+    trace.step("area_correction", "Compute large-area irradiance limit")
+      .withInputs({ wl_nm: wl_nm, t_s: t, area_cm2: area_cm2, irradiance_Wcm2: E_limit })
+      .withFormula("multiplication", "E_limit * t", { E_limit: E_limit, t: t }, E_limit + " * " + t)
+      .withOutput(H_area, "J/cm2");
+    trace.step("area_select", "Select min(standard MPE, area-corrected MPE)")
+      .withInputs({ H_standard: H_standard, H_area: H_area })
+      .withOutput(result, "J/cm2")
+      .withDecision(binding, 2,
+        "min(standard=" + H_standard + ", area=" + H_area + ") = " + result)
+      .withSubSteps(mpeTrace ? mpeTrace.getSteps() : []);
+  }
+  return result;
 }
 
 /**
@@ -345,14 +767,15 @@ function skinMPE_area(wl_nm, t, area_cm2) {
  * @param {number} prf - Pulse repetition frequency in Hz
  * @param {number} T - Total exposure duration in seconds
  * @param {number} area_cm2 - Beam cross-sectional area in cm²
+ * @param {Object} [trace] - Optional tracer
  * @returns {Object} { rule1, rule2, H, N, binding }
  */
-function repPulse_area(wl_nm, tau, prf, T, area_cm2) {
+function repPulse_area(wl_nm, tau, prf, T, area_cm2, trace) {
   if (!isFinite(prf) || prf < 0 || !isFinite(T) || T <= 0) {
     return { rule1: NaN, rule2: NaN, H: NaN, N: 0, binding: "Invalid" };
   }
-  var rule1 = skinMPE(wl_nm, tau); // single pulse: no area correction
-  var htotal = skinMPE_area(wl_nm, T, area_cm2); // cumulative: area-corrected
+  var rule1 = skinMPE(wl_nm, tau, trace ? trace.subTracer() : null); // single pulse: no area correction
+  var htotal = skinMPE_area(wl_nm, T, area_cm2, trace ? trace.subTracer() : null); // cumulative: area-corrected
   var N = prf * T;
   if (N <= 1) {
     return { rule1: rule1, rule2: rule1, H: rule1, N: N, binding: "Rule 1" };
@@ -453,7 +876,7 @@ function getAperture(wl_nm) {
   return regs[regs.length - 1].diameter_mm;
 }
 
-function beamEval(wl_nm, beam_dia_mm) {
+function beamEval(wl_nm, beam_dia_mm, trace) {
   var d_ap = getAperture(wl_nm);
   if (!isFinite(beam_dia_mm) || beam_dia_mm <= 0) {
     return { d_eval_mm: 0, area_cm2: 0, regime: "invalid", aperture_mm: d_ap };
@@ -478,6 +901,18 @@ function beamEval(wl_nm, beam_dia_mm) {
 
   var r_cm = d_eval / 20; // mm → cm radius
   var area_cm2 = Math.PI * r_cm * r_cm;
+
+  if (trace) {
+    trace.step("beam_eval", "Evaluate beam geometry and limiting aperture")
+      .withInputs({ wl_nm: wl_nm, beam_dia_mm: beam_dia_mm, aperture_mm: d_ap, threshold_mm: threshold })
+      .withOutput(area_cm2, "cm2")
+      .withDecision(regime, 3,
+        "d=" + d + "mm: " + (regime === "actual_sub_threshold" ? "d < threshold (" + threshold + "mm), use actual beam" :
+        regime === "aperture_averaged" ? "threshold <= d < aperture (" + d_ap + "mm), average over aperture" :
+        "d >= aperture (" + d_ap + "mm), use actual beam") +
+        " -> d_eval=" + d_eval + "mm, area=" + area_cm2.toExponential(4) + " cm2");
+  }
+
   return { d_eval_mm: d_eval, area_cm2: area_cm2, regime: regime, aperture_mm: d_ap, threshold_mm: threshold };
 }
 
@@ -2683,6 +3118,7 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     loadStandard: loadStandard,
     getStandard: getStandard,
     getValidationErrors: getValidationErrors,
+    createTracer: createTracer,
     CA: CA,
     isInCARange: isInCARange,
     isIrrPrimary: isIrrPrimary,
@@ -2750,6 +3186,7 @@ if (typeof module !== "undefined" && module.exports && typeof require === "funct
     getLargeAreaCorrection: getLargeAreaCorrection,
     largeAreaIrradianceLimit: largeAreaIrradianceLimit,
     getValidationErrors: getValidationErrors,
+    createTracer: createTracer,
     skinMPE: skinMPE,
     skinMPE_area: skinMPE_area,
     repPulse: repPulse,

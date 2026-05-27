@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://cbort-ncbib.github.io/MPE-Calculator-Skin/mpe-trace-1.0.schema.json",
+  "title": "MPE Trace Document",
+  "description": "Computation trace for a laser safety MPE calculation. Schema version 1.0.",
+  "type": "object",
+  "required": ["trace_schema", "trace_id", "standard_snapshot", "engine", "timestamp", "inputs", "steps", "result"],
+  "properties": {
+    "trace_schema": { "const": "mpe-trace-1.0" },
+    "trace_id": { "type": "string" },
+    "standard_snapshot": { "$ref": "#/$defs/StandardSnapshot" },
+    "engine": { "$ref": "#/$defs/EngineInfo" },
+    "timestamp": { "type": "string" },
+    "inputs": { "type": "object" },
+    "steps": { "type": "array", "items": { "$ref": "#/$defs/TraceStep" }, "minItems": 1 },
+    "result": { "type": "object" }
+  },
+  "$defs": {
+    "StandardSnapshot": {
+      "type": "object",
+      "required": ["sha256", "byte_length", "metadata"],
+      "properties": {
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "byte_length": { "type": "integer", "minimum": 0 },
+        "filename": { "type": ["string", "null"] },
+        "metadata": { "type": "object" }
+      }
+    },
+    "EngineInfo": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string" },
+        "version": { "type": "string" },
+        "build_hash": { "type": ["string", "null"] }
+      }
+    },
+    "TraceStep": {
+      "type": "object",
+      "required": ["step_id", "step_type", "label"],
+      "properties": {
+        "step_id": { "type": "string" },
+        "step_type": {
+          "type": "string",
+          "enum": [
+            "band_match", "mode_dispatch", "region_match", "formula_eval",
+            "ca_lookup", "uv_discrete_lookup", "dual_limit_eval",
+            "rep_pulse_rule1", "rep_pulse_rule2", "rep_pulse_select",
+            "beam_eval", "area_correction", "area_select"
+          ]
+        },
+        "label": { "type": "string" },
+        "matched_entry": { "$ref": "#/$defs/MatchedEntry" },
+        "inputs": { "type": "object" },
+        "formula": { "$ref": "#/$defs/FormulaRecord" },
+        "output": { "$ref": "#/$defs/OutputRecord" },
+        "decision": { "$ref": "#/$defs/DecisionRecord" },
+        "sub_steps": { "type": "array", "items": { "$ref": "#/$defs/TraceStep" } }
+      }
+    },
+    "MatchedEntry": {
+      "type": "object",
+      "required": ["path", "value"],
+      "properties": {
+        "path": { "type": "string" },
+        "value": { "type": "object" }
+      }
+    },
+    "FormulaRecord": {
+      "type": "object",
+      "required": ["type", "expression"],
+      "properties": {
+        "type": { "type": "string" },
+        "expression": { "type": "string" },
+        "coefficients": { "type": "object" },
+        "substituted": { "type": "string" }
+      }
+    },
+    "OutputRecord": {
+      "type": "object",
+      "required": ["value", "unit"],
+      "properties": {
+        "value": { "type": "number" },
+        "unit": { "type": "string" }
+      }
+    },
+    "DecisionRecord": {
+      "type": "object",
+      "required": ["chosen", "rationale"],
+      "properties": {
+        "chosen": { "type": "string" },
+        "alternatives_count": { "type": "integer", "minimum": 1 },
+        "rationale": { "type": "string" }
+      }
+    }
+  }
+}
