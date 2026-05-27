@@ -1055,6 +1055,7 @@ function MPETab(p){
   var _nw=useState(""),nw=_nw[0],setNw=_nw[1];
   var _cv=useState(0),cv=_cv[0],setCv=_cv[1];
   var _dr=useState(false),dirty=_dr[0],setDirty=_dr[1];
+  var _trDoc=useState(null),traceDoc=_trDoc[0],setTraceDoc=_trDoc[1];
   var _bd=useState("5"),bdStr=_bd[0],setBdStr=_bd[1];
   var _bn=useState(5),beamDia=_bn[0],setBeamDia=_bn[1];
   var _bdu=useState("mm"),bdUnit=_bdu[0],setBdUnit=_bdu[1];
@@ -1087,7 +1088,7 @@ function MPETab(p){
   var tdSt={padding:"7px 10px",fontSize:12,fontFamily:"'IBM Plex Mono', monospace"};
   var hSel={fontSize:9,padding:"2px 6px",background:T.card,border:"1px solid "+T.bd,borderRadius:4,color:T.tx,cursor:"pointer",fontWeight:600,outline:"none"};
 
-  function calc(){setCv(function(c){return c+1;});setDirty(false);setBeamDirty(false);}
+  function calc(){setCv(function(c){return c+1;});setDirty(false);setBeamDirty(false);setTraceDoc(null);}
   function beamCalc(){setBeamDirty(false);}
   useEffect(function(){calc();},[]);
   function upL(id,k,v){setLasers(lasers.map(function(L){if(L.id!==id)return L;var n={id:L.id,wl:L.wl,wlStr:L.wlStr,wlU:L.wlU,ds:L.ds,dur:L.dur,dU:L.dU,rp:L.rp,prf:L.prf,prfStr:L.prfStr,prfU:L.prfU,tT:L.tT,tTStr:L.tTStr,tTU:L.tTU,show:L.show,fU:L.fU,eU:L.eU};n[k]=v;if(k==="wlStr"){var wv=Number(v)*uMult(WL_UNITS,n.wlU).toNM;if(isFinite(wv)&&wv>=180&&wv<=1e6)n.wl=wv;}if(k==="wlU"){var cWl=parseFloat(n.wlStr);if(isFinite(cWl)){var nmVal=cWl*uMult(WL_UNITS,L.wlU).toNM;n.wlStr=(nmVal/uMult(WL_UNITS,v).toNM).toPrecision(6).replace(/\.?0+$/,"");}n.wlU=v;}if(k==="ds"){var d=pDur(v);if(d)n.dur=d*uMult(DUR_UNITS,n.dU).toS;}if(k==="dU"){var cD=parseFloat(n.ds);if(isFinite(cD)&&cD>0){var sVal=cD*uMult(DUR_UNITS,L.dU).toS;n.ds=(sVal/uMult(DUR_UNITS,v).toS).toPrecision(4).replace(/\.?0+$/,"");}n.dU=v;var d2=parseFloat(n.ds);if(d2>0)n.dur=d2*uMult(DUR_UNITS,v).toS;}if(k==="prfStr"){n.prfStr=v;var pp=Number(v)*uMult(FREQ_UNITS,n.prfU).toHz;if(isFinite(pp)&&pp>0)n.prf=pp;}if(k==="prfU"){var cP=parseFloat(n.prfStr);if(isFinite(cP)&&cP>0){var hzVal=cP*uMult(FREQ_UNITS,L.prfU).toHz;n.prfStr=(hzVal/uMult(FREQ_UNITS,v).toHz).toPrecision(4).replace(/\.?0+$/,"");}n.prfU=v;var p2=parseFloat(n.prfStr);if(p2>0)n.prf=p2*uMult(FREQ_UNITS,v).toHz;}if(k==="tTStr"){n.tTStr=v;var tt=Number(v)*uMult(DUR_UNITS,n.tTU).toS;if(isFinite(tt)&&tt>0)n.tT=tt;}if(k==="tTU"){var cT=parseFloat(n.tTStr);if(isFinite(cT)&&cT>0){var sVal2=cT*uMult(DUR_UNITS,L.tTU).toS;n.tTStr=(sVal2/uMult(DUR_UNITS,v).toS).toPrecision(4).replace(/\.?0+$/,"");}n.tTU=v;var t2=parseFloat(n.tTStr);if(t2>0)n.tT=t2*uMult(DUR_UNITS,v).toS;}return n;}));setDirty(true);}
@@ -1420,6 +1421,8 @@ function MPETab(p){
           <td style={tdSt}>{r.rule}</td>
         </tr>);})}</tbody></table></div>
       </div>
+      {/* ── Computation Trace ── */}
+      {renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var L=lasers[0]; if(!L)return; if(L.rp&&L.prf>0&&L.tT>0){_E.repPulse(L.wl, L.dur, L.prf, L.tT, tr); setTraceDoc(tr.finalize({wl_nm:L.wl, dur_s:L.dur, prf_hz:L.prf, T_s:L.tT, pipeline:"repPulse"}, {effH:results[0].effH, rule:results[0].rule}));}else{var mpe=_E.skinMPE(L.wl, L.dur, tr); setTraceDoc(tr.finalize({wl_nm:L.wl, dur_s:L.dur, pipeline:"skinMPE"}, {mpe_Jcm2:mpe}));} })}
       {/* Charts */}
       <div style={{background:T.card,borderRadius:6,border:"1px solid "+T.bd,padding:"14px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:8}}>
@@ -3489,6 +3492,7 @@ function OCTScanContent(p){
   var _res=useState(null),res=_res[0],setRes=_res[1];
   var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
   var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
+  var _trDoc=useState(null),traceDoc=_trDoc[0],setTraceDoc=_trDoc[1];
 
   /* Scan visualization feature toggles */
   var _svGrid=useState(true),svGrid=_svGrid[0],setSvGrid=_svGrid[1];
@@ -4028,7 +4032,7 @@ function OCTScanContent(p){
       effVel=lineL*(pat==="linear"?1:nLines)*frateN;
       if(!isFinite(effVel)||effVel<=0){alert("Invalid frame rate or scan parameters");return;}
     }
-    setCmp(true);setDirty(false);setPerfNote("");
+    setCmp(true);setDirty(false);setPerfNote("");setTraceDoc(null);
 
     // ── Custom-path LSP: bypass parametric segment-building and use the
     //    LSP's engine segments directly via main-thread computation.
@@ -5302,6 +5306,8 @@ function OCTScanContent(p){
           </div>
         </div>;
       })()}
+    {/* ── Computation Trace ── */}
+    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp=lspState.customPath?null:{v_mm_s:vel, line_spacing_mm:hatch, n_lines:nLines}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
     </div>:null}
 
     {/* ── Point Timing Visualization ── */}
@@ -5370,6 +5376,7 @@ function PAScanContent(p){
   var _res=useState(null),res=_res[0],setRes=_res[1];
   var _cmp=useState(false),cmp=_cmp[0],setCmp=_cmp[1];
   var _dirty=useState(true),dirty=_dirty[0],setDirty=_dirty[1];
+  var _trDoc=useState(null),traceDoc=_trDoc[0],setTraceDoc=_trDoc[1];
 
   /* Scan visualization feature toggles */
   var _svGrid=useState(true),svGrid=_svGrid[0],setSvGrid=_svGrid[1];
@@ -5909,7 +5916,7 @@ function PAScanContent(p){
       effVel=lineL*(pat==="linear"?1:nLines)*frateN;
       if(!isFinite(effVel)||effVel<=0){alert("Invalid frame rate or scan parameters");return;}
     }
-    setCmp(true);setDirty(false);setPerfNote("");
+    setCmp(true);setDirty(false);setPerfNote("");setTraceDoc(null);
 
     // ── Custom-path LSP: bypass parametric segment-building and use the
     //    LSP's engine segments directly via main-thread computation.
@@ -7289,6 +7296,8 @@ function PAScanContent(p){
           </div>
         </div>;
       })()}
+    {/* ── Computation Trace ── */}
+    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp=lspState.customPath?null:{v_mm_s:vel, line_spacing_mm:hatch, n_lines:nLines}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
     </div>:null}
 
     {/* ── Point Timing Visualization ── */}
