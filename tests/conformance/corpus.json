@@ -1,0 +1,1164 @@
+{
+  "generated_by": "generate_conformance.mjs",
+  "generated_at": "2026-05-27T21:48:38.810Z",
+  "engine_version": "mpe-engine-js",
+  "standard": "icnirp_2013.json",
+  "tolerance_note": "Relative tolerance. Use 0 for exact match (integer or known-constant results).",
+  "count": 101,
+  "cases": [
+    {
+      "id": "C000",
+      "description": "CA: below 400nm (outside range)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 300
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C001",
+      "description": "CA: 400nm (constant region start)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 400
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C002",
+      "description": "CA: 500nm (constant region mid)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 500
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C003",
+      "description": "CA: 699nm (constant region end)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 699
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C004",
+      "description": "CA: 700nm (boundary constant/power10)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 700
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C005",
+      "description": "CA: 700.001nm (just inside power10)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 700.001
+      },
+      "expected": 1.0000046051807896,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C006",
+      "description": "CA: 800nm (power10 mid)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 800
+      },
+      "expected": 1.5848931924611136,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C007",
+      "description": "CA: 1050nm (power10 boundary)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 1050
+      },
+      "expected": 5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C008",
+      "description": "CA: 1050.001nm (just inside last CA region)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 1050.001
+      },
+      "expected": 5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C009",
+      "description": "CA: 1200nm (last region)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 1200
+      },
+      "expected": 5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C010",
+      "description": "CA: 1400nm (last region upper bound)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 1400
+      },
+      "expected": 5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C011",
+      "description": "CA: 1500nm (outside range, above)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 1500
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C012",
+      "description": "CA: 200nm (outside range, below)",
+      "function": "ca",
+      "inputs": {
+        "wl_nm": 200
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C013",
+      "description": "UV thermal: 250nm, 1ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 250,
+        "t_s": 1e-9
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C014",
+      "description": "UV thermal: 250nm, 1us",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 250,
+        "t_s": 0.000001
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C015",
+      "description": "UV thermal: 250nm, 1ms",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 250,
+        "t_s": 0.001
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C016",
+      "description": "UV thermal: 250nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 250,
+        "t_s": 1
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C017",
+      "description": "UV thermal: 250nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 250,
+        "t_s": 100
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C018",
+      "description": "UV thermal: 250nm, 30000s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 250,
+        "t_s": 30000
+      },
+      "expected": null,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C019",
+      "description": "UV photochem: 300nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 300,
+        "t_s": 100
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C020",
+      "description": "UV photochem: 305nm, 100s (discrete)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 305,
+        "t_s": 100
+      },
+      "expected": 0.016,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C021",
+      "description": "UV photochem: 310nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 310,
+        "t_s": 100
+      },
+      "expected": 0.16,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C022",
+      "description": "UV photochem: 315nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 315,
+        "t_s": 100
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C023",
+      "description": "UV dual: 320nm, 1s (photochem N/A)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 320,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C024",
+      "description": "UV dual: 350nm, 0.1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 350,
+        "t_s": 0.1
+      },
+      "expected": 0.3149111421065955,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C025",
+      "description": "UV dual: 390nm, 0.001s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 390,
+        "t_s": 0.001
+      },
+      "expected": 0.09958364696217968,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C026",
+      "description": "UV boundary: 180nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 180,
+        "t_s": 1
+      },
+      "expected": 0.003,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C027",
+      "description": "UV boundary: 399nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 399,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C028",
+      "description": "Vis/NIR: 400nm, 1ns (ca_constant)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 400,
+        "t_s": 1e-9
+      },
+      "expected": 0.02,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C029",
+      "description": "Vis/NIR: 532nm, 1ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 1e-9
+      },
+      "expected": 0.02,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C030",
+      "description": "Vis/NIR: 532nm, 100ns (ca_power)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 1e-7
+      },
+      "expected": 0.019561073510428153,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C031",
+      "description": "Vis/NIR: 532nm, 1us",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 0.000001
+      },
+      "expected": 0.034785054261852175,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C032",
+      "description": "Vis/NIR: 532nm, 1ms",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 0.001
+      },
+      "expected": 0.1956107351042815,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C033",
+      "description": "Vis/NIR: 532nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 1
+      },
+      "expected": 1.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C034",
+      "description": "Vis/NIR: 532nm, 10s (ca_linear)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 10
+      },
+      "expected": 2,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C035",
+      "description": "Vis/NIR: 532nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 100
+      },
+      "expected": 20,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C036",
+      "description": "Vis/NIR: 800nm, 1ns (ca_constant, CA>1)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 800,
+        "t_s": 1e-9
+      },
+      "expected": 0.031697863849222276,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C037",
+      "description": "Vis/NIR: 800nm, 1us (ca_power, CA>1)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 800,
+        "t_s": 0.000001
+      },
+      "expected": 0.05513059569899995,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C038",
+      "description": "Vis/NIR: 800nm, 1s (ca_power, CA>1)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 800,
+        "t_s": 1
+      },
+      "expected": 1.743382511707225,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C039",
+      "description": "Vis/NIR: 800nm, 10s (ca_linear, CA>1)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 800,
+        "t_s": 10
+      },
+      "expected": 3.1697863849222276,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C040",
+      "description": "Vis/NIR: 1064nm, 1e-8s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 1e-8
+      },
+      "expected": 0.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C041",
+      "description": "Vis/NIR: 1064nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 1
+      },
+      "expected": 5.5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C042",
+      "description": "Vis/NIR: 1064nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 100
+      },
+      "expected": 100,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C043",
+      "description": "Vis/NIR: 1310nm, 0.005s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1310,
+        "t_s": 0.005
+      },
+      "expected": 1.462531371659872,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C044",
+      "description": "Vis/NIR: 1310nm, 10s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1310,
+        "t_s": 10
+      },
+      "expected": 10,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C045",
+      "description": "FIR 1400-1500: 1400nm, 1ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1400,
+        "t_s": 1e-9
+      },
+      "expected": 0.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C046",
+      "description": "FIR 1400-1500: 1450nm, 1us",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1450,
+        "t_s": 0.000001
+      },
+      "expected": 0.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C047",
+      "description": "FIR 1400-1500: 1450nm, 1ms",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1450,
+        "t_s": 0.001
+      },
+      "expected": 0.09958364696217968,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C048",
+      "description": "FIR 1400-1500: 1450nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1450,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C049",
+      "description": "FIR 1400-1500: 1450nm, 10s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1450,
+        "t_s": 10
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C050",
+      "description": "FIR 1500-1800: 1550nm, 1ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1550,
+        "t_s": 1e-9
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C051",
+      "description": "FIR 1500-1800: 1550nm, 1us",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1550,
+        "t_s": 0.000001
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C052",
+      "description": "FIR 1500-1800: 1550nm, 1ms",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1550,
+        "t_s": 0.001
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C053",
+      "description": "FIR 1500-1800: 1550nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1550,
+        "t_s": 1
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C054",
+      "description": "FIR 1500-1800: 1550nm, 10s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1550,
+        "t_s": 10
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C055",
+      "description": "FIR 1800-2600: 2000nm, 1ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 1e-9
+      },
+      "expected": 0.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C056",
+      "description": "FIR 1800-2600: 2000nm, 1us",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 0.000001
+      },
+      "expected": 0.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C057",
+      "description": "FIR 1800-2600: 2000nm, 1ms",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 0.001
+      },
+      "expected": 0.09958364696217968,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C058",
+      "description": "FIR 1800-2600: 2000nm, 0.005s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 0.005
+      },
+      "expected": 0.1489122851144597,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C059",
+      "description": "FIR 1800-2600: 2000nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C060",
+      "description": "FIR 1800-2600: 2000nm, 10s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 10
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C061",
+      "description": "FIR 1800-2600: 2000nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 100
+      },
+      "expected": 10,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C062",
+      "description": "FIR 2600+: 3000nm, 1ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 3000,
+        "t_s": 1e-9
+      },
+      "expected": 0.01,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C063",
+      "description": "FIR 2600+: 3000nm, 1us",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 3000,
+        "t_s": 0.000001
+      },
+      "expected": 0.017708754896942926,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C064",
+      "description": "FIR 2600+: 3000nm, 1ms",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 3000,
+        "t_s": 0.001
+      },
+      "expected": 0.09958364696217968,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C065",
+      "description": "FIR 2600+: 3000nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 3000,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C066",
+      "description": "FIR 2600+: 3000nm, 10s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 3000,
+        "t_s": 10
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C067",
+      "description": "FIR 2600+: 10600nm (CO2), 0.1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 10600,
+        "t_s": 0.1
+      },
+      "expected": 0.3149111421065955,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C068",
+      "description": "FIR 2600+: 100000nm, 1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 100000,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C069",
+      "description": "FIR 2600+: 1000000nm (last band upper bound), 10s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1000000,
+        "t_s": 10
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C070",
+      "description": "Boundary: 400nm → Vis/NIR",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 400,
+        "t_s": 1
+      },
+      "expected": 1.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C071",
+      "description": "Boundary: 1399nm → Vis/NIR",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1399,
+        "t_s": 1
+      },
+      "expected": 5.5,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C072",
+      "description": "Boundary: 1400nm → FIR 1400-1500",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1400,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C073",
+      "description": "Boundary: 1499nm → FIR 1400-1500",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1499,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C074",
+      "description": "Boundary: 1500nm → FIR 1500-1800",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1500,
+        "t_s": 1
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C075",
+      "description": "Boundary: 1799nm → FIR 1500-1800",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1799,
+        "t_s": 1
+      },
+      "expected": 1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C076",
+      "description": "Boundary: 1800nm → FIR 1800-2600",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1800,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C077",
+      "description": "Boundary: 2599nm → FIR 1800-2600",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2599,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C078",
+      "description": "Boundary: 2600nm → FIR 2600+",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2600,
+        "t_s": 1
+      },
+      "expected": 0.56,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C079",
+      "description": "Region boundary: 1064nm, t=1e-9 (region 0 start)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 1e-9
+      },
+      "expected": 0.1,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C080",
+      "description": "Region boundary: 1064nm, t=1e-7 (region 0/1 boundary)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 1e-7
+      },
+      "expected": 0.09780536755214075,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C081",
+      "description": "Region boundary: 1064nm, t=10 (region 1/2 boundary)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 10
+      },
+      "expected": 10,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C082",
+      "description": "RepPulse: 1064nm, 10ns, 100kHz, 1s (Rule 2 binding)",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 1064,
+        "tau_s": 1e-8,
+        "prf_hz": 100000,
+        "T_s": 1
+      },
+      "expected": {
+        "rule1": 0.1,
+        "rule2": 0.000055,
+        "H": 0.000055,
+        "N": 100000,
+        "binding": "Rule 2"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C083",
+      "description": "RepPulse: 1064nm, 10ns, 10Hz, 1s (Rule 1 binding)",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 1064,
+        "tau_s": 1e-8,
+        "prf_hz": 10,
+        "T_s": 1
+      },
+      "expected": {
+        "rule1": 0.1,
+        "rule2": 0.55,
+        "H": 0.1,
+        "N": 10,
+        "binding": "Rule 1"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C084",
+      "description": "RepPulse: 1064nm, 10ns, 0.5Hz, 1s (N<1)",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 1064,
+        "tau_s": 1e-8,
+        "prf_hz": 0.5,
+        "T_s": 1
+      },
+      "expected": {
+        "rule1": 0.1,
+        "rule2": 0.1,
+        "H": 0.1,
+        "N": 0.5,
+        "binding": "Rule 1"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C085",
+      "description": "RepPulse: 532nm, 1ns, 10kHz, 0.5s",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 532,
+        "tau_s": 1e-9,
+        "prf_hz": 10000,
+        "T_s": 0.5
+      },
+      "expected": {
+        "rule1": 0.02,
+        "rule2": 0.00018499721135581724,
+        "H": 0.00018499721135581724,
+        "N": 5000,
+        "binding": "Rule 2"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C086",
+      "description": "RepPulse: 2000nm, 10ns, 200kHz, 1s",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 2000,
+        "tau_s": 1e-8,
+        "prf_hz": 200000,
+        "T_s": 1
+      },
+      "expected": {
+        "rule1": 0.1,
+        "rule2": 0.0000028000000000000003,
+        "H": 0.0000028000000000000003,
+        "N": 200000,
+        "binding": "Rule 2"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C087",
+      "description": "RepPulse: 1310nm, 10ns, 200kHz, 0.01s",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 1310,
+        "tau_s": 1e-8,
+        "prf_hz": 200000,
+        "T_s": 0.01
+      },
+      "expected": {
+        "rule1": 0.1,
+        "rule2": 0.0008696263565463044,
+        "H": 0.0008696263565463044,
+        "N": 2000,
+        "binding": "Rule 2"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C088",
+      "description": "RepPulse: 355nm, 10ns, 1kHz, 10s",
+      "function": "rep_pulse",
+      "inputs": {
+        "wl_nm": 355,
+        "tau_s": 1e-8,
+        "prf_hz": 1000,
+        "T_s": 10
+      },
+      "expected": {
+        "rule1": 0.005600000000000001,
+        "rule2": 0.0001,
+        "H": 0.0001,
+        "N": 10000,
+        "binding": "Rule 2"
+      },
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C089",
+      "description": "Edge: 179nm (below range)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 179,
+        "t_s": 1
+      },
+      "expected": null,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C090",
+      "description": "Edge: 1000001nm (above range)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1000001,
+        "t_s": 1
+      },
+      "expected": null,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C091",
+      "description": "Edge: 532nm, t=1e-10 (below min duration)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 1e-10
+      },
+      "expected": null,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C092",
+      "description": "Edge: 532nm, t=31000s (above max duration)",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 532,
+        "t_s": 31000
+      },
+      "expected": null,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C093",
+      "description": "Mid-band: 600nm, 50ns",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 600,
+        "t_s": 5e-8
+      },
+      "expected": 0.02,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C094",
+      "description": "Mid-band: 900nm, 5s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 900,
+        "t_s": 5
+      },
+      "expected": 4.131760945316369,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C095",
+      "description": "Mid-band: 1100nm, 0.5s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1100,
+        "t_s": 0.5
+      },
+      "expected": 4.624930283895431,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C096",
+      "description": "Mid-band: 1300nm, 5000s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1300,
+        "t_s": 5000
+      },
+      "expected": 5000,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C097",
+      "description": "Mid-band: 3500nm, 0.01s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 3500,
+        "t_s": 0.01
+      },
+      "expected": 0.17708754896942927,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C098",
+      "description": "Mid-band: 50000nm, 100s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 50000,
+        "t_s": 100
+      },
+      "expected": 10,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C099",
+      "description": "Mid-band: 1064nm, 0.1s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 1064,
+        "t_s": 0.1
+      },
+      "expected": 3.09287728854692,
+      "tolerance": 1e-9
+    },
+    {
+      "id": "C100",
+      "description": "Mid-band: 2000nm, 0.05s",
+      "function": "skin_mpe",
+      "inputs": {
+        "wl_nm": 2000,
+        "t_s": 0.05
+      },
+      "expected": 0.2648076505208893,
+      "tolerance": 1e-9
+    }
+  ]
+}
