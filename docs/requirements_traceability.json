@@ -1,0 +1,326 @@
+{
+  "rtm_schema": "mpe-rtm-1.0",
+  "title": "MPE-Calculator-Skin Requirements Traceability Matrix",
+  "description": "Maps each computational requirement to its implementation, test coverage, and trace step type.",
+  "categories": [
+    {
+      "name": "Standard Loading & Validation",
+      "requirements": [
+        {
+          "id": "REQ-STD-01",
+          "description": "Load and validate user-uploaded safety standard JSON",
+          "implementation": {"file": "web/engine.js", "functions": ["loadStandard", "_validateStandard"]},
+          "tests": ["tests/test_engine_js.mjs"],
+          "trace_step": null,
+          "notes": "Validates band structure, formula types, correction factors, and region bounds"
+        },
+        {
+          "id": "REQ-STD-02",
+          "description": "Compute SHA-256 fingerprint of loaded standard for integrity verification",
+          "implementation": {"file": "web/engine.js", "functions": ["createTracer", "_sha256"]},
+          "tests": ["tests/test_tracer.mjs (T24, T32)"],
+          "trace_step": "standard_snapshot.sha256",
+          "notes": "Pure JS SHA-256 verified against Node.js crypto on Unicode strings"
+        }
+      ]
+    },
+    {
+      "name": "Single-Point MPE Computation",
+      "requirements": [
+        {
+          "id": "REQ-MPE-01",
+          "description": "Wavelength band matching with left-inclusive, right-exclusive boundaries",
+          "implementation": {"file": "web/engine.js", "functions": ["skinMPE"]},
+          "tests": ["tests/test_engine_js.mjs", "tests/conformance/corpus.json (C070-C079)"],
+          "trace_step": "band_match"
+        },
+        {
+          "id": "REQ-MPE-02",
+          "description": "Inclusive upper bound on last wavelength band (1,000,000 nm)",
+          "implementation": {"file": "web/engine.js", "functions": ["skinMPE"]},
+          "tests": ["tests/conformance/corpus.json (C067)"],
+          "trace_step": "band_match"
+        },
+        {
+          "id": "REQ-MPE-03",
+          "description": "Mode dispatch: single vs dual_limit evaluation",
+          "implementation": {"file": "web/engine.js", "functions": ["skinMPE"]},
+          "tests": ["tests/test_tracer.mjs (T26)", "tests/conformance/corpus.json (C013-C028)"],
+          "trace_step": "mode_dispatch"
+        },
+        {
+          "id": "REQ-MPE-04",
+          "description": "Duration region matching with left-inclusive, right-exclusive boundaries",
+          "implementation": {"file": "web/engine.js", "functions": ["evalRegions"]},
+          "tests": ["tests/test_engine_js.mjs", "tests/conformance/corpus.json (C080-C085)"],
+          "trace_step": "region_match"
+        },
+        {
+          "id": "REQ-MPE-05",
+          "description": "Formula evaluation for all 7 types (constant, power, linear, ca_constant, ca_power, ca_linear, discrete)",
+          "implementation": {"file": "web/engine.js", "functions": ["evalFormula"]},
+          "tests": ["tests/test_engine_js.mjs", "tests/conformance/corpus.json (all bands)"],
+          "trace_step": "formula_eval",
+          "notes": "Also supports power_offset (8th type)"
+        },
+        {
+          "id": "REQ-MPE-06",
+          "description": "C_A correction factor lookup (constant, power10, and default regions)",
+          "implementation": {"file": "web/engine.js", "functions": ["CA"]},
+          "tests": ["tests/test_tracer.mjs (T25)", "tests/conformance/corpus.json (C000-C012)"],
+          "trace_step": "ca_lookup"
+        },
+        {
+          "id": "REQ-MPE-07",
+          "description": "UV discrete step table lookup for photochemical MPE",
+          "implementation": {"file": "web/engine.js", "functions": ["uvDiscreteLookup"]},
+          "tests": ["tests/test_tracer.mjs (T27)", "tests/conformance/corpus.json (C017)"],
+          "trace_step": "uv_discrete_lookup"
+        },
+        {
+          "id": "REQ-MPE-08",
+          "description": "Dual-limit evaluation: min(thermal, photochemical) for UV band",
+          "implementation": {"file": "web/engine.js", "functions": ["evalDualLimit"]},
+          "tests": ["tests/test_tracer.mjs (T26)", "tests/conformance/corpus.json (C013-C028)"],
+          "trace_step": "dual_limit_eval"
+        },
+        {
+          "id": "REQ-MPE-09",
+          "description": "below_t_min = not_applicable returns Infinity (photochemical limit inactive)",
+          "implementation": {"file": "web/engine.js", "functions": ["evalRegions"]},
+          "tests": ["tests/test_tracer.mjs (T26)", "tests/conformance/corpus.json (C025)"],
+          "trace_step": "region_match"
+        }
+      ]
+    },
+    {
+      "name": "Repetitive Pulse Evaluation",
+      "requirements": [
+        {
+          "id": "REQ-RP-01",
+          "description": "Rule 1: per-pulse MPE = skinMPE(wl, tau)",
+          "implementation": {"file": "web/engine.js", "functions": ["repPulse"]},
+          "tests": ["tests/test_tracer.mjs (T28)", "tests/conformance/corpus.json (C086-C092)"],
+          "trace_step": "rep_pulse_rule1"
+        },
+        {
+          "id": "REQ-RP-02",
+          "description": "Rule 2: cumulative MPE = skinMPE(wl, T) / N",
+          "implementation": {"file": "web/engine.js", "functions": ["repPulse"]},
+          "tests": ["tests/test_tracer.mjs (T28)", "tests/conformance/corpus.json (C086)"],
+          "trace_step": "rep_pulse_rule2"
+        },
+        {
+          "id": "REQ-RP-03",
+          "description": "Binding rule selection: min(Rule1, Rule2) for N > 1",
+          "implementation": {"file": "web/engine.js", "functions": ["repPulse"]},
+          "tests": ["tests/test_tracer.mjs (T28)", "tests/conformance/corpus.json (C086-C088)"],
+          "trace_step": "rep_pulse_select",
+          "notes": "Corpus includes Rule 1 binding (C087), Rule 2 binding (C086), and N<=1 (C088)"
+        },
+        {
+          "id": "REQ-RP-04",
+          "description": "N <= 1 single-pulse fallback (only Rule 1 applies)",
+          "implementation": {"file": "web/engine.js", "functions": ["repPulse"]},
+          "tests": ["tests/conformance/corpus.json (C088)"],
+          "trace_step": "rep_pulse_select"
+        }
+      ]
+    },
+    {
+      "name": "Beam Geometry",
+      "requirements": [
+        {
+          "id": "REQ-BEAM-01",
+          "description": "Limiting aperture lookup from standard",
+          "implementation": {"file": "web/engine.js", "functions": ["getAperture", "beamEval"]},
+          "tests": ["tests/test_engine_js.mjs", "tests/test_tracer.mjs (T32)"],
+          "trace_step": "beam_eval"
+        },
+        {
+          "id": "REQ-BEAM-02",
+          "description": "Regime classification: actual_sub_threshold, aperture_averaged, actual_fills",
+          "implementation": {"file": "web/engine.js", "functions": ["beamEval"]},
+          "tests": ["tests/test_tracer.mjs (T32)"],
+          "trace_step": "beam_eval"
+        }
+      ]
+    },
+    {
+      "name": "Large-Area Correction",
+      "requirements": [
+        {
+          "id": "REQ-AREA-01",
+          "description": "Large-area irradiance limit applied when beam exceeds threshold",
+          "implementation": {"file": "web/engine.js", "functions": ["skinMPE_area", "largeAreaIrradianceLimit"]},
+          "tests": ["tests/test_engine_js.mjs"],
+          "trace_step": "area_correction"
+        },
+        {
+          "id": "REQ-AREA-02",
+          "description": "min(standard MPE, area-corrected MPE) selection",
+          "implementation": {"file": "web/engine.js", "functions": ["skinMPE_area"]},
+          "tests": ["tests/test_engine_js.mjs"],
+          "trace_step": "area_select"
+        }
+      ]
+    },
+    {
+      "name": "Scanning Safety Evaluation",
+      "requirements": [
+        {
+          "id": "REQ-SCAN-01",
+          "description": "Fluence grid computation (separable, segment-erf, legacy paths)",
+          "implementation": {"file": "web/engine.js", "functions": ["computeScanFluence", "computeScanFluenceSeparable", "computeScanFluenceSegmentErf"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S1-S3)", "tests/test_engine_js.mjs"],
+          "trace_step": "scan_path_dispatch"
+        },
+        {
+          "id": "REQ-SCAN-02",
+          "description": "Per-point T_point Rule 2 evaluation (not uniform T_total)",
+          "implementation": {"file": "web/engine.js", "functions": ["evaluateScanSafety"]},
+          "tests": ["tests/verify_Tpoint_edge_cases.mjs", "tests/test_tracer_stage2.mjs (S4, S6, S7)"],
+          "trace_step": "scan_rule2_eval",
+          "notes": "T_point = last_visit_t - first_visit_t at each grid cell. Binding over T_total."
+        },
+        {
+          "id": "REQ-SCAN-03",
+          "description": "Rule 1: single-pulse (pulsed) or single-sweep dwell (CW) evaluation",
+          "implementation": {"file": "web/engine.js", "functions": ["evaluateScanSafety"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S4, S5)"],
+          "trace_step": "scan_rule1_eval"
+        },
+        {
+          "id": "REQ-SCAN-04",
+          "description": "Analytical peak fluence cross-check against grid computation",
+          "implementation": {"file": "web/engine.js", "functions": ["evaluateScanSafety", "analyticalPeakFluence"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S4)"],
+          "trace_step": "scan_analytical_check"
+        },
+        {
+          "id": "REQ-SCAN-05",
+          "description": "Safety verdict: SAFE iff max(R1, R2) <= 1.0",
+          "implementation": {"file": "web/engine.js", "functions": ["evaluateScanSafety"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S4, S7)"],
+          "trace_step": "scan_verdict"
+        },
+        {
+          "id": "REQ-SCAN-06",
+          "description": "Grid summary recording (dimensions, peak fluence, revisit timing)",
+          "implementation": {"file": "web/engine.js", "functions": ["evaluateScanSafety"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S4)"],
+          "trace_step": "scan_grid_summary"
+        }
+      ]
+    },
+    {
+      "name": "Photoacoustic Analysis",
+      "requirements": [
+        {
+          "id": "REQ-PA-01",
+          "description": "Effective MPE-limited fluence per pulse: min(Rule1, Rule2)",
+          "implementation": {"file": "web/engine.js", "functions": ["paEffFluence"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S8, S11)"],
+          "trace_step": "pa_eff_fluence"
+        },
+        {
+          "id": "REQ-PA-02",
+          "description": "Relative SNR: (phi_eff * sqrt(N)) / phi_single",
+          "implementation": {"file": "web/engine.js", "functions": ["paRelSNR"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S9, S11)"],
+          "trace_step": "pa_rel_snr"
+        },
+        {
+          "id": "REQ-PA-03",
+          "description": "Optimal PRF for maximum SNR: MPE(T) / (MPE(tau) * T)",
+          "implementation": {"file": "web/engine.js", "functions": ["paOptimalPRF"]},
+          "tests": ["tests/test_tracer_stage2.mjs (S10, S11)"],
+          "trace_step": "pa_optimal_prf"
+        }
+      ]
+    },
+    {
+      "name": "Traceability System",
+      "requirements": [
+        {
+          "id": "REQ-TRACE-01",
+          "description": "Opt-in tracer with zero cost when disabled",
+          "implementation": {"file": "web/engine.js", "functions": ["createTracer"]},
+          "tests": ["tests/test_tracer.mjs (T29, T30)"],
+          "trace_step": null,
+          "notes": "All trace blocks gated by if(trace){...}. No allocations when trace is falsy."
+        },
+        {
+          "id": "REQ-TRACE-02",
+          "description": "Deep copy of matched standard entries (mutation isolation)",
+          "implementation": {"file": "web/engine.js", "functions": ["_deepCopy", "_stepBuilder"]},
+          "tests": ["tests/test_tracer.mjs (adversarial audit: deep copy isolation)"],
+          "trace_step": "matched_entry.value"
+        },
+        {
+          "id": "REQ-TRACE-03",
+          "description": "Standard-agnostic schema: matched_entry.value and standard_snapshot.metadata are opaque",
+          "implementation": {"file": "web/trace/schema.json"},
+          "tests": ["tests/test_tracer.mjs (T32)"],
+          "trace_step": null,
+          "notes": "JSON Schema validates structure but not internal content of matched entries"
+        },
+        {
+          "id": "REQ-TRACE-04",
+          "description": "Unique step IDs across entire trace including sub-steps",
+          "implementation": {"file": "web/engine.js", "functions": ["createTracer"]},
+          "tests": ["tests/test_tracer.mjs (adversarial audit: step ID uniqueness)"],
+          "trace_step": null,
+          "notes": "Step counter shared across sub-tracers to guarantee globally unique IDs"
+        },
+        {
+          "id": "REQ-TRACE-05",
+          "description": "Schema validation of all trace documents (mpe-trace-1.0)",
+          "implementation": {"file": "web/trace/schema.json"},
+          "tests": ["tests/test_tracer.mjs (T32)", "tests/test_tracer_stage2.mjs (S12)"],
+          "trace_step": null
+        }
+      ]
+    },
+    {
+      "name": "Cross-Language Conformance",
+      "requirements": [
+        {
+          "id": "REQ-CONF-01",
+          "description": "JS and Python engines produce identical results within 1e-9 relative tolerance",
+          "implementation": {"files": ["web/engine.js", "src/laser_mpe/engine.py"]},
+          "tests": ["tests/conformance/test_conformance_js.mjs", "tests/conformance/test_conformance_py.py"],
+          "trace_step": null,
+          "notes": "101 cases covering all bands, formula types, boundaries, and edge cases"
+        }
+      ]
+    },
+    {
+      "name": "Export & Reporting",
+      "requirements": [
+        {
+          "id": "REQ-EXPORT-01",
+          "description": "JSON trace document export conforming to mpe-trace-1.0 schema",
+          "implementation": {"file": "web/calculator.jsx", "functions": ["_downloadJSON"]},
+          "tests": ["tests/test_tracer.mjs (T32)", "tests/test_tracer_stage2.mjs (S12)"],
+          "trace_step": null
+        },
+        {
+          "id": "REQ-EXPORT-02",
+          "description": "HTML Hazard Evaluation Worksheet export with institutional form layout",
+          "implementation": {"file": "web/calculator.jsx", "functions": ["_generateTraceReport", "_downloadHTML"]},
+          "tests": ["Stage 4 adversarial audit (63 checks)"],
+          "trace_step": null,
+          "notes": "Sections: identification, inputs, MPE derivation, scanning, PA, standard integrity, reproducibility, signatures"
+        },
+        {
+          "id": "REQ-EXPORT-03",
+          "description": "HTML escape on all user-derived values (XSS safety)",
+          "implementation": {"file": "web/calculator.jsx", "functions": ["_generateTraceReport"]},
+          "tests": ["Stage 4 adversarial audit (T7: XSS injection test)"],
+          "trace_step": null
+        }
+      ]
+    }
+  ]
+}
