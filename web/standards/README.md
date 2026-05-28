@@ -48,10 +48,10 @@ Each duration sub-region within a band declares a `formula` field:
 
 Each band declares a `mode` field:
 
-- `"single"` — One set of duration sub-regions. Standard mode for most bands.
-- `"dual_limit"` — Two parallel limits (e.g., thermal and photochemical for UV).
+- `"single"`: One set of duration sub-regions. Standard mode for most bands.
+- `"dual_limit"`: Two parallel limits (e.g., thermal and photochemical for UV).
   The effective MPE is the minimum of the two. Requires `thermal` and
-  `photochemical` sub-objects, each containing their own `regions` array.
+  `photochemical` sub-objects, each containing its own `regions` array.
 
 ### Duration sub-region fields
 
@@ -73,8 +73,8 @@ Each region in a band's `regions` array:
 
 The `correction_factors.CA.regions` array supports:
 
-- `"constant"` — `{"type": "constant", "value": 1.0}`
-- `"power10"` — `{"type": "power10", "coefficient": 0.002, "offset_nm": 700}`
+- `"constant"`: `{"type": "constant", "value": 1.0}`
+- `"power10"`: `{"type": "power10", "coefficient": 0.002, "offset_nm": 700}`
   evaluates as `10^(coefficient × (λ_nm − offset_nm))`
 
 ### Switching the active standard
@@ -102,17 +102,17 @@ The `supplementary` section contains companion parameters that are used by
 `skin_parameters.py`. These values are standard-specific and travel with
 the standard data.
 
-**`t_max`** — Recommended maximum exposure durations by wavelength band.
+**`t_max`**: Recommended maximum exposure durations by wavelength band.
 Each entry has `wl_min_nm`, `wl_max_nm`, and `t_max_s`.
 
-**`limiting_apertures`** — Aperture diameters for skin MPE averaging.
+**`limiting_apertures`**: Aperture diameters for skin MPE averaging.
 Each entry has `wl_min_nm`, `wl_max_nm`, and `diameter_mm`.
 
-**`large_area_correction`** — Parameters for large beam area correction:
+**`large_area_correction`**: Parameters for large beam area correction:
 `threshold_cm2` (area below which standard MPE applies), `cap_cm2` (area
 above which a constant cap applies), and `cap_mW_cm2` (the constant cap).
 
-**`uv_successive_day_derate`** — UV de-rating: `wl_min_nm`, `wl_max_nm`,
+**`uv_successive_day_derate`**: UV de-rating: `wl_min_nm`, `wl_max_nm`,
 and `factor` (the divisor applied to MPE on successive days).
 
 ### Unit convention
