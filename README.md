@@ -19,15 +19,14 @@ A Python package for computing laser skin MPE values with support for single-pul
 - **Exposure modes:** Single-pulse, continuous-wave (CW), and repetitive-pulse
 - **UV dual-limit logic:** Automatically selects the lower of photochemical and thermal limits (180–400 nm)
 - **Cₐ correction factor:** Wavelength-dependent correction for 400–1400 nm
-- **Repetitive-pulse rules:** Rule 1 (single-pulse limit) and Rule 2 (average power), 
+- **Repetitive-pulse rules:** Rule 1 (single-pulse limit) and Rule 2 (average power); Rule 3 is excluded for skin
 - **Supporting calculations:** T_max lookup, limiting apertures, large area correction, UV successive-day de-rating
 - **Unit conversions:** J/cm², mJ/cm², W/cm², mW/cm², pulse energy, average power
 - **Verified:** Verification scripts to compare to the ICNIRP standard
 
 ## Web Calculator
 
-An interactive browser-based calculator is available by opening `web/index.html` locally. No Python installation, server, or build step is required.
-The web calculator has three tabs:
+An interactive browser-based calculator is available by opening `web/index.html` locally. A dark/light theme toggle is available. The web calculator has three tabs:
 
 ### MPE Calculator Tab
 Compute single-pulse and repetitive-pulse skin MPE for any wavelength and duration. Supports multiple simultaneous laser configurations with per-wavelength unit selection. Includes interactive plots of MPE vs. wavelength and MPE vs. duration, beam geometry evaluation with limiting aperture logic, and CSV/SVG export.
@@ -127,8 +126,8 @@ H_pulse, N = per_pulse_MPE(
     tau=10e-9,
     f_array=np.logspace(0, 4, 100),  # 1 Hz to 10 kHz
     T=1.0,
-    
 )
+# H_pulse[i] is the per-pulse MPE (J/cm²) at PRF f_array[i]; N[i] = f_array[i] * T
 ```
 
 ### Supporting calculations
@@ -230,21 +229,6 @@ MPE-Calculator-Skin/
 ├── CITATION.cff
 └── pyproject.toml
 ```
-
-## Web Calculator
-
-An interactive browser-based calculator is available in [`web/`](web/). Open `web/index.html` in any browser. Features include single-pulse and repetitive-pulse calculations, safety comparison, multi-wavelength comparison with overlaid plots, dark/light theme, shareable URLs, and PDF export. See [`web/README.md`](web/README.md) for deployment options.
-
-## Project Outline
-
-- [x] Skin MPE (all bands, 180 nm–1000 µm)
-- [x] UV dual-limit logic
-- [x] Repetitive-pulse Rules 1 and 2
-- [x] T_max, limiting apertures, large area correction, UV de-rating
-- [x] Unit conversions
-- [x] Test scripts
-- [x] Interactive web calculator
-- [ ] JOSS paper submission
 
 ## Contributing
 
