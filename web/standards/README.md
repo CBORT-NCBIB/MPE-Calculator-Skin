@@ -1,20 +1,22 @@
 # Standard Data Files
 
 This directory contains JSON data files defining laser skin MPE values for
-different safety standards. The calculation engine (`engine.js` and
-`src/laser_mpe/engine.py`) reads these files at runtime. **No code changes
-are needed to switch standards**.
+different safety standards. The Python (`src/laser_mpe/engine.py`) and Node
+(`engine.js`) engines read these files at runtime; the browser build inlines the
+active standard into `index.html` at build time. **No code changes are needed to
+switch standards.**
 
 ## Currently included
 
 | File | Standard | Reference |
 |------|----------|-----------|
 | `icnirp_2013.json` | ICNIRP 2013 | Health Phys. 105(3):271–295 |
+| `ansi_z136_2022.json` | ANSI Z136.1-2022 | ANSI Z136.1-2022 |
 
 ## Creating a new standard file
 
 Copy `icnirp_2013.json` as a starting point and edit the values. The engine
-supports six formula types, described below. All MPE values must be expressed
+supports eight formula types, described below. All MPE values must be expressed
 in **J/cm²**.
 
 ### Top-level structure
@@ -42,7 +44,8 @@ Each duration sub-region within a band declares a `formula` field:
 | `ca_constant` | H = a × C_A(λ) | `a` | Constant with correction factor |
 | `ca_power` | H = a × C_A(λ) × t^b | `a`, `b` | Power law with correction factor |
 | `ca_linear` | H = a × C_A(λ) × t | `a` | Irradiance with correction factor |
-| `discrete` | Step-function lookup | `lookup` | References `uv_discrete_steps` |
+| `discrete` | Step-function lookup | `lookup` | References a step table (e.g. `uv_discrete_steps`) |
+| `power_offset` | H = a × t^b + c | `a`, `b`, `c` | Power law with additive offset |
 
 ### Band modes
 
@@ -63,7 +66,8 @@ Each region in a band's `regions` array:
 | `t_max_s` | Yes | Upper duration bound (exclusive) |
 | `formula` | Yes | One of the formula types above |
 | `a` | Depends | Coefficient (required for all except `discrete`) |
-| `b` | Depends | Exponent (required for `power`, `ca_power`) |
+| `b` | Depends | Exponent (required for `power`, `ca_power`, `power_offset`) |
+| `c` | Depends | Additive offset (required for `power_offset`) |
 | `wl_min_nm` | Optional | Wavelength sub-filter (for UV photochemical sub-bands) |
 | `wl_max_nm` | Optional | Wavelength sub-filter upper bound |
 | `below_t_min` | Optional | Set to `"not_applicable"` if this limit does not apply below t_min |
