@@ -38,9 +38,9 @@ dev = ["pytest>=7.0", "jsonschema>=4.0", "matplotlib>=3.5"]
 
 [project.urls]
 Homepage = "https://octresearch.org/"
-Repository = "https://github.com/itgall/MPE-Calculator-Skin"
-Issues = "https://github.com/itgall/MPE-Calculator-Skin/issues"
-Changelog = "https://github.com/itgall/MPE-Calculator-Skin/blob/main/CHANGELOG.md"
+Repository = "https://github.com/CBORT-NCBIB/MPE-Calculator-Skin"
+Issues = "https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/issues"
+Changelog = "https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 where = ["src"]

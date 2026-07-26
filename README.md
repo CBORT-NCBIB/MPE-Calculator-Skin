@@ -71,7 +71,7 @@ Boundary conventions follow the standard exactly: `t₁ ≤ t < t₂` and `λ₁
 This package can be installed and imported like any Python library. Clone the repository and install it in editable mode:
 
 ```bash
-git clone https://github.com/itgall/MPE-Calculator-Skin.git
+git clone https://github.com/CBORT-NCBIB/MPE-Calculator-Skin.git
 cd MPE-Calculator-Skin
 pip install -e .
 ```
@@ -83,7 +83,7 @@ Once installed, you can import `laser_mpe` from any Python script or notebook on
 If you want to modify the code, add features, fix bugs, or add support for a new standard, see [`CONTRIBUTING.md`](CONTRIBUTING.md) for guidelines. The development install includes test dependencies:
 
 ```bash
-git clone https://github.com/itgall/MPE-Calculator-Skin.git
+git clone https://github.com/CBORT-NCBIB/MPE-Calculator-Skin.git
 cd MPE-Calculator-Skin
 pip install -e ".[test]"
 ```
