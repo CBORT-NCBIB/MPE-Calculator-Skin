@@ -189,8 +189,6 @@ GitHub Actions runs all tests automatically on every push to any branch and ever
 - Browser end-to-end tests (Playwright + Chromium)
 - Build verification (index.html generation + bundle checks)
 
-Python test outputs are available in [`tests/outputs/`](tests/outputs/).
-
 ## Package Structure
 
 ```
