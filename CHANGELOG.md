@@ -3,9 +3,30 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+> **Note on version history.** Versions 1.0.0–3.0.0 were tagged as standalone
+> snapshots during early development (28 March – 2 April 2026) and do not form a
+> continuous git ancestry. The current `main` branch history begins 2026-04-15;
+> work done since the 3.0.0 snapshot is listed under Unreleased below.
 
 ## [Unreleased]
+
+### Added
+- **LSP-JSON scan-pattern import**: a Laser Scan Pattern JSON schema, Ajv schema
+  validation, an off-main-thread Web Worker parser, and import UI on the General,
+  OCT, and Photoacoustics scanning tabs, with a Playwright end-to-end suite.
+- **Computation traceability**: a JSON trace schema and tracer, a trace panel in
+  the MPE/OCT/PA tabs, and a Hazard Evaluation Worksheet HTML export.
+- **Cross-language conformance corpus** (`tests/conformance/`) run by both the
+  Python and JavaScript engines.
+- **OCT and Photoacoustics scanning sub-tabs**, with a worst-case
+  stationary-beam advisory.
+- Release artifacts: a validation report and a requirements-traceability matrix.
+
+### Fixed
+- Per-point exposure-time (T_point) handling for raster/bidirectional and CW
+  scans, so Rule 2 is evaluated over the correct per-point dwell time.
 
 ## [3.0.0] - 2026-04-02
 
@@ -63,7 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - HTML export table: removed unit suffixes from cell values, added units to column headers, fixed C_A → C<sub>A</sub>.
 - `web/README.md` updated with development workflow and feature list.
 
-## [0.2.0] - 2026-03-31
+## [2.0.0] - 2026-03-30
 
 ### Added
 - **Data-driven architecture:** All standard-specific values now live in a single JSON file (`web/standards/icnirp_2013.json`). The calculation engine reads coefficients, band boundaries, correction factors, and supplementary parameters from this file at runtime. Switching standards requires changing only the JSON — no code modifications needed.
@@ -102,7 +123,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed committed `__pycache__/` and `.egg-info/` directories.
 - Removed dead code: unused `numerator` variable, `fluLabel()` function, `BANDS` array.
 
-## [0.1.0] - 2025
+## [1.0.0] - 2026-03-28
 
 ### Added
 - Skin MPE for all wavelength bands (180 nm to 1000 µm).
@@ -116,3 +137,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Unit conversions (J/cm², mJ/cm², W/cm², mW/cm², pulse energy, average power).
 - Test suite with automated checks.
 - Interactive web calculator with multi-wavelength comparison and dual-rule display.
+
+[Unreleased]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/commits/main
+[3.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v3.0.0
+[2.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v2.0.0
+[1.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v1.0.0
