@@ -46,7 +46,7 @@ Every numerical value in this codebase must be traceable to a specific table, se
 - Follow PEP 8.
 - Use NumPy-style docstrings.
 - All functions that return MPE values should return radiant exposure in J/cm².
-- Boundary conventions: half-open intervals (`t₁ ≤ t < t₂`, `λ₁ ≤ λ < λ₂`), with the upper edge of the outermost wavelength band treated as inclusive.
+- Boundary conventions: half-open intervals (`t₁ ≤ t < t₂`, `λ₁ ≤ λ < λ₂`), with the upper edge of the outermost wavelength band and the maximum exposure duration treated as inclusive.
 
 ## Code of Conduct
 

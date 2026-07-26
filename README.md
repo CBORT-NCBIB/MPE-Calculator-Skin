@@ -60,7 +60,7 @@ MPE values and correction factors are computed directly from the loaded standard
 | Large area correction | Beam area > 100 cm² for λ > 1.4 µm, t > 10 s |
 | UV de-rating | Successive-day de-rating for 280–400 nm |
 
-Wavelength and time bands use half-open intervals (`λ₁ ≤ λ < λ₂`, `t₁ ≤ t < t₂`); the upper edge of the outermost wavelength band is treated as inclusive.
+Wavelength and time bands use half-open intervals (`λ₁ ≤ λ < λ₂`, `t₁ ≤ t < t₂`); the upper edge of the outermost wavelength band and the maximum exposure duration (3×10⁴ s) are treated as inclusive.
 
 
 ## Installation

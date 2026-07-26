@@ -316,13 +316,28 @@ class TestBoundaryConvention:
         assert not np.isnan(H_skin_ICNIRP_1800_2600(1e-9))
         assert not np.isnan(H_skin_ICNIRP_2600_1000um(1e-9))
 
-    def test_upper_bound_exclusive(self):
-        """t=3e4 exactly should return nan (upper bound is exclusive)."""
-        assert np.isnan(H_skin_ICNIRP_400_1400(0.500, 3e4))
-        assert np.isnan(H_skin_ICNIRP_1400_1500(3e4))
-        assert np.isnan(H_skin_ICNIRP_1500_1800(3e4))
-        assert np.isnan(H_skin_ICNIRP_1800_2600(3e4))
-        assert np.isnan(H_skin_ICNIRP_2600_1000um(3e4))
+    def test_max_duration_inclusive(self):
+        """t=3e4 (the standard's maximum duration) is inclusive, not NaN.
+
+        The standard declares dur_range_s = [1e-9, 3e4]; the upper bound is
+        inclusive. Previously every region used a strict `t < t_max`, so
+        skin_mpe(., 3e4) returned NaN -- and get_Tmax_skin(UV)=3e4 fed straight
+        back into skin_mpe produced NaN. Values just above 3e4 remain NaN.
+        """
+        assert not np.isnan(H_skin_ICNIRP_400_1400(0.500, 3e4))
+        assert not np.isnan(H_skin_ICNIRP_1400_1500(3e4))
+        assert not np.isnan(H_skin_ICNIRP_1500_1800(3e4))
+        assert not np.isnan(H_skin_ICNIRP_1800_2600(3e4))
+        assert not np.isnan(H_skin_ICNIRP_2600_1000um(3e4))
+        # just above the maximum stays out of range
+        assert np.isnan(skin_mpe(532, 3e4 + 1))
+
+    def test_tmax_composes_with_skin_mpe(self):
+        """get_Tmax_skin(wl) fed back into skin_mpe must not produce NaN."""
+        from laser_mpe import get_Tmax_skin
+        for wl in (250, 532, 1064, 2000):
+            tmax = get_Tmax_skin(wl)
+            assert not np.isnan(skin_mpe(wl, tmax)), f"skin_mpe({wl}, Tmax={tmax}) is NaN"
 
 
 # =====================================================================

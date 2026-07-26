@@ -257,13 +257,26 @@ def _eval_regions(regions, wl_nm, t):
 
     Returns NaN if t is outside all defined regions.
     """
+    # Time regions are half-open [t_min, t_max), except that the standard's
+    # maximum exposure duration (dur_range_s upper bound) is inclusive, mirroring
+    # the inclusive upper edge of the outermost wavelength band.
+    max_dur = None
+    if _std is not None:
+        try:
+            max_dur = _std["standard"]["dur_range_s"][1]
+        except (KeyError, TypeError, IndexError):
+            max_dur = None
+
     for r in regions:
         # Wavelength sub-filtering (used by UV photochemical sub-bands)
         if "wl_min_nm" in r and "wl_max_nm" in r:
             if wl_nm < r["wl_min_nm"] or wl_nm >= r["wl_max_nm"]:
                 continue
 
-        if r["t_min_s"] <= t < r["t_max_s"]:
+        in_time = r["t_min_s"] <= t < r["t_max_s"]
+        if not in_time and max_dur is not None and t == r["t_max_s"] == max_dur:
+            in_time = True
+        if in_time:
             return _eval_formula(r, wl_nm, t)
 
         # Special handling: "not_applicable" below t_min means this limit

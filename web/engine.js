@@ -492,13 +492,19 @@ function evalFormula(region, wl_nm, t, trace, regionPath) {
 // Returns NaN if t is outside all defined regions.
 // ═══════════════════════════════════════════════════════════════
 function evalRegions(regions, wl_nm, t, trace, pathPrefix) {
+  // Time regions are half-open [t_min, t_max), except that the standard's maximum
+  // exposure duration (dur_range_s upper bound) is inclusive, mirroring the
+  // inclusive upper edge of the outermost wavelength band.
+  var maxDur = (_std && _std.standard && _std.standard.dur_range_s)
+    ? _std.standard.dur_range_s[1] : undefined;
   for (var i = 0; i < regions.length; i++) {
     var r = regions[i];
     // Check wavelength sub-filtering (used by UV photochemical)
     if (r.wl_min_nm !== undefined && r.wl_max_nm !== undefined) {
       if (wl_nm < r.wl_min_nm || wl_nm >= r.wl_max_nm) continue;
     }
-    if (t >= r.t_min_s && t < r.t_max_s) {
+    if ((t >= r.t_min_s && t < r.t_max_s) ||
+        (maxDur !== undefined && t === r.t_max_s && r.t_max_s === maxDur)) {
       if (trace) {
         var regionPath = (pathPrefix || "") + "/regions/" + i;
         // Emit matched_entry without the full regions array — just the matched region

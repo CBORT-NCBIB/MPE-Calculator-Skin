@@ -1,6 +1,6 @@
 {
   "generated_by": "generate_conformance.mjs",
-  "generated_at": "2026-05-27T21:48:38.810Z",
+  "generated_at": "2026-07-26T22:16:09.630Z",
   "engine_version": "mpe-engine-js",
   "standard": "icnirp_2013.json",
   "tolerance_note": "Relative tolerance. Use 0 for exact match (integer or known-constant results).",
@@ -199,7 +199,7 @@
         "wl_nm": 250,
         "t_s": 30000
       },
-      "expected": null,
+      "expected": 0.003,
       "tolerance": 1e-9
     },
     {
