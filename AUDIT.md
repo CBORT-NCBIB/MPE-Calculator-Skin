@@ -212,7 +212,7 @@ true, ✘ = false, ◐ = partly true / misleading.
 | 8 | overview image exists | ✔ | `docs/images/skin_mpe_overview.png` present |
 | 17 | wavelength coverage 180 nm–1000 µm | ✔ | JSON `wl_range_nm: [180, 1000000]`; probed both edges |
 | 18 | durations 10⁻⁹–3×10⁴ s | ◐ | lower edge inclusive; **t = 30000 s returns NaN** (strict `<` at every region), contradicting the declared inclusive range and `docs/API.md:20`. See A-3. |
-| 20 | UV dual-limit logic | ✔ | `min(thermal, photochemical)` verified at crossover; see A-1 for a boundary defect |
+| 20 | UV dual-limit logic | ✔ | `min(thermal, photochemical)` verified at the crossover and against Table 5 |
 | 21 | Cₐ over 400–1400 nm | ✔ | endpoints probed; C_A(700)=1, C_A(1050⁻)=5.0119, C_A(1050)=5, C_A(1400)=5 |
 | 22 | "Rule 1 … and Rule 2 (average power), " | ◐ | trailing comma + space; reads as truncated text (D-4) |
 | 23 | T_max, apertures, large-area, UV de-rating | ◐ | features exist; **T_max is not an ICNIRP value** by the data file's own admission, and `get_Tmax_skin(250)`→30000 s feeds `skin_mpe` NaN (A-3, C-9) |
@@ -254,24 +254,30 @@ true, ✘ = false, ◐ = partly true / misleading.
 
 ## Pass A — Numerical and physical correctness
 
-Verification basis: ICNIRP 2013 (Health Phys 105(3):271–295), skin limits in Table 7 with
-UV limits equal to the ocular limits (Table 5) — the equality of skin and eye limits in
-180–400 nm was re-confirmed from ICNIRP secondary literature during this audit. The
-photochemical UV ladder was additionally checked for internal consistency against the
-generating formula 30·10^(0.2(λ−302.5)) J·m⁻², which reproduces every tabulated rung
-(40, 60, 100, 160, 250, 400, 630, 1000, 1600, 2500, 4000, 6300, 10⁴ J·m⁻²) under the
-standard's rounding. Any change to a value below is gated on author confirmation against
-the printed Table 5/7 (FIX_PLAN → NEEDS AUTHOR): this audit does not change physics on
-memory alone.
+Verification basis: ICNIRP 2013 (Health Phys 105(3):271–295), verified against the primary
+source — the full standard PDF supplied by the author. Skin UV limits equal the ocular
+limits of Table 5 (the standard sets them equal over 180–400 nm); the visible/NIR/FIR skin
+limits are Table 7; apertures are Table 8.
+
+> **CORRECTION (post-review, against Table 5).** An earlier draft of this pass raised two
+> UV findings — A-1 (Blocker) and A-2 (Minor) — on the belief that the photochemical
+> constant region should end at 302.5 nm. **Both are WITHDRAWN.** Table 5 of the supplied
+> standard uses integer-nanometre bins: 30 J/m² for `180 ≤ λ < 302`, then `302 ≤ λ < 303`
+> → 40 J/m², … `312 ≤ λ < 313` → 4.0 kJ/m², and a single `313 ≤ λ < 315` → 6.3 kJ/m² bin.
+> `icnirp_2013.json` encodes exactly this. The "302.5" was a reviewer mis-recollection of
+> the older ACGIH/actinic-UV boundary, which does not apply to this table. No physics was
+> changed on the strength of that memory: per Standing Rule 5 the change was gated on the
+> printed table, and the table refuted it. The rows and findings below are corrected in
+> place.
 
 ### A-0. Constants table (icnirp_2013.json vs. ICNIRP 2013)
 
 | Quantity | Code value (JSON) | Standard value | Clause/table | Match? |
 |---|---|---|---|---|
 | UV thermal limit, 180–400 nm, 10⁻⁹ ≤ t < 10 s | 0.56·t^0.25 J/cm² | 5.6·t^0.25 kJ/m² | Table 5 / Table 7 (UV = ocular) | ✔ |
-| UV photochemical, 180 ≤ λ < **302** nm | 30 J/m² | 30 J/m² for 180 ≤ λ < **302.5** nm | Table 5 | ✘ upper boundary — see A-1 |
-| UV photochemical ladder, 302–313 nm (11 steps) | 40…4000 J/m², bin [n−1, n) → value at n | same rungs, bins anchored at 302.5 (302.5–303 → 40, … 312–313 → 4000) | Table 5 | ✔ rungs; ✘ 302/302.5 anchor (A-1) |
-| UV photochemical, [313, 315) | 6300 J/m² (single fallback bin) | 313–314 → 6300; **314–315 → 10⁴** | Table 5 | ◐ [313,314) ✔; [314,315) conservative ×1.59 (A-2) |
+| UV photochemical, 180 ≤ λ < 302 nm | 30 J/m² | 30 J/m² for 180 ≤ λ < 302 nm | Table 5 | ✔ |
+| UV photochemical ladder, 302–313 nm (integer-nm bins) | [302,303)→40 … [312,313)→4000 J/m² | same, integer-nm bins from 302 | Table 5 | ✔ |
+| UV photochemical, 313 ≤ λ < 315 nm | 6300 J/m² (single bin) | 6.3 kJ/m² (single bin, 313 ≤ λ < 315) | Table 5 | ✔ |
 | UV photochemical, 315–400 nm, t ≥ 10 s | 10⁴ J/m² (`below_t_min: not_applicable`) | 10⁴ J/m² (10 s–3×10⁴ s) | Table 5 | ✔ |
 | Vis/NIR 400–1400 nm, 10⁻⁹ ≤ t < 10⁻⁷ s | 0.02·C_A J/cm² | 200·C_A J/m² | Table 7 | ✔ |
 | Vis/NIR, 10⁻⁷ ≤ t < 10 s | 1.1·C_A·t^0.25 J/cm² | 11·C_A·t^0.25 kJ/m² | Table 7 | ✔ |
@@ -287,32 +293,22 @@ memory alone.
 | T_max lookup (30000 / 600 / 600 / 10 s) | JSON `supplementary.t_max` | **no ICNIRP source** — the JSON itself says so | — | see C-9; and A-3 for the 30000 s composition bug |
 | Rule 3 (N^−1/4) excluded for skin | prose only (`repetitive_pulse.py:6-8`, JSON `repetitive_pulse_skin` block that no code reads) | Rule 3 not applied to skin | §"Repetitively pulsed exposure" | ✔ intent; enforcement is by omission, not data (A-11) |
 
-### A-1. **Blocker.** UV photochemical boundary at 302 nm instead of 302.5 nm — non-conservative ×1.33 over [302.0, 302.5)
+### A-1. ~~Blocker~~ — WITHDRAWN. UV photochemical boundary is 302 nm and the code is correct.
 
-- Where: `web/standards/icnirp_2013.json` — photochemical constant region `180 ≤ λ < 302`
-  (30 J/m²) and first discrete bin `[302, 303) → 40 J/m²`.
-- Measured: `skin_mpe(302.4, 100 s)` = 0.004 J/cm² (40 J/m²). ICNIRP's 30 J/m² region
-  extends to 302.5 nm, so the standard's value at 302.4 nm is 0.003 J/cm².
-- Effect: for 302.0–302.5 nm and any duration where the photochemical limit binds
-  (t ≳ 2.6 ns at this rung), the code reports a permissible exposure **1.33× higher than
-  the standard**. Both engines are identical here (shared JSON), and the conformance
-  corpus and `verify_exhaustive.py:156` pin the current behavior, so no existing test can
-  catch it.
-- Why a reviewer cares: it is a transcription error in the safety-critical direction, in
-  the band where excimer/UV-B applications actually operate.
-- Proposed fix (Phase 3, gated on author confirmation of Table 5): move the constant
-  region's upper edge and the ladder's anchor to 302.5; pin with tests at 302.4/302.5/
-  302.6; regenerate the corpus. The 0.5-nm sliver is the entire change; every other rung
-  is faithful.
-- Note on provenance: ANSI Z136.1's corresponding table anchors at 302 nm — the likely
-  origin of the 302. The file claims to encode ICNIRP 2013, so ICNIRP's anchor governs.
+Original claim: the 30 J/m² constant region should end at 302.5 nm, making `skin_mpe(302.4, ·)`
+= 0.004 non-conservative by ×1.33. **Refuted against ICNIRP 2013 Table 5** (supplied PDF,
+p.283): the region is `180 ≤ λ < 302` → 30 J/m², and `302 ≤ λ < 303` → 40 J/m² — integer-nm
+bins, boundary at 302, not 302.5. `skin_mpe(302.4, 100 s)` = 0.004 J/cm² is the correct
+Table-5 value. `icnirp_2013.json`, `verify_exhaustive.py:156`, and the corpus are all
+faithful. No change. (Root cause of the false finding: the reviewer applied the older
+ACGIH/actinic 302.5 nm anchor from memory; the standing rule to gate on the printed table
+prevented a bad edit.)
 
-### A-2. Minor. UV [314, 315) bin collapsed into 6300 J/m² — conservative ×1.59
+### A-2. ~~Minor~~ — WITHDRAWN. The `313 ≤ λ < 315` bin at 6.3 kJ/m² is correct.
 
-`fallback_H_J_cm2 = 0.63` covers [313, 315). ICNIRP: 313–314 → 6300 J/m² (bin ✔),
-314–315 → 10⁴ J/m². Measured `skin_mpe(314.5, 100 s)` = 0.63 vs standard 1.0 J/cm².
-Errs safe; still a deviation from the claimed "verified against the standard" and should
-be fixed (add the 314→10⁴ rung… i.e. a `315` step) alongside A-1, with the same pinning.
+Original claim: `[314, 315)` should be 10⁴ J/m², not 6300. **Refuted against Table 5**:
+`313 ≤ λ < 315` is a single bin at 6.3 kJ/m² (= 0.63 J/cm²); the 10 kJ/m² value applies to
+`315 ≤ λ < 400`, not to [314,315). `skin_mpe(314.5, 100 s)` = 0.63 is correct. No change.
 
 ### A-3. **Blocker.** t = 3×10⁴ s is excluded by every region, contradicting the declared domain — and the package's own T_max composes to NaN
 
@@ -608,8 +604,8 @@ different questions for the same physical scenario above 10 s. Document the asym
 `ansi_z136_2022.json` (22 KB, shipped) is never mentioned; `uv_deep_steps`,
 `irradiance_primary`, and `repetitive_pulse_skin` keys are undocumented; "the engine reads
 these files at runtime" is false for the browser build (frozen at build time by
-`build.py:409`). The schema documentation also never states bin-edge conventions —
-the thing A-1 turns on.
+`build.py:409`). The schema documentation also never states the bin-edge conventions that
+the UV photochemical ladder depends on.
 
 ### B-8. Nit. Undocumented test dependency
 
@@ -699,7 +695,7 @@ suites (117 checks) and the T_point edge suite exist but are absent from CI (E-7
 "verify" file contains no assertions (D-18); and no e2e test asserts a single numeric MPE
 or verdict (E-15). A reviewer who looks past the counts will find the *scientific* core
 (UV ladder edges, Rule-2 windows, scanning conservatism) is exactly where coverage is
-thinnest — A-1 and A-3 survived the entire suite.
+thinnest — A-3 (the t=3e4 composition bug) survived the entire suite until this review.
 
 **C-7. Paper (`paper/paper.md`) — content audit against the required sections.**
 (The paper itself is untouched by this review at the author's request; findings only.)
@@ -908,13 +904,15 @@ READMEs + one canonical repo URL everywhere (with 0.2's owner fix).
 | Pass | Blocker | Major | Minor | Nit/Info |
 |---|---|---|---|---|
 | Phase 0 gate | 1 (development history) | — | — | — |
-| A (numerics) | 4 (A-1, A-3, A-4, A-5) | 10 | 3 | 2 |
+| A (numerics) | 3 (A-3, A-4, A-5) | 10 | 2 | 2 |
 | B (cross-impl) | — | 5 | 2 | 1 |
 | C (JOSS) | 3 (C-10, C-12, + gate restated) | 4 | 2 | — |
 | D (machine text) | — | 8 | 13 | 3 |
 | E (hygiene) | 1 (E-1) | 7 | 4 | 1 |
-| **Total** | **9** | **34** | **24** | **7** |
+| **Total** | **8** | **34** | **23** | **7** |
 
-The two findings that dominate everything else: the development-history gate (0.1), which
-no code change can fix, and the safety-direction numeric defects (A-1, A-3, A-4, A-5),
-which are all fixable this week. `FIX_PLAN.md` orders the work.
+A-1 (Blocker) and A-2 (Minor) were withdrawn after checking ICNIRP 2013 Table 5 directly
+(see the correction note in Pass A); the code was correct. A-3 has since been fixed. The two
+findings that dominate what remains: the development-history gate (0.1), which no code change
+can fix, and the surviving safety-direction defects (A-4 fail-open lookup, A-5 JS aperture).
+`FIX_PLAN.md` orders the work.

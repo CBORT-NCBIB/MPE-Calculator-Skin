@@ -36,13 +36,13 @@ Status legend: `pending` → `in-progress` → `done` / `blocked(N-x)` for autho
 | # | Findings | Files | Change | Risk | Status |
 |---|---|---|---|---|---|
 | 10 | A-3 | src/laser_mpe/engine.py, web/engine.js, tests (py+js) | Make the top duration edge inclusive (t = 3×10⁴ s valid, matching the declared domain and the Table 7 duration column); pins: 29999.999/30000/30000.0001 and the `get_Tmax_skin(250)` → `skin_mpe` composition | low — NaN→value at one point | pending |
-| 11 | A-1, A-2 | web/standards/icnirp_2013.json, tests, corpus | Move the UV photochemical anchor 302→302.5 and split the [313,315) fallback into 313–314→0.63 / 314–315→1.0 J/cm² per Table 5; pins at 302.4/302.5/302.6/313.5/314.5. **Note the direction: [302,302.5) becomes 25 % lower (conservative correction); [314,315) becomes 1.59× higher (standard-correct, less conservative than today's transcription error)** | numeric outputs change in two slivers | blocked(N-1) |
+| 11 | A-1, A-2 | — | **WITHDRAWN.** Checked ICNIRP 2013 Table 5 directly (author-supplied PDF): the UV photochemical boundary is 302 nm (integer-nm bins) and `313 ≤ λ < 315` is a single 6.3 kJ/m² bin. `icnirp_2013.json` already encodes this exactly. No change; A-1/A-2 retracted in AUDIT. | none | withdrawn |
 | 12 | A-4, A-12, B-4 | engine.py (`validate_standard`, `_eval_dual_limit`), engine.js (`_validateStandard`, `loadStandard`) | Validators resolve every `discrete` lookup, check region coverage/overlap/order per band, and check `power_offset` coefficients; JS load becomes fail-closed; NaN-from-lookup becomes an error, not an absent limit; tests load broken standards and expect load-time failure. Pre-check: the shipped ANSI file must pass the new validators — if it genuinely has gaps, surface them, do not special-case | medium | pending |
 | 13 | A-5, A-6, A-16, A-19 | engine.py, skin_parameters.py, engine.js, docs/API.md, existing tests | Raise-on-invalid posture: `skin_mpe`/`ca`/`band_name`/`per_pulse_MPE`/conversions raise ValueError on NaN/negative/out-of-domain (documented breaking change); JS `getAperture` fails closed on unmatched wavelength; `bandName` returns null and callers surface it; migrate the tests that currently pin NaN returns | medium — public API contract change | pending |
 | 14 | A-7 | skin_parameters.py, engine.py, tests | `large_area_MPE_skin` gains the wavelength/duration applicability gates (from the currently-dead gated twin) and input validation; NaN/inf raise | low | pending |
 | 15 | A-8 | skin_parameters.py, engine.js, validators | Delete the six `.get()` physics defaults and the two JS hardcoded aperture fallbacks; validators require the `supplementary` blocks instead — the engine.js header claim becomes true | low (intended: incomplete standards now fail loudly) | pending |
 | 16 | A-9 | skin_parameters.py, legacy.py, docs | Remove nm/µm auto-guessing from the primary API (require nm; raise otherwise); keep it only in `legacy.py`, documented; pins in (0, 10] | medium — breaking for µm callers | pending |
-| 17 | A-10, A-11 | repetitive_pulse.py, engine.py, engine.js, tests | Rule 2: `N = ceil(f·T)`; evaluate at min over T′ ∈ {T, 10 s}; PRF ≤ 0/NaN raises (Python) matching JS "Invalid"; cite the Rule-2 group definition; pins at T = 12/100/1000 s and f = 1.5 Hz | medium — outputs shift conservative by ≤2.3 % | blocked(N-2) |
+| 17 | A-10, A-11 | repetitive_pulse.py, engine.py, engine.js, tests | Rule 2 **EXACT** (per user Q2, N-2 signed off): per-pulse limit = `min over T′ ∈ C of MPE(T′)/(f·T′)`, `C = {T} ∪ {standard time-breakpoints ≤ T, evaluated as left-limits}`. This is the average-power reading (continuous N=f·T′), exact, data-driven from the JSON breakpoints — supersedes the ceil()+{T,10s} heuristic. PRF ≤ 0/NaN raises (Python) matching JS "Invalid"; N≤1 still Rule-1-only; pins at T=12/100/1000 s. Only changes T>10 s (Vis/NIR ≤2.24%, FIR ≤0.42%, FIR 1500–1800 unchanged) | medium — outputs shift conservative by ≤2.3 % | pending |
 | 18 | A-20, A-21, A-22 | web/engine.js, tests | Grid-cap rescale made isotropic (+test at the cap); regime switch per segment (most conservative across segments) (+two-velocity test); T_point monotonicity test; margin-reporting note for TIE_TOL | medium — scanning internals | pending |
 | 19 | A-14 | web/calculator.jsx (3 call sites) | Trace-panel re-evaluation receives the same `scan_params` the worker used — displayed verdict and exported trace become the same computation | medium — triplicated component edits | pending |
 | 20 | A-13 | tests/test_engine_js.mjs | Tighten the "never underestimates" test from 0.95 to the enforced envelope (assert the returned peak ≥ both grid and analytical values; tolerance 1e-9) so the test can actually fail on an underestimate | low | pending |
@@ -80,18 +80,15 @@ itself is the delta (then the corpus updates in the same commit).
 
 ## Part 2 — NEEDS AUTHOR
 
-Facts and decisions only the authors hold. Items N-1 and N-2 gate plan items; the rest
-gate the submission itself.
+Facts and decisions only the authors hold. (N-1 and N-2 are now RESOLVED — see below.)
 
-- **N-1 (gates #11).** Confirm against the printed ICNIRP 2013 Table 5: (a) the
-  photochemical constant region ends at **302.5 nm** (not 302); (b) the rung values
-  312–313 → 4000, 313–314 → 6300, **314–315 → 10⁴ J/m²**. The audit's basis is stated in
-  AUDIT Pass A; per the standing rules no physics changes without the exact clause
-  confirmed.
-- **N-2 (gates #17).** Sign off the Rule-2 fidelity fix: `N = ceil(f·T)` and evaluation
-  at min over T′ ∈ {T, 10 s} (sufficient under the piecewise form of H(t); AUDIT A-10/11
-  quantifies today's ≤2.24 % permissive error). This changes published numbers slightly
-  in the conservative direction.
+- **N-1 — RESOLVED (no change).** Author supplied ICNIRP 2013 Table 5; it confirms the UV
+  photochemical boundary is **302 nm** with integer-nm bins and a single `313 ≤ λ < 315` →
+  6.3 kJ/m² bin. The JSON is already correct. Findings A-1/A-2 withdrawn; #11 withdrawn.
+- **N-2 — RESOLVED (signed off).** Author chose the **exact** Rule-2 solution (Q2). #17
+  now implements `min over T′ ∈ {T, standard breakpoints ≤ T (left-limits)} of
+  MPE(T′)/(f·T′)` — the exact average-power minimum, superseding the ceil()+{T,10s}
+  heuristic. Changes published numbers slightly in the conservative direction for T>10 s.
 - **N-3.** The full "Francis et al. (2026)" citation (title, venue, DOI). Unlocks
   fixing README:48, CITATION.cff:17, CHANGELOG:71, web/README.md:36 — and the PA
   optimizer's verifiability (A-17).
