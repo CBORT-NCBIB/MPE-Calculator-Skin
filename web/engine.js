@@ -615,6 +615,60 @@ function skinMPE(wl_nm, t, trace) {
 // Repetitive pulse: Rules 1 and 2 (skin only, no Rule 3)
 // This logic is standard-independent.
 // ═══════════════════════════════════════════════════════════════
+function _nextDown(x) {
+  // Largest double strictly less than x, for x > 0 (matches Python math.nextafter(x, 0)).
+  if (!(x > 0) || !isFinite(x)) return x;
+  var buf = new ArrayBuffer(8);
+  var f = new Float64Array(buf);
+  var u = new BigUint64Array(buf);
+  f[0] = x;
+  u[0] = u[0] - 1n;
+  return f[0];
+}
+
+function _timeBreakpoints() {
+  var seen = {};
+  var out = [];
+  var bands = _std.bands;
+  for (var i = 0; i < bands.length; i++) {
+    var band = bands[i];
+    var regionSets = band.mode === "dual_limit"
+      ? [band.thermal.regions, band.photochemical.regions]
+      : [band.regions];
+    for (var s = 0; s < regionSets.length; s++) {
+      var regions = regionSets[s];
+      for (var r = 0; r < regions.length; r++) {
+        [regions[r].t_min_s, regions[r].t_max_s].forEach(function (b) {
+          if (!(b in seen)) { seen[b] = true; out.push(b); }
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function _rule2AvgIrradianceLimit(wl_nm, T) {
+  // Binding average-power (Rule 2) limit: min over averaging windows T' <= T of
+  // MPE(T')/T' (W/cm2). MPE(T')/T' is non-increasing within each analytic piece
+  // of MPE and only steps up at a region breakpoint (e.g. the t^0.25 -> linear
+  // transition at 10 s), so the minimum lies at a breakpoint approached from the
+  // left, or at T. Per-pulse Rule-2 limit is this value / prf. Exact -- replaces
+  // the previous endpoint estimate MPE(T)/(prf*T), which missed the 10 s window.
+  var candidates = [T];
+  var bps = _timeBreakpoints();
+  for (var i = 0; i < bps.length; i++) {
+    if (bps[i] > 0 && bps[i] <= T) candidates.push(_nextDown(bps[i]));
+  }
+  var g = Infinity;
+  for (var j = 0; j < candidates.length; j++) {
+    var tprime = candidates[j];
+    if (tprime <= 0) continue;
+    var mpe = skinMPE(wl_nm, tprime);
+    if (isFinite(mpe)) g = Math.min(g, mpe / tprime);
+  }
+  return g;
+}
+
 function repPulse(wl_nm, tau, prf, T, trace) {
   if (!isFinite(prf) || prf < 0 || !isFinite(T) || T <= 0) {
     return { rule1: NaN, rule2: NaN, H: NaN, N: 0, binding: "Invalid" };
@@ -640,7 +694,8 @@ function repPulse(wl_nm, tau, prf, T, trace) {
     return { rule1: rule1, rule2: rule1, H: rule1, N: N, binding: "Rule 1" };
   }
 
-  var rule2 = htotal / N;
+  var gMin = _rule2AvgIrradianceLimit(wl_nm, T);
+  var rule2 = gMin / prf;
   var H = Math.min(rule1, rule2);
   var binding = rule1 <= rule2 ? "Rule 1" : "Rule 2";
 
@@ -650,9 +705,9 @@ function repPulse(wl_nm, tau, prf, T, trace) {
       .withOutput(rule1, "J/cm2")
       .withSubSteps(r1Trace.getSteps());
 
-    trace.step("rep_pulse_rule2", "Rule 2: cumulative MPE / N")
-      .withInputs({ wl_nm: wl_nm, T_s: T, prf_hz: prf, N: N, H_total: htotal })
-      .withFormula("division", "H_total / N", { H_total: htotal, N: N }, htotal + " / " + N)
+    trace.step("rep_pulse_rule2", "Rule 2: exact average-power minimum g_min / prf")
+      .withInputs({ wl_nm: wl_nm, T_s: T, prf_hz: prf, N: N, g_min_W_cm2: gMin })
+      .withFormula("division", "g_min / prf", { g_min: gMin, prf: prf }, gMin + " / " + prf)
       .withOutput(rule2, "J/cm2")
       .withSubSteps(r2Trace.getSteps());
 

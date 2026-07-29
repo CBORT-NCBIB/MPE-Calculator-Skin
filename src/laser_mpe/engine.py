@@ -388,6 +388,56 @@ def band_name(wl_nm):
 # Repetitive pulse (standard-independent logic)
 # ═══════════════════════════════════════════════════════════════
 
+def _time_breakpoints():
+    """Sorted unique time-region boundaries across all bands of the standard."""
+    bps = set()
+    for band in _std["bands"]:
+        if band.get("mode") == "dual_limit":
+            region_sets = [band["thermal"]["regions"], band["photochemical"]["regions"]]
+        else:
+            region_sets = [band["regions"]]
+        for regions in region_sets:
+            for r in regions:
+                bps.add(float(r["t_min_s"]))
+                bps.add(float(r["t_max_s"]))
+    return sorted(bps)
+
+
+def _rule2_avg_irradiance_limit(wl_nm, T):
+    """Binding average-power (Rule 2) limit over the exposure window up to T.
+
+    Rule 2 treats the pulse train as continuous: a train at PRF f with per-pulse
+    radiant exposure H is permitted iff the average irradiance f*H does not exceed
+    MPE(T')/T' for every averaging window T' up to the total exposure T. The
+    binding value is
+
+        g_min = min over T' of MPE(T')/T'        (J/cm^2 per s = W/cm^2),
+
+    and the per-pulse Rule-2 limit is then g_min / f.
+
+    MPE(T')/T' is non-increasing within each analytic piece of MPE and can only
+    step up at a region breakpoint (e.g. the t^0.25 -> linear transition at 10 s),
+    so the minimum lies at a breakpoint approached from the left, or at T itself.
+    Evaluating that finite candidate set is exact -- no sub-sampling. This replaces
+    the previous endpoint-only estimate MPE(T)/(f*T), which for T > 10 s was up to
+    ~2.24 % too permissive (visible/NIR) because it missed the 10 s breakpoint.
+    """
+    _ensure_loaded()
+    T = float(T)
+    candidates = [T]
+    for b in _time_breakpoints():
+        if 0.0 < b <= T:
+            candidates.append(math.nextafter(b, 0.0))
+    g = float('inf')
+    for tprime in candidates:
+        if tprime <= 0.0:
+            continue
+        mpe = skin_mpe(wl_nm, tprime)
+        if math.isfinite(mpe):
+            g = min(g, mpe / tprime)
+    return g
+
+
 def rep_pulse(wl_nm, tau, prf, T):
     """Per-pulse MPE for repetitive-pulse skin exposure.
 
@@ -413,13 +463,14 @@ def rep_pulse(wl_nm, tau, prf, T):
         Number of pulses.
     """
     H_single = skin_mpe(wl_nm, tau)
-    H_total = skin_mpe(wl_nm, T)
+    g_min = _rule2_avg_irradiance_limit(wl_nm, T)
 
     prf = np.asarray(prf, dtype=float)
     N = prf * T
 
-    H_avg = H_total / np.maximum(N, 1.0)
-    H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_avg))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        H_rule2 = g_min / prf
+    H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_rule2))
 
     return H_pulse, N
 

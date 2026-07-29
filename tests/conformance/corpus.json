@@ -1,6 +1,6 @@
 {
   "generated_by": "generate_conformance.mjs",
-  "generated_at": "2026-07-26T22:16:09.630Z",
+  "generated_at": "2026-07-29T03:33:01.885Z",
   "engine_version": "mpe-engine-js",
   "standard": "icnirp_2013.json",
   "tolerance_note": "Relative tolerance. Use 0 for exact match (integer or known-constant results).",
@@ -1002,8 +1002,8 @@
       },
       "expected": {
         "rule1": 0.1,
-        "rule2": 0.0008696263565463044,
-        "H": 0.0008696263565463044,
+        "rule2": 0.0008696263565463043,
+        "H": 0.0008696263565463043,
         "N": 2000,
         "binding": "Rule 2"
       },
@@ -1021,8 +1021,8 @@
       },
       "expected": {
         "rule1": 0.005600000000000001,
-        "rule2": 0.0001,
-        "H": 0.0001,
+        "rule2": 0.0000995836469621797,
+        "H": 0.0000995836469621797,
         "N": 10000,
         "binding": "Rule 2"
       },

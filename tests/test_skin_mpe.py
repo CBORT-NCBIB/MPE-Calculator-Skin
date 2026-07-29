@@ -379,6 +379,30 @@ class TestRepetitivePulse:
         assert H_rule2 < H_single
         assert_close(H_pulse[0], H_rule2, label="Rule 2 at high PRF")
 
+    def test_rule2_exact_subwindow_minimum(self):
+        """Rule 2 is the exact average-power minimum over sub-windows, not just T.
+
+        For T <= 10 s the binding window is T, so the exact result equals the old
+        endpoint estimate MPE(T)/(f*T). For T > 10 s the binding window is the
+        10 s breakpoint (MPE switches from t^0.25 to linear there), so the
+        per-pulse limit is slightly more conservative than the endpoint estimate.
+        """
+        import math
+        f = np.array([100.0])
+
+        # T <= 10 s: exact == endpoint
+        H1, _ = per_pulse_MPE(800, 10e-9, f, 1.0)
+        assert_close(H1[0], skin_mpe(800, 1.0) / (100.0 * 1.0), label="T=1s exact==endpoint")
+
+        # T = 100 s: exact is strictly more conservative than the endpoint estimate,
+        # by at most the 0.2 / (1.1*10^0.25) ~ 2.24% gap, and binds at the 10 s window.
+        H2, _ = per_pulse_MPE(800, 10e-9, f, 100.0)
+        endpoint2 = skin_mpe(800, 100.0) / (100.0 * 100.0)
+        assert H2[0] < endpoint2, "exact Rule 2 must be < endpoint for T>10s"
+        assert 0.97 < H2[0] / endpoint2 < 1.0
+        t10 = math.nextafter(10.0, 0.0)
+        assert_close(H2[0], (skin_mpe(800, t10) / t10) / 100.0, label="binds at 10s breakpoint")
+
     def test_min_of_rules(self):
         """Per-pulse MPE = min(Rule 1, Rule 2) for N > 1."""
         f_arr = np.logspace(0, 4, 50)

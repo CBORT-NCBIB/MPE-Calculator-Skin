@@ -34,7 +34,7 @@
   0.01             1724             17               4.15         31.6979 mJ/cm^2
   0.10             313              31               5.53         31.3619 mJ/cm^2
   1.00             55               55               7.39         31.4706 mJ/cm^2
-  10.00            10               100              9.98         31.5519 mJ/cm^2
+  10.00            10               98               9.87         31.5798 mJ/cm^2
 
   Interpretation: At longer exposure times, more pulses can be
   averaged, but each pulse must be weaker (Rule 2). The optimal
@@ -48,5 +48,5 @@
   ------------------------------------------------------------------------------
   OR-PAM focused       532        0.005        100000       1.06           0.0011
   AR-PAM               532        2.0          1000         105.83         0.1058
-  PACT Nd:YAG          1064       10.0         10           78539.82       78.5398
-  PACT OPO             800        8.0          10           15933.08       15.9331
+  PACT Nd:YAG          1064       10.0         10           76816.16       76.8162
+  PACT OPO             800        8.0          10           15583.41       15.5834
