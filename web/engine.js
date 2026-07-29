@@ -1597,8 +1597,7 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
 // ── Generalized segment-superposition fluence framework ─────────
 //
 // Implements the erf-based segment fluence formula for arbitrary
-// scan paths. See: "Generalized Gaussian Fluence Accumulation from
-// Arbitrary Scan Paths" (framework document, April 2026).
+// scan paths.
 //
 // Architecture: decomposes any scan path into contiguous linear
 // segments and sums the closed-form erf fluence from each.
@@ -2837,9 +2836,8 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   // NOTE: The analytical cross-check uses mpe_T (T_total), not T_point.
   // This is correct: the analytical peak represents the worst-case point
   // in a uniform raster where all lines contribute, so T_point ≈ T_total.
-  // For custom paths, scan_params may describe a fictitious raster (see
-  // engine archaeology report), so this cross-check adds conservatism
-  // that may not match the actual geometry.
+  // For custom paths, scan_params may describe a fictitious raster, so this
+  // cross-check adds conservatism that may not match the actual geometry.
   var analyticalPeak = NaN;
   var analyticalUsed = false;
   if (scan_params && scan_params.v_mm_s > 0) {
