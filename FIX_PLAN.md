@@ -1,11 +1,32 @@
 # Fix Plan — MPE-Calculator-Skin
 
-Companion to `AUDIT.md` (finding IDs reference it). **Nothing below has been applied.**
-Per the review brief, execution starts only after this plan is approved. Ground rules for
-execution: one logical change per commit; full test suite green after every commit; any
-physical constant/formula change cites the exact ICNIRP 2013 clause and lands with a test
-that fails before and passes after; error direction always conservative; if an item grows
-beyond its risk note, stop and report instead of improvising.
+Companion to `AUDIT.md` (finding IDs reference it). Per the review brief, execution starts
+only after this plan is approved. Ground rules for execution: one logical change per commit;
+full test suite green after every commit; any physical constant/formula change cites the
+exact ICNIRP 2013 clause and lands with a test that fails before and passes after; error
+direction always conservative; if an item grows beyond its risk note, stop and report
+instead of improvising.
+
+## Execution progress (updated during Phase 3; delivered as a git patch series)
+
+- **Done** (one commit each, full suite green): #1 URLs, #2 README false/duplicate/truncation,
+  #3 README claims, #4 API.md, #5 standards README, #6 web/README, #7 CONTRIBUTING + new
+  CODE_OF_CONDUCT.md, #8 CHANGELOG reconcile, #9 delete stale tests/outputs, **#10 t=3e4
+  inclusivity (Blocker A-3)**, **#12 validator fail-closed + discrete-lookup (Blocker A-4,
+  140×)**, **#17 exact Rule-2 average-power minimum (A-10/A-11)**, #22 fabricated citations,
+  #14 large_area gates + NaN (A-7).
+- **Partial**: #13 raise-on-invalid — `ca()` and `band_name()` now raise on garbage (A-6,
+  A-16, both engines); `skin_mpe`/`skin_mpe_array` keep the documented NaN-for-out-of-range
+  contract by design (fail-safe + needed for array plotting), and `per_pulse_MPE`'s array
+  PRF handling is unchanged (array plotting) — noted rather than forced to raise.
+- **Withdrawn**: **#11** — ICNIRP Table 5 (author-supplied) confirms the UV data is correct;
+  findings A-1/A-2 retracted (see AUDIT correction note).
+- **Remaining** (not yet executed): #15 fallback-constant removal (A-8), #16 nm/µm guess
+  removal (A-9), #18/#19/#20 scanning-engine internals (A-20/A-21/A-14/A-13), #21 report
+  escaping + traceability matrix (D-21), and all of Group 3 (#23–#34: packaging/wheel data,
+  version single-source, lockfile + rebuild-diff CI gate, SRI, wiring the un-run suites,
+  corpus-from-Python, dead-code deletion, prose compression, validation-report logic,
+  examples/web hygiene). Phase 4 (hostile re-read → REVIEWER_SIMULATION.md) also remains.
 
 Approved decisions already binding on this plan: invalid input ⇒ **raise** (Python) /
 fail-closed (JS boundary); `paper/` is **hands-off** (all paper work lives in NEEDS
