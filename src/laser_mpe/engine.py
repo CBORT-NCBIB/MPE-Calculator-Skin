@@ -102,8 +102,19 @@ def validate_standard(data):
                     errors.append(f"Band '{bname}' region {ri}: unknown formula '{formula}'")
                 if formula and formula != "discrete" and r.get("a") is None:
                     errors.append(f"Band '{bname}' region {ri}: formula '{formula}' requires 'a'")
-                if formula in ("power", "ca_power") and r.get("b") is None:
+                if formula in ("power", "ca_power", "power_offset") and r.get("b") is None:
                     errors.append(f"Band '{bname}' region {ri}: formula '{formula}' requires 'b'")
+                if formula == "power_offset" and r.get("c") is None:
+                    errors.append(f"Band '{bname}' region {ri}: formula 'power_offset' requires 'c'")
+                if formula == "discrete":
+                    lookup = r.get("lookup")
+                    if not lookup:
+                        errors.append(f"Band '{bname}' region {ri}: formula 'discrete' requires 'lookup'")
+                    elif lookup not in data:
+                        errors.append(
+                            f"Band '{bname}' region {ri}: discrete lookup table "
+                            f"'{lookup}' not found in the standard"
+                        )
 
     return errors
 

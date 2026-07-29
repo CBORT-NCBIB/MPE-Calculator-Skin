@@ -71,6 +71,10 @@ function _validateStandard(data) {
           if (r.formula && r.formula !== "discrete" && r.a === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'a'");
           if (r.formula && (r.formula === "power" || r.formula === "ca_power" || r.formula === "power_offset") && r.b === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'b'");
           if (r.formula && r.formula === "power_offset" && r.c === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula 'power_offset' requires 'c'");
+          if (r.formula === "discrete") {
+            if (!r.lookup) errors.push("Band '" + band.name + "' region " + ri + ": formula 'discrete' requires 'lookup'");
+            else if (!(r.lookup in data)) errors.push("Band '" + band.name + "' region " + ri + ": discrete lookup table '" + r.lookup + "' not found in the standard");
+          }
         }
       }
     }
@@ -81,10 +85,14 @@ function _validateStandard(data) {
 function loadStandard(data) {
   _validationErrors = _validateStandard(data);
   if (_validationErrors.length > 0) {
+    // Fail closed: do not apply an invalid standard. The previously loaded
+    // standard (if any) stays active, so callers never compute against invalid
+    // data. Callers should check getValidationErrors() after loading.
     if (typeof console !== "undefined") {
-      console.error("Standard data validation errors:");
+      console.error("Standard data validation errors (standard not applied):");
       for (var i = 0; i < _validationErrors.length; i++) console.error("  - " + _validationErrors[i]);
     }
+    return;
   }
   _std = data;
 }

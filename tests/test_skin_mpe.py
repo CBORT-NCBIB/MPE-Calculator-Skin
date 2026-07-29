@@ -435,6 +435,40 @@ class TestEdgeCases:
         assert np.all(np.isfinite(H))
 
 
+class TestStandardValidation:
+    """The validator rejects malformed standards and load_standard fails closed."""
+
+    def _std_copy(self):
+        import copy
+
+        from laser_mpe import engine
+        engine._ensure_loaded()
+        return copy.deepcopy(engine._std)
+
+    def test_valid_standard_passes(self):
+        from laser_mpe.engine import validate_standard
+        assert validate_standard(self._std_copy()) == []
+
+    def test_broken_discrete_lookup_rejected(self):
+        """A discrete region whose lookup table does not exist must fail to load.
+
+        Previously this passed validation and silently degraded the UV limit to
+        the thermal-only value (e.g. 302 nm: 0.56 instead of 0.004 J/cm2, 140x).
+        """
+        import pytest
+
+        from laser_mpe.engine import load_standard, validate_standard
+        bad = self._std_copy()
+        for band in bad["bands"]:
+            for r in band.get("photochemical", {}).get("regions", []):
+                if r.get("formula") == "discrete":
+                    r["lookup"] = "does_not_exist"
+        assert any("lookup" in e.lower() for e in validate_standard(bad))
+        with pytest.raises(ValueError):
+            load_standard(bad)
+        load_standard(None)  # restore default for other tests
+
+
 # =====================================================================
 # Run all tests
 # =====================================================================

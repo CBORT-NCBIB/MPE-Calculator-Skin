@@ -452,6 +452,24 @@ test("engine exports named constants", () => {
   assert.strictEqual(e.MAX_VIZ_PULSES, 50000);
 });
 
+test("loadStandard fails closed on an unresolved discrete lookup", () => {
+  // A discrete region whose lookup table is missing must be rejected and NOT
+  // applied (previously it silently degraded UV to thermal-only: 0.56 vs 0.004).
+  const icnirp = require("../web/standards/icnirp_2013.json");
+  const bad = JSON.parse(JSON.stringify(icnirp));
+  for (const band of bad.bands) {
+    const sets = band.mode === "dual_limit"
+      ? [band.thermal.regions, band.photochemical.regions] : [band.regions];
+    for (const regs of sets) for (const r of regs) {
+      if (r.formula === "discrete") r.lookup = "does_not_exist";
+    }
+  }
+  e.loadStandard(bad);
+  assert.ok(e.getValidationErrors().some((s) => /lookup/i.test(s)), "reports lookup error");
+  assert.strictEqual(e.skinMPE(302, 1.0), 0.004, "keeps last-good standard (fail closed)");
+  e.loadStandard(icnirp); // restore
+});
+
 // ═══════ Cross-language exhaustive vectors ═══════
 // Test JS engine against Python-verified boundary values at all band edges
 // These 20 test points cover every wavelength band and duration boundary in ICNIRP 2013
