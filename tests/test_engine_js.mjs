@@ -141,6 +141,13 @@ test("bandName: 1064nm = Near-IR", () => {
   assert.strictEqual(e.bandName(1064), "Near-IR");
 });
 
+test("bandName: out-of-range returns null (not a mislabel)", () => {
+  assert.strictEqual(e.bandName(100), null);
+  assert.strictEqual(e.bandName(2e6), null);
+  assert.strictEqual(e.bandName(NaN), null);
+  assert.strictEqual(e.bandName(1e6), "Far-IR"); // inclusive top edge
+});
+
 test("bandName: 10600nm = Far-IR", () => {
   assert.strictEqual(e.bandName(10600), "Far-IR");
 });

@@ -469,6 +469,30 @@ class TestStandardValidation:
         load_standard(None)  # restore default for other tests
 
 
+class TestInvalidInputRaises:
+    """ca() and band_name() fail loud on garbage instead of returning a wrong value."""
+
+    def test_ca_raises_on_invalid(self):
+        import pytest
+
+        from laser_mpe import ca
+        for bad in (float("nan"), float("inf"), -1, 0, 100, 2e6):
+            with pytest.raises(ValueError):
+                ca(bad)
+        # documented in-range default (FIR / below the C_A table) still applies
+        assert ca(200) == 1.0
+        assert ca(1500) == 1.0
+
+    def test_band_name_raises_on_invalid(self):
+        import pytest
+
+        from laser_mpe import band_name
+        for bad in (float("nan"), float("inf"), 100, 2e6):
+            with pytest.raises(ValueError):
+                band_name(bad)
+        assert band_name(1e6) == "Far-IR"  # inclusive top edge
+
+
 # =====================================================================
 # Run all tests
 # =====================================================================

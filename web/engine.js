@@ -866,7 +866,11 @@ function bandName(wl_nm) {
       return db[i].name;
     }
   }
-  return db[db.length - 1].name;
+  // Inclusive upper edge of the outermost band; otherwise the wavelength is out
+  // of range -> return null rather than mislabeling it as the last band.
+  var last = db[db.length - 1];
+  if (wl_nm === last.wl_end_nm) return last.name;
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════

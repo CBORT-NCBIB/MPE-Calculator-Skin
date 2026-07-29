@@ -32,7 +32,7 @@ For array inputs over multiple durations, use `skin_mpe_array(wl_nm, t_array)`.
 
 ### `band_name(wl_nm)`
 
-Return the display band name (`"UV"`, `"Visible"`, `"Near-IR"`, or `"Far-IR"`) for a wavelength in nanometers.
+Return the display band name (`"UV"`, `"Visible"`, `"Near-IR"`, or `"Far-IR"`) for a wavelength in nanometers. Raises `ValueError` for a NaN/infinite or out-of-range wavelength.
 
 ---
 
@@ -73,7 +73,10 @@ Wavelength correction factor C_A. Takes wavelength in **nanometers**.
 | 400–700 nm | C_A = 1.0 |
 | 700–1050 nm | C_A = 10^(0.002 × (λ_nm − 700)) |
 | 1050–1400 nm | C_A = 5.0 |
-| Outside range | C_A = 1.0 (default) |
+| Elsewhere in the standard's range | C_A = 1.0 (default; C_A does not apply outside 400–1400 nm) |
+
+Raises `ValueError` for a NaN/infinite wavelength or one outside the standard's
+range (180 nm–1 mm), rather than returning a misleading default.
 
 ```python
 from laser_mpe import ca

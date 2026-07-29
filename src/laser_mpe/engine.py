@@ -178,6 +178,22 @@ def _ensure_loaded():
         load_standard(None)
 
 
+def _validate_wavelength(wl_nm):
+    """Coerce to float; require a finite wavelength within the standard's range.
+
+    Raises ValueError on NaN/inf or a value outside the loaded standard's
+    ``wl_range_nm``. Used by the functions whose out-of-range behavior would
+    otherwise be a plausible-but-wrong value rather than a safe NaN.
+    """
+    wl = float(wl_nm)
+    if not math.isfinite(wl):
+        raise ValueError(f"Wavelength must be a finite number, got {wl_nm!r}")
+    lo, hi = _std["standard"]["wl_range_nm"]
+    if wl < lo or wl > hi:
+        raise ValueError(f"Wavelength {wl} nm is outside the standard's range [{lo}, {hi}] nm")
+    return wl
+
+
 # ═══════════════════════════════════════════════════════════════
 # Correction factor C_A
 # ═══════════════════════════════════════════════════════════════
@@ -196,6 +212,7 @@ def ca(wl_nm):
         Correction factor (dimensionless).
     """
     _ensure_loaded()
+    wl_nm = _validate_wavelength(wl_nm)
     ca_def = _std["correction_factors"]["CA"]
     regions = ca_def["regions"]
 
@@ -389,10 +406,15 @@ def band_name(wl_nm):
     str
     """
     _ensure_loaded()
-    for db in _std["display_bands"]:
+    wl_nm = _validate_wavelength(wl_nm)
+    dbs = _std["display_bands"]
+    for db in dbs:
         if wl_nm >= db["wl_start_nm"] and wl_nm < db["wl_end_nm"]:
             return db["name"]
-    return _std["display_bands"][-1]["name"]
+    # inclusive upper edge of the outermost band
+    if wl_nm == dbs[-1]["wl_end_nm"]:
+        return dbs[-1]["name"]
+    raise ValueError(f"Wavelength {wl_nm} nm has no display band in the loaded standard")
 
 
 # ═══════════════════════════════════════════════════════════════
