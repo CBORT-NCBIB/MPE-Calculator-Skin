@@ -120,11 +120,14 @@ Returns a dict: `{'diameter_mm': float, 'area_cm2': float}`
 
 ---
 
-### `large_area_MPE_skin(beam_area_cm2)`
+### `large_area_MPE_skin(beam_area_cm2, wl_nm=None, t_s=None)`
 
-Large area correction for λ > 1.4 µm, t > 10 s.
+Large area correction for λ ≥ 1.4 µm, t ≥ 10 s.
 
-Returns MPE in mW/cm², or `None` if beam area < threshold.
+Returns MPE in mW/cm², or `None` if the correction does not apply (beam area
+below the threshold, or — when `wl_nm`/`t_s` are supplied — outside the
+applicable wavelength/duration range). Raises `ValueError` for a NaN, infinite,
+or non-positive area.
 
 ---
 

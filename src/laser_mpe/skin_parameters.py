@@ -10,6 +10,8 @@ When switching standards, the supplementary values travel with the
 standard data — no code changes are needed.
 """
 
+import math
+
 import numpy as np
 
 from . import engine as _engine
@@ -101,7 +103,7 @@ def get_skin_limiting_aperture(wavelength):
 # Large Area Exposure Correction
 # =========================================================================
 
-def large_area_MPE_skin(beam_area_cm2):
+def large_area_MPE_skin(beam_area_cm2, wl_nm=None, t_s=None):
     """
     MPE correction for large beam cross-sections.
 
@@ -111,17 +113,45 @@ def large_area_MPE_skin(beam_area_cm2):
     Parameters
     ----------
     beam_area_cm2 : float
-        Beam cross-sectional area in cm^2.
+        Beam cross-sectional area in cm^2 (must be finite and positive).
+    wl_nm : float, optional
+        Wavelength in nm. If given, the correction only applies at or above the
+        standard's ``wl_min_nm`` (1400 nm for ICNIRP 2013); below it, returns None.
+    t_s : float, optional
+        Exposure duration in seconds. If given, the correction only applies at or
+        above the standard's ``t_min_s`` (10 s for ICNIRP 2013); below it, None.
 
     Returns
     -------
     float or None
-        MPE irradiance in mW/cm^2, or None if beam_area is below the
-        threshold (standard MPE values apply instead).
+        MPE irradiance in mW/cm^2, or None if the correction does not apply
+        (below the area threshold, or outside the wavelength/duration range when
+        those are supplied).
+
+    Raises
+    ------
+    ValueError
+        If ``beam_area_cm2`` is NaN, infinite, or not positive.
     """
     _engine._ensure_loaded()
     supp = _engine._std.get("supplementary", {})
     lac = supp.get("large_area_correction", {})
+    if not lac:
+        return None
+
+    if not math.isfinite(beam_area_cm2) or beam_area_cm2 <= 0:
+        raise ValueError(
+            f"beam_area_cm2 must be a positive finite number, got {beam_area_cm2!r}"
+        )
+
+    # Applicability gates: the correction is defined only for λ ≥ wl_min and
+    # t ≥ t_min. Enforced when the caller supplies those values.
+    wl_min = lac.get("wl_min_nm")
+    t_min = lac.get("t_min_s")
+    if wl_nm is not None and wl_min is not None and wl_nm < wl_min:
+        return None
+    if t_s is not None and t_min is not None and t_s < t_min:
+        return None
 
     threshold = lac.get("threshold_cm2", 100.0)
     cap_area = lac.get("cap_cm2", 1000.0)

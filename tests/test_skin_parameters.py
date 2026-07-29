@@ -142,12 +142,28 @@ class TestLimitingAperture:
 # =====================================================================
 
 class TestLargeArea:
-    """Verified against the standard (Table 7 note c."""
+    """Verified against the standard (Table 7 note c)."""
 
     def test_small_beam_returns_none(self):
         """Beam < 100 cm^2: standard Table 7 values apply."""
         assert large_area_MPE_skin(50.0) is None
         assert large_area_MPE_skin(99.9) is None
+
+    def test_invalid_area_raises(self):
+        """NaN/inf/non-positive area must raise, not return a confident 10 mW/cm^2."""
+        import math
+
+        import pytest
+        for bad in (float("nan"), float("inf"), 0.0, -5.0):
+            with pytest.raises(ValueError):
+                large_area_MPE_skin(bad)
+        assert math.isfinite(large_area_MPE_skin(500.0))
+
+    def test_applicability_gates(self):
+        """The correction only applies for wl >= 1400 nm and t >= 10 s when supplied."""
+        assert large_area_MPE_skin(500.0, wl_nm=532) is None       # visible: not applicable
+        assert large_area_MPE_skin(500.0, t_s=1.0) is None         # t < 10 s: not applicable
+        assert_close(large_area_MPE_skin(500.0, wl_nm=2000, t_s=100), 20.0, label="in range")
 
     def test_100_to_1000_cm2(self):
         """100-1000 cm^2: MPE = 10,000 / A_s mW/cm^2."""
