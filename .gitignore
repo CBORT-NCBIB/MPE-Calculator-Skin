@@ -44,6 +44,9 @@ web/index.html
 # Node.js (for JS test tooling)
 node_modules/
 package-lock.json
+# ...but the web build lockfile IS committed, so `npm ci` pins the exact
+# esbuild/Babel/Ajv versions the shipped index.html was built with.
+!web/package-lock.json
 
 # Playwright (e2e test artifacts — regenerated per run)
 playwright-report/
