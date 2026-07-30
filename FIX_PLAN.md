@@ -9,24 +9,30 @@ instead of improvising.
 
 ## Execution progress (updated during Phase 3; delivered as a git patch series)
 
-- **Done** (one commit each, full suite green): #1 URLs, #2 README false/duplicate/truncation,
-  #3 README claims, #4 API.md, #5 standards README, #6 web/README, #7 CONTRIBUTING + new
-  CODE_OF_CONDUCT.md, #8 CHANGELOG reconcile, #9 delete stale tests/outputs, **#10 t=3e4
-  inclusivity (Blocker A-3)**, **#12 validator fail-closed + discrete-lookup (Blocker A-4,
-  140×)**, **#17 exact Rule-2 average-power minimum (A-10/A-11)**, #22 fabricated citations,
-  #14 large_area gates + NaN (A-7).
+- **Done** (one commit each, full suite green after each): #1 URLs, #2 README
+  false/duplicate/truncation, #3 README claims, #4 API.md, #5 standards README, #6 web/README,
+  #7 CONTRIBUTING + new CODE_OF_CONDUCT.md, #8 CHANGELOG reconcile, #9 delete stale
+  tests/outputs, **#10 t=3e4 inclusivity (Blocker A-3)**, **#12 validator fail-closed +
+  discrete-lookup (Blocker A-4, 140×)**, **#17 exact Rule-2 average-power minimum
+  (A-10/A-11)**, #22 fabricated citations, #14 large_area gates + NaN (A-7),
+  **#23 package-data so wheels work (Blocker E-1)** + IEC-claim removed from pyproject,
+  #24 version single-source + stale JS engine version (E-2), and a rebuild of `web/index.html`
+  so the browser tool carries all the engine fixes. Phase 4 hostile re-read written to
+  `REVIEWER_SIMULATION.md`.
 - **Partial**: #13 raise-on-invalid — `ca()` and `band_name()` now raise on garbage (A-6,
   A-16, both engines); `skin_mpe`/`skin_mpe_array` keep the documented NaN-for-out-of-range
   contract by design (fail-safe + needed for array plotting), and `per_pulse_MPE`'s array
-  PRF handling is unchanged (array plotting) — noted rather than forced to raise.
+  PRF handling is unchanged — noted rather than forced to raise.
 - **Withdrawn**: **#11** — ICNIRP Table 5 (author-supplied) confirms the UV data is correct;
   findings A-1/A-2 retracted (see AUDIT correction note).
-- **Remaining** (not yet executed): #15 fallback-constant removal (A-8), #16 nm/µm guess
-  removal (A-9), #18/#19/#20 scanning-engine internals (A-20/A-21/A-14/A-13), #21 report
-  escaping + traceability matrix (D-21), and all of Group 3 (#23–#34: packaging/wheel data,
-  version single-source, lockfile + rebuild-diff CI gate, SRI, wiring the un-run suites,
-  corpus-from-Python, dead-code deletion, prose compression, validation-report logic,
-  examples/web hygiene). Phase 4 (hostile re-read → REVIEWER_SIMULATION.md) also remains.
+- **Remaining (handoff for a focused follow-up pass)**: #15 fallback-constant removal (A-8)
+  and #16 nm/µm guess removal (A-9) — both breaking Python changes with test-migration
+  ripple, and #16 only misfires below 10 nm (outside the tool's domain); #18/#19/#20
+  scanning-engine internals (A-20/A-21/A-14/A-13 — complex JS, #19 touches the triplicated
+  scan components); #21 report HTML-escaping (D-21); and the rest of Group 3 (#25 lockfile +
+  rebuild-diff CI gate, #26 SRI hashes, #27 wire the un-run suites into CI + lint examples/,
+  #28 corpus-from-Python direction, #29 verify_* collected, #30/#31 delete emoji runners /
+  dead code, #32 prose compression, #33 validation-report logic, #34 examples/web hygiene).
 
 Approved decisions already binding on this plan: invalid input ⇒ **raise** (Python) /
 fail-closed (JS boundary); `paper/` is **hands-off** (all paper work lives in NEEDS
