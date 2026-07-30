@@ -89,13 +89,6 @@ def check(label, actual, expected, rtol=1e-9):
     except AssertionError:
         failed += 1
         errors.append(f"  {label}: expected {expected}, got {actual}")
-    except Exception:
-        # Handle typo in AssertionError -> AssertionError
-        if abs(actual - expected) <= abs(expected) * rtol + 1e-15:
-            passed += 1
-        else:
-            failed += 1
-            errors.append(f"  {label}: expected {expected}, got {actual} (diff={abs(actual-expected):.2e})")
 
 def section(title):
     print(f"\n{'─' * 70}")
