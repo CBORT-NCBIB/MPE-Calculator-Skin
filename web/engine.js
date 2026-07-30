@@ -1725,8 +1725,19 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
   var Ep = beam.pulse_energy_J || (prf > 0 ? P / prf : 0);
   var is_cw = beam.is_cw;
 
-  // Determine computation regime (framework Proposition 7.1)
-  var rho = is_cw ? Infinity : overlapParameter(w, prf, pathSegs[0].v_mm_s);
+  // Determine computation regime (framework Proposition 7.1) from the LEAST-
+  // overlapping (fastest) segment. The continuous erf formula smears
+  // separated pulses and under-estimates the peak when rho < 1, so erf is
+  // safe only when EVERY segment is overlap-heavy (rho >= 1). Previously rho
+  // came from the first segment alone, so a slow first segment could select
+  // erf for a faster later segment and under-count its peak (A-21).
+  var rho = Infinity;
+  if (!is_cw) {
+    for (var rseg = 0; rseg < pathSegs.length; rseg++) {
+      var rho_seg = overlapParameter(w, prf, pathSegs[rseg].v_mm_s);
+      if (rho_seg < rho) rho = rho_seg;
+    }
+  }
   var use_erf = is_cw || rho >= 1.0;
 
   var nx = grid.nx, ny = grid.ny;
@@ -1815,7 +1826,6 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
     var trunc_mm = 6 * sigma; // 6σ = 6·(w/2) = 3w truncation (matches erf regime)
     var trunc2 = trunc_mm * trunc_mm;
     var trunc_grid = Math.ceil(trunc_mm / dx);
-    var ds = pathSegs[0].v_mm_s / prf; // pulse spacing (mm)
 
     for (var si2 = 0; si2 < pathSegs.length; si2++) {
       var sg = pathSegs[si2];
@@ -1829,6 +1839,11 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
 
       var ux = (sg.bx - sg.ax) / seg_len;
       var uy = (sg.by - sg.ay) / seg_len;
+      // Pulse spacing from THIS segment's velocity (mm); previously the first
+      // segment's velocity was used for every segment, mis-placing pulses on
+      // mixed-velocity paths (A-21). Guard v <= 0 so a stationary segment
+      // deposits one pulse rather than looping forever.
+      var ds = sg.v_mm_s > 0 ? sg.v_mm_s / prf : seg_len;
       var n_pulses = Math.max(1, Math.floor(seg_len / ds));
 
       for (var pk = 0; pk < n_pulses; pk++) {

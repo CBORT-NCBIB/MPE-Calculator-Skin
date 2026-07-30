@@ -748,6 +748,25 @@ test("separable: conservative safety (never underestimates)", () => {
     `safety peak ${sf.peak_fluence.toExponential(6)} below analytical ${sf.analytical_peak.toExponential(6)}`);
 });
 
+test("computeScanFluenceSegmentErf: regime picked from the fastest segment, not the first (A-21)", () => {
+  // A slow first segment (rho >= 1) followed by a fast one (rho < 1) must use
+  // the discrete regime for the whole path: the continuous erf formula would
+  // smear the fast segment's separated pulses and under-estimate its peak.
+  // Previously the regime was chosen from the first segment's velocity alone.
+  const d = 0.1, prf = 1000;
+  const beam = { d_1e_mm: d, prf_hz: prf, pulse_energy_J: 1e-5, avg_power_W: 1e-5 * prf, is_cw: false };
+  const slow = { ax: 0, ay: 0, bx: 10, by: 0, v_mm_s: 50 };    // rho ~ 1.41
+  const fast = { ax: 10, ay: 0, bx: 30, by: 0, v_mm_s: 200 };  // rho ~ 0.35
+  const g = e.createFluenceGrid(d, [slow, fast], 8);
+  const s = e.computeScanFluenceSegmentErf(g, [slow, fast], beam);
+  assert.strictEqual(s.regime, "discrete",
+    `mixed slow-then-fast path must use the discrete regime, got ${s.regime} (rho=${s.rho})`);
+  // A uniformly slow path is unchanged: it stays in the erf regime.
+  const u2 = { ax: 10, ay: 0, bx: 20, by: 0, v_mm_s: 50 };
+  const su = e.computeScanFluenceSegmentErf(e.createFluenceGrid(d, [slow, u2], 8), [slow, u2], beam);
+  assert.strictEqual(su.regime, "erf", `uniform slow path should stay erf, got ${su.regime}`);
+});
+
 test("skinMPE monotonicity underpins the T_point conservatism claim (A-22)", () => {
   // evaluateScanSafety uses per-point T_point as the Rule-2 MPE denominator
   // and argues it is conservative because skinMPE is non-decreasing in T.
