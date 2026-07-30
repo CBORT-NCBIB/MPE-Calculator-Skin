@@ -1198,10 +1198,14 @@ function createFluenceGridFromParams(sp, ppd) {
 
   // Safety cap
   if (nx * ny > MAX_GRID_CELLS) {
+    // Cap the cell count, then pick a single isotropic spacing (dx serves both
+    // axes) large enough to still span BOTH extents. Previously dx was
+    // rederived from the x-extent alone while ny was floored independently, so
+    // the y-axis fell ~1 cell short of the domain on non-square scans (A-20).
     var scale = Math.sqrt(MAX_GRID_CELLS / (nx * ny));
-    nx = Math.floor(nx * scale);
-    ny = Math.floor(ny * scale);
-    dx = (xmax - xmin) / (nx - 1);
+    nx = Math.max(2, Math.floor(nx * scale));
+    ny = Math.max(2, Math.floor(ny * scale));
+    dx = Math.max((xmax - xmin) / (nx - 1), (ymax - ymin) / (ny - 1));
   }
 
   return {
@@ -1270,10 +1274,14 @@ function createFluenceGrid(d_1e_mm, segments, ppd) {
 
   // Safety cap: limit grid to 4M points (16 MB per array)
   if (nx * ny > MAX_GRID_CELLS) {
+    // Cap the cell count, then pick a single isotropic spacing (dx serves both
+    // axes) large enough to still span BOTH extents. Previously dx was
+    // rederived from the x-extent alone while ny was floored independently, so
+    // the y-axis fell ~1 cell short of the domain on non-square scans (A-20).
     var scale = Math.sqrt(MAX_GRID_CELLS / (nx * ny));
-    nx = Math.floor(nx * scale);
-    ny = Math.floor(ny * scale);
-    dx = (xmax - xmin) / (nx - 1);
+    nx = Math.max(2, Math.floor(nx * scale));
+    ny = Math.max(2, Math.floor(ny * scale));
+    dx = Math.max((xmax - xmin) / (nx - 1), (ymax - ymin) / (ny - 1));
   }
 
   return {

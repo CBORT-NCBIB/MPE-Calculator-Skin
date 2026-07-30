@@ -748,6 +748,25 @@ test("separable: conservative safety (never underestimates)", () => {
     `safety peak ${sf.peak_fluence.toExponential(6)} below analytical ${sf.analytical_peak.toExponential(6)}`);
 });
 
+test("createFluenceGridFromParams: capped grid stays isotropic and spans both extents (A-20)", () => {
+  // A long, thin (very non-square) scan that overflows MAX_GRID_CELLS. The
+  // downscale must keep a single spacing for both axes and still reach xmax
+  // AND ymax. Previously dx was rederived from the x-extent while ny was
+  // floored independently, leaving the y-axis ~1 cell short of the domain.
+  const sp = { d_1e_mm: 0.05, x0: 0, y0: 0, line_length_mm: 200, n_lines: 3,
+    hatch_mm: 0.5, pattern: "raster", is_cw: false };
+  const d = sp.d_1e_mm, margin = 3 * d;
+  const xmax = sp.x0 + sp.line_length_mm + margin;
+  const ymax = sp.y0 + (sp.n_lines - 1) * sp.hatch_mm + margin;
+  const g = e.createFluenceGridFromParams(sp, 32);
+  assert.ok(g.nx * g.ny > 1000000, "test domain should hit the cell cap");
+  assert.ok(g.nx * g.ny <= 4000000, `cell count ${g.nx * g.ny} must respect MAX_GRID_CELLS`);
+  const xcov = g.x_min_mm + (g.nx - 1) * g.dx_mm;
+  const ycov = g.y_min_mm + (g.ny - 1) * g.dx_mm;
+  assert.ok(xcov >= xmax - 1e-9, `x-coverage ${xcov} must reach xmax ${xmax}`);
+  assert.ok(ycov >= ymax - 1e-9, `y-coverage ${ycov} must reach ymax ${ymax}`);
+});
+
 test("separable: stats include method field", () => {
   const d = 1, prf = 1000, v = 100, Ep = 1e-4, lineL = 10;
   const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
