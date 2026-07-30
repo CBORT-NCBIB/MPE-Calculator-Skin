@@ -496,6 +496,15 @@ citation (it is presumably also the `[enter PA paper citation]` placeholder at
   standard.
 - The UV ladder's within-bin flatness (value of the bin's upper edge) matches the
   published table's own convention. These should be *documented*, not "fixed".
+- `skin_mpe(400–1400 nm, ·)` steps **down** ~2.2 % at t = 10⁻⁷ s: the constant region
+  `0.02·C_A J/cm²` (200 C_A J/m²) meets the `1.1·C_A·t^0.25 J/cm²` (11 C_A t^0.25 kJ/m²)
+  region, and `1.1·(10⁻⁷)^0.25 = 0.01956 < 0.02`. The two Table 7 regions do not join
+  continuously; the JSON reproduces both faithfully, so this is ICNIRP's own
+  discontinuity, not an error (verified against Table 7 — no constant changed). It is the
+  **only** point where `skin_mpe` is non-monotonic in duration: above ~10⁻⁷ s it is
+  non-decreasing for every band. This qualifies the scanning engine's T_point-vs-T_total
+  conservatism note (was previously written as an unqualified "monotonically
+  non-decreasing"); the note and a pinning test (`test_engine_js.mjs`, A-22) now record it.
 
 ### A-19. Adversarial-input matrix — summary of behavior at HEAD
 

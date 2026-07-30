@@ -2753,12 +2753,15 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   }
 
   // ── Per-point T_point setup ──
-  // T_point = last_visit_t - first_visit_t at each cell.
-  // skinMPE(wl, T) is monotonically non-decreasing, so using the shorter
-  // T_point (vs T_total) produces a smaller MPE denominator and a more
-  // conservative (higher) Rule 2 ratio. This is the physically correct
-  // time window: the duration over which energy actually accumulates at
-  // that specific point.
+  // T_point = last_visit_t - first_visit_t at each cell: the physically
+  // correct window over which energy accumulates at that point, used here as
+  // the Rule 2 MPE denominator.
+  // skinMPE(wl, T) is non-decreasing in T except for a single step down of
+  // <=2.2% at the ICNIRP 400-1400 nm regime boundary (t = 1e-7 s, the
+  // constant -> t^0.25 transition -- the standard's own discontinuity, not a
+  // bug; see AUDIT A-18). Above ~1e-7 s it is non-decreasing, so for any
+  // realistic accumulation window the shorter T_point yields a smaller MPE
+  // denominator and a more conservative (higher) Rule 2 ratio than T_total.
   var has_fvt = grid.first_visit_t && grid.first_visit_t.length > 0;
   var tau_floor;
   if (beam.is_cw) {

@@ -748,6 +748,30 @@ test("separable: conservative safety (never underestimates)", () => {
     `safety peak ${sf.peak_fluence.toExponential(6)} below analytical ${sf.analytical_peak.toExponential(6)}`);
 });
 
+test("skinMPE monotonicity underpins the T_point conservatism claim (A-22)", () => {
+  // evaluateScanSafety uses per-point T_point as the Rule-2 MPE denominator
+  // and argues it is conservative because skinMPE is non-decreasing in T.
+  // That holds except for one <=2.2% step down at the ICNIRP 400-1400 nm
+  // regime boundary (t = 1e-7 s, constant -> t^0.25), the standard's own
+  // discontinuity. Pin both facts so the claim can't silently rot.
+  const wls = [200, 308, 355, 532, 1064, 1400, 1550, 2000, 5000, 10600];
+  // (a) non-decreasing across every realistic accumulation window (t >= 1e-6 s)
+  for (const wl of wls) {
+    let prev = -Infinity;
+    for (let k = -6; k <= Math.log10(3e4) + 1e-9; k += 0.02) {
+      const m = e.skinMPE(wl, Math.pow(10, k));
+      if (!isFinite(m)) continue;
+      assert.ok(m >= prev * (1 - 1e-9),
+        `skinMPE(${wl}, 1e${k.toFixed(2)})=${m} decreased from ${prev}`);
+      prev = m;
+    }
+  }
+  // (b) the sole down-step is ICNIRP's own bounded 1e-7 s discontinuity
+  const step = e.skinMPE(532, 1e-7) / e.skinMPE(532, 0.999e-7);
+  assert.ok(step > 0.97 && step < 1.0,
+    `400-1400 nm 1e-7 s step ratio ${step} should be ICNIRP's ~0.978 step`);
+});
+
 test("createFluenceGridFromParams: capped grid stays isotropic and spans both extents (A-20)", () => {
   // A long, thin (very non-square) scan that overflows MAX_GRID_CELLS. The
   // downscale must keep a single spacing for both axes and still reach xmax
