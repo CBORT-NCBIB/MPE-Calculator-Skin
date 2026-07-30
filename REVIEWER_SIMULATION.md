@@ -69,9 +69,12 @@ READMEs, no longer claimed "self-contained").
 - **Functionality documentation** — ✅ `docs/API.md` now documents all exported
   Python functions (band_name/rep_pulse added) with corrected unit/attribution
   claims.
-- **Automated tests** — ✅ 137 pytest + 80 engine + tracer/LSP/conformance suites
-  run from a clean clone. ⚠ Some suites (tracer, T_point edge, JS conformance,
-  `verify_exhaustive.py`) still run only locally, not in CI — see the tests issue.
+- **Automated tests** — ✅ 143 pytest + 85 engine + tracer/LSP/conformance suites
+  run from a clean clone, and CI now runs all of them: the tracer, T_point-edge,
+  and both conformance suites were wired into `ci.yml`, `examples/` is linted, and
+  `verify_exhaustive.py` was renamed to `test_verify_exhaustive.py` so pytest
+  collects its 254 checks. The build job now also fails on any index.html rebuild
+  drift (lockfile-pinned toolchain).
 - **Community guidelines** — ✅ CONTRIBUTING (contribute + report issues + seek
   support) and a real `CODE_OF_CONDUCT.md` were added; ⚠ the CoC reporting
   contact is still a `[NEEDS AUTHOR]` placeholder.
@@ -120,10 +123,13 @@ READMEs, no longer claimed "self-contained").
 > usage disclosure states no AI was used on supporting materials, which the
 > commit history appears to contradict — please make it accurate.
 
-> **[NON-BLOCKING] CI coverage.** Several test suites (tracer, T_point edge
-> cases, the JS conformance suite, and `verify_exhaustive.py`) exist but are not
-> run by CI, so the README's "CI runs all tests" is over-stated. Please wire them
-> in (they pass locally).
+> **[NON-BLOCKING] CI coverage.** ✅ Resolved after this pass: the tracer,
+> T_point-edge, both conformance suites, and (renamed) `test_verify_exhaustive.py`
+> are now run by CI, `examples/` is linted, and the build job fails on index.html
+> rebuild drift against a committed lockfile. The remaining test-infra polish
+> (converting the Python conformance runner to a parametrized pytest module with
+> standard-state save/restore, and giving `verify_Tpoint.mjs` assertions) is
+> cosmetic and tracked in `FIX_PLAN.md`.
 
 ---
 

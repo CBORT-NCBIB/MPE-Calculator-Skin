@@ -23,9 +23,18 @@ instead of improvising.
   regime/pulse-spacing (A-21) + T_point-monotonicity comment/test/AUDIT correction
   (A-22)**, **#19 trace matches verdict for custom scan paths (A-14)**, **#20 tightened
   "never underestimates" test (A-13)**, **#21 report HTML-escaping + traceability-matrix
-  correction (D-21)**, #22 fabricated citations. Group 3 packaging so far: **#23
-  package-data so wheels work (Blocker E-1)**, #24 version single-source + stale JS engine
-  version (E-2). Phase 4 hostile re-read in `REVIEWER_SIMULATION.md`.
+  correction (D-21)**, #22 fabricated citations. Phase 4 hostile re-read in
+  `REVIEWER_SIMULATION.md`.
+- **Group 3 is mostly complete**: **#23 package-data so wheels work (Blocker E-1)**, #24
+  version single-source + stale JS engine version (E-2), **#25 committed web build lockfile
+  + `npm ci` + a content-level rebuild-diff CI gate (E-3, E-6)**, #27 wire the tracer /
+  T_point / both-conformance suites into CI + lint `examples/` (E-7, D-18, B-8), #29
+  (verify_exhaustive renamed to `test_verify_exhaustive.py` so pytest collects it, with its
+  stale t=3e4 expectations corrected), #30 delete the emoji test runners and the nonsense
+  bare-except in a `check()` helper (D-10, D-25), #31 (in part) delete the dead engine.py
+  large-area chain and the never-applied `compute-sri.js` (D-23, E-4), #33 fix the
+  validation-report pass logic + build side effect (E-8), #34 examples/web hygiene
+  (E-11, E-12).
 - **Note on #13** raise-on-invalid: `ca()`/`band_name()` raise on garbage (A-6, A-16, both
   engines); `skin_mpe`/`skin_mpe_array` keep the documented NaN-for-out-of-range contract by
   design (fail-safe + array plotting); `per_pulse_MPE`'s array PRF handling is unchanged.
@@ -37,11 +46,31 @@ instead of improvising.
   unrounded maxima), so the tie-break logic is left unchanged.
 - **Withdrawn**: **#11** — ICNIRP Table 5 (author-supplied) confirms the UV data is correct;
   findings A-1/A-2 retracted (see AUDIT correction note).
-- **Remaining (Group 3 — packaging/CI/test infrastructure)**: #25 lockfile + rebuild-diff CI
-  gate, #26 SRI hashes, #27 wire the un-run suites into CI + lint examples/, #28
-  corpus-from-Python direction, #29 verify_* pytest-collected (incl. its stale t=3e4
-  expectations from #10), #30/#31 delete emoji runners / dead code, #32 prose compression,
-  #33 validation-report logic, #34 examples/web hygiene.
+- **Remaining tail** (lower-severity; each noted with why it is deferred rather than done):
+  - **#26 SRI hashes — NEEDS NETWORK.** Correct `integrity` values require fetching the five
+    pinned CDN files (react/react-dom/prop-types/recharts/echarts); the sandbox proxy blocks
+    unpkg/jsdelivr (established in Phase 0), so the hashes cannot be computed or verified
+    here. The build.py emission logic and the honest "requires internet on first load"
+    wording are ready to add once the files are reachable (or the libs are vendored — N-11).
+  - **#28 corpus-from-Python + `tolerance || 1e-9`.** The corpus currently passes both
+    engines (101/101) and both agree to < 5×10⁻¹⁶, so results are sound; the finding is
+    provenance/direction (JS-generated snapshot) and a tolerance-`||` nuance. The subtlety:
+    cross-engine agreement is ~1e-16, not bit-exact, so the "exact-match (tol 0)" cases
+    cannot legitimately be tol 0 across languages — fixing the `||` without reclassifying
+    those cases would make them fail. Deferred for that reclassification rather than rushed.
+  - **#29 remainder.** `test_conformance_py.py` still runs at import (needs converting to a
+    parametrized pytest module with standard-state save/restore, E-9); `verify_Tpoint.mjs`
+    still lacks assertions. Both are wired into CI now (#27) and pass; the refactor is
+    cosmetic-plus-state-hygiene.
+  - **#31 remainder.** The dead JS exports (`minSafeVelocity`/`maxPermissiblePower`/
+    `MAX_SEGMENTS`, zero callers, no longer advertised after #2/#3) and the `validate.js`
+    `Ajv2020 || Ajv` wrong-draft fallback are in the browser-only LSP subsystem; removing
+    ~250 lines from the critical engine.js and changing the Ajv draft selection want the
+    Playwright e2e suite to verify, which cannot run in this sandbox (CDN-blocked). Left for
+    a browser-verified pass; the schema is draft 2020-12 (tracer loads `ajv/dist/2020.js`),
+    so the fallback should require `Ajv2020` rather than silently accept draft-07 `Ajv`.
+  - **#32 prose/comment compression.** Mechanical de-verbosing (banner blocks, build-essay
+    docstrings, decorative rules); lowest severity, no behavioral effect. Not done.
 
 Approved decisions already binding on this plan: invalid input ⇒ **raise** (Python) /
 fail-closed (JS boundary); `paper/` is **hands-off** (all paper work lives in NEEDS
