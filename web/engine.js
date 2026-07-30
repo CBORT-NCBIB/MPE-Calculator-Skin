@@ -987,7 +987,10 @@ function paOptimalPRF(wl_nm, tau, T, trace) {
 // ═══════════════════════════════════════════════════════════════
 function getAperture(wl_nm) {
   if (!_std || !_std.supplementary || !_std.supplementary.limiting_apertures) {
-    return wl_nm < 100000 ? 3.5 : 11.0;
+    throw new Error(
+      "loaded standard does not define supplementary.limiting_apertures; " +
+      "the limiting aperture is not defaulted"
+    );
   }
   var regs = _std.supplementary.limiting_apertures.regions;
   for (var i = 0; i < regs.length; i++) {
@@ -1005,9 +1008,14 @@ function beamEval(wl_nm, beam_dia_mm, trace) {
   var d = beam_dia_mm;
   var d_eval, regime;
 
-  // Read small-beam threshold from standard (default 1.0 mm if not specified)
+  // Small-beam threshold comes from the standard; it is not defaulted.
   var ap = _std && _std.supplementary && _std.supplementary.limiting_apertures;
-  var threshold = (ap && ap.small_beam_threshold_mm) || 1.0;
+  if (!ap || ap.small_beam_threshold_mm == null) {
+    throw new Error(
+      "loaded standard does not define limiting_apertures.small_beam_threshold_mm"
+    );
+  }
+  var threshold = ap.small_beam_threshold_mm;
 
   if (d < threshold) {
     d_eval = d;

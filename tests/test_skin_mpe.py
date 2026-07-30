@@ -493,6 +493,59 @@ class TestInvalidInputRaises:
         assert band_name(1e6) == "Far-IR"  # inclusive top edge
 
 
+class TestSupplementaryFallbacksRemoved:
+    """Physics values come only from the loaded standard.
+
+    A missing supplementary block or key now fails loud instead of silently
+    substituting an ICNIRP default (AUDIT A-8). ANSI, for instance, defines no
+    UV successive-day de-rating, so applying ICNIRP's 2.5 factor to it would be
+    a wrong-standard result.
+    """
+
+    def _std_copy(self):
+        import copy
+
+        from laser_mpe import engine
+        engine._ensure_loaded()
+        return copy.deepcopy(engine._std)
+
+    def test_uv_derate_raises_when_standard_omits_block(self):
+        import pytest
+
+        from laser_mpe import uv_successive_day_derate
+        from laser_mpe.engine import load_standard
+        std = self._std_copy()
+        std.get("supplementary", {}).pop("uv_successive_day_derate", None)
+        load_standard(std)
+        try:
+            with pytest.raises(ValueError):
+                uv_successive_day_derate(300, 1.0)
+        finally:
+            load_standard(None)  # restore default for other tests
+
+    def test_large_area_raises_when_block_incomplete(self):
+        import pytest
+
+        from laser_mpe import large_area_MPE_skin
+        from laser_mpe.engine import load_standard
+        std = self._std_copy()
+        std["supplementary"]["large_area_correction"].pop("threshold_cm2", None)
+        load_standard(std)
+        try:
+            with pytest.raises(ValueError):
+                large_area_MPE_skin(500.0)
+        finally:
+            load_standard(None)  # restore default for other tests
+
+    def test_icnirp_default_still_computes(self):
+        # Regression: the default standard has every block, so nothing raises.
+        from laser_mpe import large_area_MPE_skin, uv_successive_day_derate
+        from laser_mpe.engine import load_standard
+        load_standard(None)
+        assert uv_successive_day_derate(300, 1.0) == 1.0 / 2.5
+        assert large_area_MPE_skin(500.0) == 10000.0 / 500.0
+
+
 # =====================================================================
 # Run all tests
 # =====================================================================

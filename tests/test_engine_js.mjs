@@ -194,6 +194,36 @@ test("beamEval: large beam (5mm) → actual_fills regime", () => {
   approx(r.d_eval_mm, 5, 1e-6);
 });
 
+test("getAperture: throws (no 3.5/11 fallback) when standard omits limiting_apertures", () => {
+  // The ICNIRP Table 8 apertures must come from the standard, never from a
+  // hardcoded 3.5/11 mm default applied silently to any loaded standard (A-8).
+  const fs = require("fs");
+  const orig = JSON.parse(fs.readFileSync(
+    new URL("../web/standards/icnirp_2013.json", import.meta.url), "utf8"));
+  const bad = JSON.parse(JSON.stringify(orig));
+  delete bad.supplementary.limiting_apertures;
+  e.loadStandard(bad);
+  try {
+    assert.throws(() => e.getAperture(532), /limiting_apertures/);
+  } finally {
+    e.loadStandard(orig);
+  }
+});
+
+test("beamEval: throws when small_beam_threshold_mm is missing (no 1.0 mm fallback)", () => {
+  const fs = require("fs");
+  const orig = JSON.parse(fs.readFileSync(
+    new URL("../web/standards/icnirp_2013.json", import.meta.url), "utf8"));
+  const bad = JSON.parse(JSON.stringify(orig));
+  delete bad.supplementary.limiting_apertures.small_beam_threshold_mm;
+  e.loadStandard(bad);
+  try {
+    assert.throws(() => e.beamEval(532, 0.5), /small_beam_threshold_mm/);
+  } finally {
+    e.loadStandard(orig);
+  }
+});
+
 // ═══════ Scanning Engine ═══════
 
 test("scanDwellGaussian: d=1mm, v=100mm/s", () => {

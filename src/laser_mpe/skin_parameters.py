@@ -153,9 +153,15 @@ def large_area_MPE_skin(beam_area_cm2, wl_nm=None, t_s=None):
     if t_s is not None and t_min is not None and t_s < t_min:
         return None
 
-    threshold = lac.get("threshold_cm2", 100.0)
-    cap_area = lac.get("cap_cm2", 1000.0)
-    cap_mW = lac.get("cap_mW_cm2", 10.0)
+    try:
+        threshold = float(lac["threshold_cm2"])
+        cap_area = float(lac["cap_cm2"])
+        cap_mW = float(lac["cap_mW_cm2"])
+    except KeyError as exc:
+        raise ValueError(
+            "The loaded standard's large_area_correction block is missing the "
+            f"required key {exc}; physics constants are not defaulted."
+        ) from exc
 
     if beam_area_cm2 < threshold:
         return None
@@ -188,6 +194,14 @@ def uv_successive_day_derate(wavelength, H_mpe):
     float
         De-rated MPE if wavelength is in the applicable range,
         otherwise returns H_mpe unchanged.
+
+    Raises
+    ------
+    ValueError
+        If the loaded standard does not define
+        ``supplementary.uv_successive_day_derate`` (e.g. ANSI Z136), or defines
+        it without the ``wl_min_nm`` / ``wl_max_nm`` / ``factor`` keys. The
+        factor is never defaulted to an ICNIRP value.
     """
     _engine._ensure_loaded()
     wl_nm = float(wavelength)
@@ -195,11 +209,21 @@ def uv_successive_day_derate(wavelength, H_mpe):
         wl_nm = wl_nm * 1000.0
 
     supp = _engine._std.get("supplementary", {})
-    derate = supp.get("uv_successive_day_derate", {})
-
-    wl_min = derate.get("wl_min_nm", 280)
-    wl_max = derate.get("wl_max_nm", 400)
-    factor = derate.get("factor", 2.5)
+    derate = supp.get("uv_successive_day_derate")
+    if not derate:
+        raise ValueError(
+            "The loaded standard does not define a UV successive-day de-rating "
+            "factor (supplementary.uv_successive_day_derate); it is not defaulted."
+        )
+    try:
+        wl_min = float(derate["wl_min_nm"])
+        wl_max = float(derate["wl_max_nm"])
+        factor = float(derate["factor"])
+    except KeyError as exc:
+        raise ValueError(
+            "The loaded standard's uv_successive_day_derate block is missing the "
+            f"required key {exc}; physics constants are not defaulted."
+        ) from exc
 
     if wl_min <= wl_nm < wl_max:
         return H_mpe / factor
