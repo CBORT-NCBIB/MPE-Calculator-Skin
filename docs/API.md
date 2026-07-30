@@ -94,7 +94,7 @@ The legacy function `CA_visible_NIR(wl_um)` takes wavelength in micrometers and 
 
 ### `get_Tmax_skin(wavelength)`
 
-Recommended maximum exposure duration for skin. Values are read from the loaded standard's JSON data file.
+Recommended maximum exposure duration for skin. Values are read from the loaded standard's JSON data file. `wavelength` is in nanometres (micrometre input is not auto-detected; use the `laser_mpe.legacy` functions for the micrometre API).
 
 | Band | T_max (default) |
 |------|------|
@@ -109,7 +109,7 @@ These are conservative engineering defaults; ICNIRP 2013 does not prescribe skin
 
 ### `get_skin_limiting_aperture(wavelength)`
 
-Limiting aperture for skin MPE averaging.
+Limiting aperture for skin MPE averaging. `wavelength` is in nanometres.
 
 Returns a dict: `{'diameter_mm': float, 'area_cm2': float}`
 
@@ -133,7 +133,7 @@ or non-positive area.
 
 ### `uv_successive_day_derate(wavelength, H_mpe)`
 
-Apply the successive-day de-rating factor for UV exposures.
+Apply the successive-day de-rating factor for UV exposures. `wavelength` is in nanometres. Raises `ValueError` if the loaded standard does not define `supplementary.uv_successive_day_derate` (e.g. ANSI Z136).
 
 ---
 

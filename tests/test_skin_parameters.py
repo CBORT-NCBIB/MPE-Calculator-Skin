@@ -75,9 +75,17 @@ class TestTmax:
         """1400 nm is in the FIR band."""
         assert_close(get_Tmax_skin(1400), 10.0, label="Tmax boundary 1400nm")
 
-    def test_accepts_um_input(self):
-        """Wavelength < 10 treated as um."""
-        assert_close(get_Tmax_skin(0.532), 600.0, label="Tmax 0.532um")
+    def test_um_looking_input_raises(self):
+        """Micrometre-looking input (<= 10) is no longer silently rescaled to nm.
+
+        It is now treated as nm and, being below the standard's range, raises
+        instead of returning a plausible wrong value (A-9): previously
+        get_Tmax_skin(5) returned 10.0 by reading it as 5000 nm.
+        """
+        import pytest
+        for bad in (0.532, 5, 10):
+            with pytest.raises(ValueError):
+                get_Tmax_skin(bad)
 
     def test_out_of_range_raises(self):
         try:
@@ -110,17 +118,16 @@ class TestLimitingAperture:
         assert_close(result['diameter_mm'], 3.5, label="FIR <100um aperture")
 
     def test_fir_above_100um_aperture(self):
-        """FIR 100-1000 um: 11.0 mm"""
-        result = get_skin_limiting_aperture(0.3)  # 0.3 um? no, need 300 um
-        # 300 um = 0.300 mm. In our convention, 300 um < 10 so treated as um.
-        result = get_skin_limiting_aperture(300.0)  # 300 nm since > 10
-        assert_close(result['diameter_mm'], 3.5, label="300nm aperture")
-        # For 300 um, need to pass as um (< 10)... but 300 > 10.
-        # Let's test with explicit um: 150 um
-        # Actually 150 > 10 so treated as nm (0.15 um). We need wavelengths
-        # > 100 um. In nm that would be > 100000 nm.
+        """FIR at or above 100 um (>= 100000 nm): 11.0 mm."""
         result = get_skin_limiting_aperture(300000)  # 300,000 nm = 300 um
         assert_close(result['diameter_mm'], 11.0, label="300um aperture")
+
+    def test_um_looking_aperture_input_raises(self):
+        """A micrometre-looking value (<= 10) is treated as nm and, being below
+        the standard's range, raises rather than being silently rescaled (A-9)."""
+        import pytest
+        with pytest.raises(ValueError):
+            get_skin_limiting_aperture(0.3)
 
     def test_area_calculation(self):
         """Area = pi * (d/2)^2 with d in cm."""
@@ -217,6 +224,13 @@ class TestUVDerate:
     def test_preserves_value(self):
         """De-rated value is exactly H/2.5."""
         assert_close(uv_successive_day_derate(355, 3e-3), 3e-3 / 2.5, label="3e-3 derate")
+
+    def test_um_looking_input_no_longer_derates(self):
+        """A micrometre-looking value (<= 10) is treated as nm, so it falls
+        outside the UV band and is not de-rated (A-9). Previously 0.3 was
+        silently rescaled to 300 nm and de-rated to H/2.5.
+        """
+        assert_close(uv_successive_day_derate(0.3, 1.0), 1.0, label="0.3 nm: no derate")
 
 
 # =====================================================================

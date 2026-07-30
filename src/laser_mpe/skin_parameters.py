@@ -29,7 +29,8 @@ def get_Tmax_skin(wavelength):
     Parameters
     ----------
     wavelength : float
-        Wavelength in nm or um. Values > 10 are treated as nm.
+        Wavelength in nm. Micrometre input is not auto-detected; use the
+        laser_mpe.legacy functions for the micrometre API.
 
     Returns
     -------
@@ -38,8 +39,6 @@ def get_Tmax_skin(wavelength):
     """
     _engine._ensure_loaded()
     wl_nm = float(wavelength)
-    if wl_nm <= 10.0:
-        wl_nm = wl_nm * 1000.0
 
     supp = _engine._std.get("supplementary", {})
     t_max = supp.get("t_max", {})
@@ -67,7 +66,8 @@ def get_skin_limiting_aperture(wavelength):
     Parameters
     ----------
     wavelength : float
-        Wavelength in nm or um. Values > 10 are treated as nm.
+        Wavelength in nm. Micrometre input is not auto-detected; use the
+        laser_mpe.legacy functions for the micrometre API.
 
     Returns
     -------
@@ -78,8 +78,6 @@ def get_skin_limiting_aperture(wavelength):
     """
     _engine._ensure_loaded()
     wl_nm = float(wavelength)
-    if wl_nm <= 10.0:
-        wl_nm = wl_nm * 1000.0
 
     supp = _engine._std.get("supplementary", {})
     apertures = supp.get("limiting_apertures", {})
@@ -185,7 +183,8 @@ def uv_successive_day_derate(wavelength, H_mpe):
     Parameters
     ----------
     wavelength : float
-        Wavelength in nm or um. Values > 10 are treated as nm.
+        Wavelength in nm. Micrometre input is not auto-detected; use the
+        laser_mpe.legacy functions for the micrometre API.
     H_mpe : float
         The single-day MPE in J/cm^2 (or any consistent unit).
 
@@ -205,8 +204,6 @@ def uv_successive_day_derate(wavelength, H_mpe):
     """
     _engine._ensure_loaded()
     wl_nm = float(wavelength)
-    if wl_nm <= 10.0:
-        wl_nm = wl_nm * 1000.0
 
     supp = _engine._std.get("supplementary", {})
     derate = supp.get("uv_successive_day_derate")
