@@ -122,7 +122,7 @@ function getValidationErrors() { return _validationErrors; }
 // When trace is null/undefined (the default), zero trace logic executes.
 // ═══════════════════════════════════════════════════════════════
 
-var _ENGINE_VERSION = "2.7.0";
+var _ENGINE_VERSION = "3.0.0";
 var _ENGINE_BUILD_HASH = null; // set at build time or by caller
 
 // ── SHA-256 (pure JS, FIPS 180-4) ──────────────────────────────
