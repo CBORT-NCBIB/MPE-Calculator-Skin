@@ -33,6 +33,11 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
 
+      - name: Run Python conformance corpus
+        # test_conformance_py.py exits non-zero on any mismatch; run it
+        # explicitly so a failure is a distinct CI signal.
+        run: python tests/conformance/test_conformance_py.py
+
   # ── Python linting ─────────────────────────────────────────
   python-lint:
     runs-on: ubuntu-latest
@@ -48,7 +53,7 @@ jobs:
         run: pip install ruff
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ examples/
 
   # ── JavaScript engine tests (Node.js) ──────────────────────
   js-tests:
@@ -82,6 +87,21 @@ jobs:
 
       - name: Run LSP worker tests
         run: node tests/lsp/test_worker.mjs
+
+      # The tracer suites validate trace documents against web/trace/schema.json
+      # using Ajv from web/node_modules (installed above), so they run after the
+      # web `npm install` step.
+      - name: Run tracer tests
+        run: node tests/test_tracer.mjs
+
+      - name: Run tracer stage-2 tests
+        run: node tests/test_tracer_stage2.mjs
+
+      - name: Run T_point edge-case tests
+        run: node tests/verify_Tpoint_edge_cases.mjs
+
+      - name: Run JS conformance corpus
+        run: node tests/conformance/test_conformance_js.mjs
 
   # ── Browser end-to-end tests (Playwright) ──────────────────
   # Runs the e2e suite that exercises the real web/index.html in a real
