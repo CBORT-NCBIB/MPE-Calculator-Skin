@@ -21,6 +21,7 @@ Unit convention (all standards must use these units in JSON):
 import json
 import math
 import os
+from importlib import resources as _resources
 from pathlib import Path
 
 import numpy as np
@@ -30,11 +31,26 @@ import numpy as np
 # ═══════════════════════════════════════════════════════════════
 _std = None
 
-# Default standard file location (relative to this module)
-_DEFAULT_STANDARD = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    '..', '..', 'web', 'standards', 'icnirp_2013.json'
-)
+_DEFAULT_STANDARD_FILE = "icnirp_2013.json"
+
+
+def _default_standard_data():
+    """Return the default standard (ICNIRP 2013) as a parsed dict.
+
+    Loads from packaged data via importlib.resources so it works from an
+    installed wheel as well as an editable/source checkout. Falls back to the
+    repository's web/standards copy only if the packaged data is unavailable.
+    """
+    try:
+        ref = _resources.files(__package__).joinpath("data", _DEFAULT_STANDARD_FILE)
+        return json.loads(ref.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ModuleNotFoundError, AttributeError, TypeError):
+        fallback = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "web", "standards", _DEFAULT_STANDARD_FILE,
+        )
+        with open(fallback, "r") as f:
+            return json.load(f)
 
 # ═══════════════════════════════════════════════════════════════
 # Schema validation
@@ -142,9 +158,8 @@ def load_standard(source=None):
     global _std
 
     if source is None:
-        source = _DEFAULT_STANDARD
-
-    if isinstance(source, dict):
+        data = _default_standard_data()
+    elif isinstance(source, dict):
         data = source
     elif isinstance(source, (str, Path)):
         path = Path(source)

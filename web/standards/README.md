@@ -1,10 +1,14 @@
 # Standard Data Files
 
 This directory contains JSON data files defining laser skin MPE values for
-different safety standards. The Python (`src/laser_mpe/engine.py`) and Node
-(`engine.js`) engines read these files at runtime; the browser build inlines the
-active standard into `index.html` at build time. **No code changes are needed to
-switch standards.**
+different safety standards. The Node (`engine.js`) engine reads these files at
+runtime and the browser build inlines the active standard into `index.html` at
+build time. **No code changes are needed to switch standards.**
+
+> The Python package ships its own copy of these files as package data in
+> `src/laser_mpe/data/` so that an installed wheel can find them. The two copies
+> must stay byte-identical; `tests/test_packaged_data.py` fails if they drift, so
+> edit both (or copy this directory's files into `src/laser_mpe/data/`) together.
 
 ## Currently included
 
