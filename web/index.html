@@ -14544,10 +14544,10 @@ function GeneralScanContent(p) {
       avg_power_W: res.beam.P
     };
     var mv = res.beam.cw ? res.minV || vel : 0;
-    var sp = lspState.customPath ? null : {
+    var sp = {
       v_mm_s: vel,
-      line_spacing_mm: hatch,
-      n_lines: nLines
+      line_spacing_mm: hatch || 0,
+      n_lines: nLines || 1
     };
     _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr);
     setTraceDoc(tr.finalize({
@@ -18753,10 +18753,10 @@ function OCTScanContent(p) {
       avg_power_W: res.beam.P
     };
     var mv = res.beam.cw ? res.minV || vel : 0;
-    var sp = lspState.customPath ? null : {
+    var sp = {
       v_mm_s: vel,
-      line_spacing_mm: hatch,
-      n_lines: nLines
+      line_spacing_mm: hatch || 0,
+      n_lines: nLines || 1
     };
     _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr);
     setTraceDoc(tr.finalize({
@@ -23429,10 +23429,10 @@ function PAScanContent(p) {
       avg_power_W: res.beam.P
     };
     var mv = res.beam.cw ? res.minV || vel : 0;
-    var sp = lspState.customPath ? null : {
+    var sp = {
       v_mm_s: vel,
-      line_spacing_mm: hatch,
-      n_lines: nLines
+      line_spacing_mm: hatch || 0,
+      n_lines: nLines || 1
     };
     _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr);
     setTraceDoc(tr.finalize({

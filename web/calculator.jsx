@@ -3752,7 +3752,7 @@ function GeneralScanContent(p){
         </div>;
       })()}
     {/* ── Computation Trace ── */}
-    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp=lspState.customPath?null:{v_mm_s:vel, line_spacing_mm:hatch, n_lines:nLines}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
+    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp={v_mm_s:vel, line_spacing_mm:hatch||0, n_lines:nLines||1}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
     </div>:null}
 
     {/* ── Point Timing Visualization ── */}
@@ -5635,7 +5635,7 @@ function OCTScanContent(p){
         </div>;
       })()}
     {/* ── Computation Trace ── */}
-    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp=lspState.customPath?null:{v_mm_s:vel, line_spacing_mm:hatch, n_lines:nLines}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
+    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp={v_mm_s:vel, line_spacing_mm:hatch||0, n_lines:nLines||1}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
     </div>:null}
 
     {/* ── Point Timing Visualization ── */}
@@ -7625,7 +7625,7 @@ function PAScanContent(p){
         </div>;
       })()}
     {/* ── Computation Trace ── */}
-    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp=lspState.customPath?null:{v_mm_s:vel, line_spacing_mm:hatch, n_lines:nLines}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
+    {res?renderTracePanel(T, traceDoc, function(){ var tr=_E.createTracer(_std); var eg={nx:res.g.nx,ny:res.g.ny,dx_mm:res.g.dx,x_min_mm:res.g.xn,y_min_mm:res.g.yn,fluence:res.g.flu,pulse_count:res.g.pc,peak_pulse_H:res.g.ppH,last_visit_t:res.g.lvt,min_revisit_s:res.g.mrv,first_visit_t:res.g.fvt}; var eb={wl_nm:res.beam.wl,d_1e_mm:res.beam.d,tau_s:res.beam.tau,is_cw:res.beam.cw,pulse_energy_J:res.beam.Ep,prf_hz:res.beam.prf,avg_power_W:res.beam.P}; var mv=res.beam.cw?(res.minV||vel):0; var sp={v_mm_s:vel, line_spacing_mm:hatch||0, n_lines:nLines||1}; _E.evaluateScanSafety(eg, eb, res.st.tt, dwm, mv, sp, tr); setTraceDoc(tr.finalize({wl_nm:res.beam.wl, pipeline:"scanSafety"}, {safe:res.sf.safe, binding:res.sf.br, R1:res.sf.r1m, R2:res.sf.r2m})); }):null}
     </div>:null}
 
     {/* ── Point Timing Visualization ── */}
