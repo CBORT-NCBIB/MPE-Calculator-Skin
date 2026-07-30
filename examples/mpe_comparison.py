@@ -8,13 +8,16 @@ landscape for laser system design.
 If matplotlib is installed, generates plots. Otherwise, prints tables.
 """
 
+import os
+import sys
+
 import numpy as np
-import sys, os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from laser_mpe import (
-    skin_mpe,
     radiant_exposure_convert,
+    skin_mpe,
 )
 
 
@@ -64,7 +67,7 @@ def mpe_vs_duration():
     Show how skin MPE varies with exposure duration for key wavelengths.
     """
     print(f"\n{'=' * 60}")
-    print(f"  Skin MPE vs Exposure Duration")
+    print("  Skin MPE vs Exposure Duration")
     print(f"{'=' * 60}")
 
     wavelengths = [532, 800, 1064, 1550]
@@ -97,7 +100,7 @@ def mpe_vs_duration():
                 row += f"{H_mJ:<15.4f}"
         print(row)
 
-    print(f"\n  Units: mJ/cm^2")
+    print("\n  Units: mJ/cm^2")
 
 
 def try_plot():
@@ -105,7 +108,7 @@ def try_plot():
     try:
         import matplotlib.pyplot as plt
     except ImportError:
-        print(f"\n  [matplotlib not installed — skipping plots]")
+        print("\n  [matplotlib not installed — skipping plots]")
         return
 
     tau = 10e-9
@@ -137,9 +140,13 @@ def try_plot():
     ax2.grid(True, which='both', ls='--', alpha=0.4)
 
     plt.tight_layout()
-    plt.savefig('skin_mpe_comparison.png', dpi=150)
-    print(f"\n  Plot saved to skin_mpe_comparison.png")
-    plt.show()
+    out_dir = os.path.join(os.path.dirname(__file__), "outputs")
+    os.makedirs(out_dir, exist_ok=True)
+    out_path = os.path.join(out_dir, "skin_mpe_comparison.png")
+    plt.savefig(out_path, dpi=150)
+    print(f"\n  Plot saved to {os.path.relpath(out_path)}")
+    # No plt.show(): the script is meant to run non-interactively (e.g. in CI
+    # or from a terminal) and a blocking window would hang it.
 
 
 if __name__ == "__main__":

@@ -13,15 +13,17 @@ This script demonstrates:
     3. How to find the maximum safe pulse energy at a given PRF.
 """
 
+import os
+import sys
+
 import numpy as np
-import sys, os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from laser_mpe import (
-    skin_mpe,
-    per_pulse_MPE,
-    radiant_exposure_convert,
     get_skin_limiting_aperture,
+    per_pulse_MPE,
+    skin_mpe,
 )
 
 
@@ -70,7 +72,7 @@ def snr_optimization():
     SNR ~ sqrt(N) * H_pulse, normalized to SNR=1 at N=1.
     """
     print(f"\n{'=' * 70}")
-    print(f"  SNR Optimization: finding the optimal PRF")
+    print("  SNR Optimization: finding the optimal PRF")
     print(f"{'=' * 70}")
 
     wl = 800
@@ -100,9 +102,9 @@ def snr_optimization():
         print(f"  {T:<16.2f} {f_opt:<16.0f} {n_opt:<16.0f} "
               f"{snr_max:<12.2f} {h_opt*1e3:.4f} mJ/cm^2")
 
-    print(f"\n  Interpretation: At longer exposure times, more pulses can be")
-    print(f"  averaged, but each pulse must be weaker (Rule 2). The optimal")
-    print(f"  PRF balances these two effects to maximize achievable SNR.")
+    print("\n  Interpretation: At longer exposure times, more pulses can be")
+    print("  averaged, but each pulse must be weaker (Rule 2). The optimal")
+    print("  PRF balances these two effects to maximize achievable SNR.")
 
 
 def max_safe_energy():
@@ -112,7 +114,7 @@ def max_safe_energy():
     This is the practical question: "What's the strongest pulse I can use?"
     """
     print(f"\n{'=' * 70}")
-    print(f"  Maximum safe pulse energy calculator")
+    print("  Maximum safe pulse energy calculator")
     print(f"{'=' * 70}")
 
     configs = [

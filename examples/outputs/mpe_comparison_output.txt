@@ -51,4 +51,4 @@
 
   Units: mJ/cm^2
 
-  Plot saved to skin_mpe_comparison.png
+  [matplotlib not installed — skipping plots]
