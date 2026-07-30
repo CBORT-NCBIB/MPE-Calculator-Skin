@@ -679,31 +679,43 @@ test("separable vs analytical: peak fluence cross-check", () => {
 });
 
 test("separable: conservative safety (never underestimates)", () => {
-  // For safety-critical use, separable must NEVER produce a peak fluence
-  // lower than brute-force (which could cause a false 'safe' verdict)
+  // For safety-critical use, the peak fluence the verdict is based on must
+  // NEVER fall below the brute-force reference peak: an underestimate could
+  // turn an unsafe exposure into a false "safe" verdict. The separable grid is
+  // backed by an analytical cross-check (evaluateScanSafety takes the max of
+  // the two), so this test pins the *reported* safety peak against the
+  // brute-force truth with no slack — it fails if either the separable grid or
+  // the cross-check ever underestimates. (The previous form asserted only
+  // >= 0.95x on the raw grid, i.e. it tolerated a 5% underestimate.)
   const d = 1, prf = 8000, v = 80, Ep = 1.5e-4, lineL = 15, nL = 6, hatch = 0.5;
   const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
   const segs = e.buildRasterScan(0, 0, lineL, nL, hatch, v, v*5, d, true);
 
+  // Brute-force reference peak (full pulse-by-pulse sum on the grid).
   const r_bf = e.computeScanFluence(beam, segs, 8);
   let peak_bf = 0;
   for (let i = 0; i < r_bf.grid.fluence.length; i++) {
     if (r_bf.grid.fluence[i] > peak_bf) peak_bf = r_bf.grid.fluence[i];
   }
 
+  // Safety-reported peak: separable grid combined with the analytical
+  // cross-check — the value the pass/fail verdict actually uses.
   const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
     x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
     pattern: "raster", blanking: true, is_cw: false};
   const r_sep = e.computeScanFluence(beam, segs, 8, sp);
-  let peak_sep = 0;
-  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
-    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
-  }
+  const sf = e.evaluateScanSafety(r_sep.grid,
+    {wl_nm: 532, d_1e_mm: d, tau_s: 1e-8, is_cw: false,
+      pulse_energy_J: Ep, prf_hz: prf, avg_power_W: prf*Ep},
+    r_sep.stats.total_time_s, "gaussian", 0,
+    {v_mm_s: v, line_spacing_mm: hatch, n_lines: nL});
 
-  // Separable should produce >= 95% of brute-force peak
-  // (both sample on the same grid, so they should be very close)
-  assert.ok(peak_sep >= peak_bf * 0.95,
-    `safety: sep peak ${peak_sep.toFixed(6)} must not be much lower than bf ${peak_bf.toFixed(6)}`);
+  // The reported peak must not underestimate the brute-force truth (no slack),
+  // and must be at least the analytical value it maxes against.
+  assert.ok(sf.peak_fluence >= peak_bf * (1 - 1e-9),
+    `safety peak ${sf.peak_fluence.toExponential(6)} underestimates brute-force ${peak_bf.toExponential(6)}`);
+  assert.ok(sf.peak_fluence >= sf.analytical_peak * (1 - 1e-9),
+    `safety peak ${sf.peak_fluence.toExponential(6)} below analytical ${sf.analytical_peak.toExponential(6)}`);
 });
 
 test("separable: stats include method field", () => {
