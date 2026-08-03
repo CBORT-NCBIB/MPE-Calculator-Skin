@@ -3,8 +3,8 @@ title: "Laser MPE Calculator (Skin): Maximum Permissible Exposure Calculator for
 message: "If you use this software, please cite it as below."
 type: software
 license: MIT
-version: 3.0.0
-date-released: "2026-04-02"
+version: 4.0.0
+date-released: "2026-08-03"
 repository-code: "https://github.com/CBORT-NCBIB/MPE-Calculator-Skin"
 url: "https://octresearch.org/"
 abstract: >-

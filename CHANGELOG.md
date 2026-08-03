@@ -8,9 +8,78 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 > **Note on version history.** Versions 1.0.0–3.0.0 were tagged as standalone
 > snapshots during early development (28 March – 2 April 2026) and do not form a
 > continuous git ancestry. The current `main` branch history begins 2026-04-15;
-> work done since the 3.0.0 snapshot is listed under Unreleased below.
+> 4.0.0 is the first release cut from that continuous history.
 
 ## [Unreleased]
+
+## [4.0.0] - 2026-08-03
+
+Major release. Includes a pre-submission audit of the safety-critical numerics
+(see `AUDIT.md`), which produced the breaking API changes below: several
+functions that previously returned a plausible-but-wrong value on bad input now
+raise instead, and one repetitive-pulse limit became slightly more conservative.
+**Anyone relying on the previous return values should read the Changed and
+Removed sections before upgrading.**
+
+### Changed
+
+#### Breaking — invalid input now raises instead of returning a wrong value
+- `ca()` raises `ValueError` on NaN, infinite, or out-of-range wavelength
+  (previously returned the 1.0 default, masking nm-vs-µm caller errors).
+- `band_name()` raises `ValueError` on invalid input (previously labelled every
+  unmatched value, including NaN and negatives, `"Far-IR"`).
+- `large_area_MPE_skin()` raises on a NaN, infinite, or non-positive area
+  (previously returned a confident 10 mW/cm²), and gained the wavelength and
+  duration applicability gates the standard defines.
+- In the JavaScript engine, `getAperture()` and `beamEval()` throw when the
+  loaded standard omits the aperture data, and `loadStandard()` fails closed —
+  an invalid standard is rejected and the previous one is kept.
+
+#### Breaking — units and standard data
+- `get_Tmax_skin()`, `get_skin_limiting_aperture()`, and
+  `uv_successive_day_derate()` take **nanometres**. The previous "a value ≤ 10 is
+  micrometres" auto-detection is gone; it silently reinterpreted stray small
+  values (`get_Tmax_skin(5)` returned 10.0 by reading 5 as 5000 nm). The
+  documented micrometre API remains in `laser_mpe.legacy`.
+- Physics constants are no longer defaulted. A loaded standard that omits a
+  supplementary block or key now raises rather than silently inheriting ICNIRP's
+  numbers (e.g. the 2.5× UV de-rating factor was being applied to ANSI, which
+  defines no such de-rating).
+
+#### Breaking — numerical results
+- Repetitive-pulse **Rule 2 is now evaluated as the exact average-power
+  minimum** over all sub-windows, rather than only at the total exposure time.
+  For T > 10 s the per-pulse limit is up to ~2.2 % lower (more conservative) in
+  the visible/NIR band and up to ~0.42 % lower in the far-IR bands. Results for
+  T ≤ 10 s are unchanged.
+- The maximum exposure duration t = 3×10⁴ s is now **inside** the valid domain
+  (previously returned NaN at exactly that point, so `get_Tmax_skin()` fed
+  straight back into `skin_mpe()` produced NaN for UV).
+
+### Fixed
+
+#### Safety
+- A standard whose `discrete` region referenced a missing lookup table used to
+  pass validation and silently degrade to the thermal-only UV limit — 140× too
+  high at 302 nm. Both validators now reject it at load time.
+- Scanning: the downscaled grid is isotropic and spans the full domain when the
+  cell cap is hit; the erf-vs-discrete regime and the pulse spacing are chosen
+  per path segment instead of from the first segment, so a mixed-velocity custom
+  path can no longer pick a non-conservative approximation.
+- The exported audit trace is now computed with the same parameters as the
+  on-screen verdict, so a custom scan path's `mpe-trace.json` and Hazard
+  Evaluation Worksheet can no longer report a less conservative peak than the
+  displayed result.
+- The HTML report export escapes standard-derived values (standard name, band,
+  rule), which are attacker-controllable via a custom standard import.
+- Per-point exposure-time (T_point) handling for raster/bidirectional and CW
+  scans, so Rule 2 is evaluated over the correct per-point dwell time.
+
+#### Packaging
+- The standard data files ship as package data, so a normal (non-editable)
+  `pip install` works. Previously only `pip install -e .` worked; an installed
+  wheel raised `FileNotFoundError` on the first call.
+- The package version is single-sourced from `pyproject.toml`.
 
 ### Added
 - **LSP-JSON scan-pattern import**: a Laser Scan Pattern JSON schema, Ajv schema
@@ -23,10 +92,18 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - **OCT and Photoacoustics scanning sub-tabs**, with a worst-case
   stationary-beam advisory.
 - Release artifacts: a validation report and a requirements-traceability matrix.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant).
+- A committed `web/package-lock.json`, so `npm ci` pins the exact toolchain the
+  shipped `index.html` was built with, plus a CI gate that fails if a fresh
+  build does not byte-match the committed bundle.
+- CI now runs the tracer, T_point edge-case, and both conformance suites, lints
+  `examples/`, and collects the 254-check exhaustive verification script.
 
-### Fixed
-- Per-point exposure-time (T_point) handling for raster/bidirectional and CW
-  scans, so Rule 2 is evaluated over the correct per-point dwell time.
+### Removed
+- Dead internal functions `large_area_irradiance_limit`, `skin_mpe_area`, and
+  `rep_pulse_area` (no callers; superseded by `large_area_MPE_skin`).
+- `web/compute-sri.js`, a subresource-integrity tool whose output was never
+  applied and whose script list was stale.
 
 ## [3.0.0] - 2026-04-02
 
@@ -138,7 +215,8 @@ and this project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Test suite with automated checks.
 - Interactive web calculator with multi-wavelength comparison and dual-rule display.
 
-[Unreleased]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/commits/main
+[Unreleased]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/compare/v4.0.0...main
+[4.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v4.0.0
 [3.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v3.0.0
 [2.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v2.0.0
 [1.0.0]: https://github.com/CBORT-NCBIB/MPE-Calculator-Skin/releases/tag/v1.0.0

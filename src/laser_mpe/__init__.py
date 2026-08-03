@@ -106,4 +106,4 @@ try:
 
     __version__ = _pkg_version("laser-mpe-skin")
 except (ImportError, PackageNotFoundError):  # pragma: no cover - uninstalled source tree
-    __version__ = "3.0.0"
+    __version__ = "4.0.0"

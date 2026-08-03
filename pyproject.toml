@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "laser-mpe-skin"
-version = "3.0.0"
+version = "4.0.0"
 description = "Laser Maximum Permissible Exposure (MPE) calculator for skin safety (ICNIRP 2013, ANSI Z136.1)"
 readme = "README.md"
 license = {text = "MIT"}
