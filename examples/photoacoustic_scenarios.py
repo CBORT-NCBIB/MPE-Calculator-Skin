@@ -21,18 +21,18 @@ Each scenario walks through the full evaluation procedure:
     5. Compare and report the safety ratio.
 """
 
+import os
+import sys
+
 import numpy as np
-import sys, os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from laser_mpe import (
-    skin_mpe,
-    per_pulse_MPE,
-    get_Tmax_skin,
     get_skin_limiting_aperture,
-    radiant_exposure_convert,
-    irradiance_from_radiant_exposure,
-    pulse_energy_from_radiant_exposure,
+    get_Tmax_skin,
+    per_pulse_MPE,
+    skin_mpe,
 )
 
 
@@ -63,7 +63,7 @@ def evaluate_skin_safety(name, wl_nm, pulse_energy_uJ, beam_diameter_mm,
     print(f"{'=' * 70}")
 
     # --- System parameters ---
-    print(f"\n  Laser parameters:")
+    print("\n  Laser parameters:")
     print(f"    Wavelength:       {wl_nm} nm")
     print(f"    Pulse energy:     {pulse_energy_uJ} uJ")
     print(f"    Beam diameter:    {beam_diameter_mm} mm")
@@ -83,14 +83,14 @@ def evaluate_skin_safety(name, wl_nm, pulse_energy_uJ, beam_diameter_mm,
     # and limiting aperture area
     averaging_area_cm2 = max(beam_area_cm2, aperture_area_cm2)
 
-    print(f"\n  Aperture and area:")
+    print("\n  Aperture and area:")
     print(f"    Beam area:        {beam_area_cm2:.6f} cm^2")
     print(f"    Limiting aperture:{aperture['diameter_mm']} mm "
           f"({aperture_area_cm2:.6f} cm^2)")
     print(f"    Averaging area:   {averaging_area_cm2:.6f} cm^2")
     if beam_area_cm2 < aperture_area_cm2:
-        print(f"    NOTE: Beam is smaller than limiting aperture.")
-        print(f"          Energy is averaged over the aperture area.")
+        print("    NOTE: Beam is smaller than limiting aperture.")
+        print("          Energy is averaged over the aperture area.")
 
     # --- Actual radiant exposure per pulse ---
     pulse_energy_J = pulse_energy_uJ * 1e-6
@@ -112,7 +112,7 @@ def evaluate_skin_safety(name, wl_nm, pulse_energy_uJ, beam_diameter_mm,
     # --- Safety ratio ---
     ratio = H_actual_per_pulse / H_mpe
 
-    print(f"\n  MPE evaluation:")
+    print("\n  MPE evaluation:")
     print(f"    T_max (recommended): {T_max} s")
     print(f"    Number of pulses:    {n_pulses:.0f}")
     print(f"    Single-pulse MPE:    {H_single*1e3:.4f} mJ/cm^2")
@@ -121,7 +121,7 @@ def evaluate_skin_safety(name, wl_nm, pulse_energy_uJ, beam_diameter_mm,
     print(f"    Safety ratio:        {ratio:.4f} ({ratio*100:.1f}% of MPE)")
 
     if ratio <= 1.0:
-        print(f"\n    RESULT: WITHIN MPE (safe)")
+        print("\n    RESULT: WITHIN MPE (safe)")
     else:
         print(f"\n    RESULT: EXCEEDS MPE by {(ratio-1)*100:.1f}%")
         # Compute maximum safe pulse energy
@@ -182,7 +182,7 @@ def main():
     # Evaluate MPE across the tuning range
     # ---------------------------------------------------------------
     print(f"\n{'=' * 70}")
-    print(f"  Scenario 4: Tunable OPO system (680-950 nm)")
+    print("  Scenario 4: Tunable OPO system (680-950 nm)")
     print(f"{'=' * 70}")
 
     wavelengths = np.arange(680, 960, 20)

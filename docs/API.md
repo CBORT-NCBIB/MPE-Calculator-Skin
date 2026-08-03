@@ -30,6 +30,10 @@ H = skin_mpe(800, 1e-6)        # 800 nm, 1 µs pulse
 
 For array inputs over multiple durations, use `skin_mpe_array(wl_nm, t_array)`.
 
+### `band_name(wl_nm)`
+
+Return the display band name (`"UV"`, `"Visible"`, `"Near-IR"`, or `"Far-IR"`) for a wavelength in nanometers. Raises `ValueError` for a NaN/infinite or out-of-range wavelength.
+
 ---
 
 ## Repetitive-Pulse Function
@@ -54,6 +58,8 @@ f = np.array([10, 100, 1000, 10000], dtype=float)
 H_pulse, N = per_pulse_MPE(800, 10e-9, f, T=1.0)
 ```
 
+The engine-level function `rep_pulse(wl_nm, tau, prf, T)` is equivalent; `prf` may be a scalar or array and it returns the same `(H_pulse, N)` tuple.
+
 ---
 
 ## Correction Factor
@@ -67,7 +73,10 @@ Wavelength correction factor C_A. Takes wavelength in **nanometers**.
 | 400–700 nm | C_A = 1.0 |
 | 700–1050 nm | C_A = 10^(0.002 × (λ_nm − 700)) |
 | 1050–1400 nm | C_A = 5.0 |
-| Outside range | C_A = 1.0 (default) |
+| Elsewhere in the standard's range | C_A = 1.0 (default; C_A does not apply outside 400–1400 nm) |
+
+Raises `ValueError` for a NaN/infinite wavelength or one outside the standard's
+range (180 nm–1 mm), rather than returning a misleading default.
 
 ```python
 from laser_mpe import ca
@@ -85,20 +94,22 @@ The legacy function `CA_visible_NIR(wl_um)` takes wavelength in micrometers and 
 
 ### `get_Tmax_skin(wavelength)`
 
-Recommended maximum exposure duration for skin. Values are read from the loaded standard's JSON data file.
+Recommended maximum exposure duration for skin. Values are read from the loaded standard's JSON data file. `wavelength` is in nanometres (micrometre input is not auto-detected; use the `laser_mpe.legacy` functions for the micrometre API).
 
-| Band | T_max (default, ICNIRP 2013) |
+| Band | T_max (default) |
 |------|------|
 | UV (180–400 nm) | 30,000 s |
 | Visible (400–700 nm) | 600 s |
 | NIR (700–1400 nm) | 600 s |
 | FIR (1400 nm–1 mm) | 10 s |
 
+These are conservative engineering defaults; ICNIRP 2013 does not prescribe skin-specific T_max values (see the note in the standard data file).
+
 ---
 
 ### `get_skin_limiting_aperture(wavelength)`
 
-Limiting aperture for skin MPE averaging.
+Limiting aperture for skin MPE averaging. `wavelength` is in nanometres.
 
 Returns a dict: `{'diameter_mm': float, 'area_cm2': float}`
 
@@ -109,17 +120,20 @@ Returns a dict: `{'diameter_mm': float, 'area_cm2': float}`
 
 ---
 
-### `large_area_MPE_skin(beam_area_cm2)`
+### `large_area_MPE_skin(beam_area_cm2, wl_nm=None, t_s=None)`
 
-Large area correction for λ > 1.4 µm, t > 10 s.
+Large area correction for λ ≥ 1.4 µm, t ≥ 10 s.
 
-Returns MPE in mW/cm², or `None` if beam area < threshold.
+Returns MPE in mW/cm², or `None` if the correction does not apply (beam area
+below the threshold, or — when `wl_nm`/`t_s` are supplied — outside the
+applicable wavelength/duration range). Raises `ValueError` for a NaN, infinite,
+or non-positive area.
 
 ---
 
 ### `uv_successive_day_derate(wavelength, H_mpe)`
 
-Apply the successive-day de-rating factor for UV exposures.
+Apply the successive-day de-rating factor for UV exposures. `wavelength` is in nanometres. Raises `ValueError` if the loaded standard does not define `supplementary.uv_successive_day_derate` (e.g. ANSI Z136).
 
 ---
 
@@ -136,6 +150,8 @@ Return the currently loaded standard's metadata dict.
 ### `validate_standard(data)`
 
 Validate a standard data dict against the expected schema. Returns a list of error strings (empty = valid).
+
+`load_standard` replaces a process-global standard; every subsequent call uses it until the next `load_standard`. It is not thread-safe.
 
 ---
 
@@ -156,4 +172,4 @@ For backward compatibility, the following ICNIRP-named functions are available i
 
 `H_skin_ICNIRP_MPE`, `H_skin_ICNIRP_180_400`, `H_skin_ICNIRP_400_1400`, `H_skin_ICNIRP_1400_1500`, `H_skin_ICNIRP_1500_1800`, `H_skin_ICNIRP_1800_2600`, `H_skin_ICNIRP_2600_1000um`.
 
-These functions take wavelength in **micrometers** (not nm). The primary API function `skin_mpe(wl_nm, t)` takes nanometers.
+The wavelength-dependent wrappers `H_skin_ICNIRP_180_400` and `H_skin_ICNIRP_400_1400` take wavelength in **micrometers**; the fixed-band wrappers (e.g. `H_skin_ICNIRP_1500_1800`) take only a duration. `H_skin_ICNIRP_MPE` infers the unit (a value ≤ 10 is treated as micrometers). The primary API function `skin_mpe(wl_nm, t)` takes nanometers.

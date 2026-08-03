@@ -17,7 +17,7 @@ import sys
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
-from laser_mpe.engine import ca, load_standard, skin_mpe
+from laser_mpe.engine import _rule2_avg_irradiance_limit, ca, load_standard, skin_mpe
 from laser_mpe.repetitive_pulse import per_pulse_MPE
 
 # Load corpus
@@ -77,9 +77,9 @@ for c in corpus['cases']:
         H_pulse = float(H_pulse)
         N = float(N)
 
-        # Determine binding rule
+        # Determine binding rule. rule2 uses the library's exact average-power
+        # limit (min over sub-windows of MPE(T')/T'), not an inline re-derivation.
         H_single = skin_mpe(inp['wl_nm'], inp['tau_s'])
-        H_total = skin_mpe(inp['wl_nm'], inp['T_s'])
         N_val = inp['prf_hz'] * inp['T_s']
         if N_val <= 1:
             rule1 = H_single
@@ -87,7 +87,7 @@ for c in corpus['cases']:
             binding = "Rule 1"
         else:
             rule1 = H_single
-            rule2 = H_total / N_val
+            rule2 = _rule2_avg_irradiance_limit(inp['wl_nm'], inp['T_s']) / inp['prf_hz']
             binding = "Rule 1" if rule1 <= rule2 else "Rule 2"
 
         exp_H = exp['H']

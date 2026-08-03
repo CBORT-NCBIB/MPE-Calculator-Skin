@@ -100,4 +100,10 @@ from .skin_parameters import (
     uv_successive_day_derate as uv_successive_day_derate,
 )
 
-__version__ = "3.0.0"
+try:
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
+
+    __version__ = _pkg_version("laser-mpe-skin")
+except (ImportError, PackageNotFoundError):  # pragma: no cover - uninstalled source tree
+    __version__ = "3.0.0"

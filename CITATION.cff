@@ -5,7 +5,7 @@ type: software
 license: MIT
 version: 3.0.0
 date-released: "2026-04-02"
-repository-code: "https://github.com/itgall/MPE-Calculator-Skin"
+repository-code: "https://github.com/CBORT-NCBIB/MPE-Calculator-Skin"
 url: "https://octresearch.org/"
 abstract: >-
   A Python package and interactive web calculator for computing laser skin

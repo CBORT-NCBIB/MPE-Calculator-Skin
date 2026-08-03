@@ -141,6 +141,13 @@ test("bandName: 1064nm = Near-IR", () => {
   assert.strictEqual(e.bandName(1064), "Near-IR");
 });
 
+test("bandName: out-of-range returns null (not a mislabel)", () => {
+  assert.strictEqual(e.bandName(100), null);
+  assert.strictEqual(e.bandName(2e6), null);
+  assert.strictEqual(e.bandName(NaN), null);
+  assert.strictEqual(e.bandName(1e6), "Far-IR"); // inclusive top edge
+});
+
 test("bandName: 10600nm = Far-IR", () => {
   assert.strictEqual(e.bandName(10600), "Far-IR");
 });
@@ -185,6 +192,36 @@ test("beamEval: large beam (5mm) → actual_fills regime", () => {
   const r = e.beamEval(532, 5);
   assert.strictEqual(r.regime, "actual_fills");
   approx(r.d_eval_mm, 5, 1e-6);
+});
+
+test("getAperture: throws (no 3.5/11 fallback) when standard omits limiting_apertures", () => {
+  // The ICNIRP Table 8 apertures must come from the standard, never from a
+  // hardcoded 3.5/11 mm default applied silently to any loaded standard (A-8).
+  const fs = require("fs");
+  const orig = JSON.parse(fs.readFileSync(
+    new URL("../web/standards/icnirp_2013.json", import.meta.url), "utf8"));
+  const bad = JSON.parse(JSON.stringify(orig));
+  delete bad.supplementary.limiting_apertures;
+  e.loadStandard(bad);
+  try {
+    assert.throws(() => e.getAperture(532), /limiting_apertures/);
+  } finally {
+    e.loadStandard(orig);
+  }
+});
+
+test("beamEval: throws when small_beam_threshold_mm is missing (no 1.0 mm fallback)", () => {
+  const fs = require("fs");
+  const orig = JSON.parse(fs.readFileSync(
+    new URL("../web/standards/icnirp_2013.json", import.meta.url), "utf8"));
+  const bad = JSON.parse(JSON.stringify(orig));
+  delete bad.supplementary.limiting_apertures.small_beam_threshold_mm;
+  e.loadStandard(bad);
+  try {
+    assert.throws(() => e.beamEval(532, 0.5), /small_beam_threshold_mm/);
+  } finally {
+    e.loadStandard(orig);
+  }
 });
 
 // ═══════ Scanning Engine ═══════
@@ -452,6 +489,24 @@ test("engine exports named constants", () => {
   assert.strictEqual(e.MAX_VIZ_PULSES, 50000);
 });
 
+test("loadStandard fails closed on an unresolved discrete lookup", () => {
+  // A discrete region whose lookup table is missing must be rejected and NOT
+  // applied (previously it silently degraded UV to thermal-only: 0.56 vs 0.004).
+  const icnirp = require("../web/standards/icnirp_2013.json");
+  const bad = JSON.parse(JSON.stringify(icnirp));
+  for (const band of bad.bands) {
+    const sets = band.mode === "dual_limit"
+      ? [band.thermal.regions, band.photochemical.regions] : [band.regions];
+    for (const regs of sets) for (const r of regs) {
+      if (r.formula === "discrete") r.lookup = "does_not_exist";
+    }
+  }
+  e.loadStandard(bad);
+  assert.ok(e.getValidationErrors().some((s) => /lookup/i.test(s)), "reports lookup error");
+  assert.strictEqual(e.skinMPE(302, 1.0), 0.004, "keeps last-good standard (fail closed)");
+  e.loadStandard(icnirp); // restore
+});
+
 // ═══════ Cross-language exhaustive vectors ═══════
 // Test JS engine against Python-verified boundary values at all band edges
 // These 20 test points cover every wavelength band and duration boundary in ICNIRP 2013
@@ -654,31 +709,105 @@ test("separable vs analytical: peak fluence cross-check", () => {
 });
 
 test("separable: conservative safety (never underestimates)", () => {
-  // For safety-critical use, separable must NEVER produce a peak fluence
-  // lower than brute-force (which could cause a false 'safe' verdict)
+  // For safety-critical use, the peak fluence the verdict is based on must
+  // NEVER fall below the brute-force reference peak: an underestimate could
+  // turn an unsafe exposure into a false "safe" verdict. The separable grid is
+  // backed by an analytical cross-check (evaluateScanSafety takes the max of
+  // the two), so this test pins the *reported* safety peak against the
+  // brute-force truth with no slack — it fails if either the separable grid or
+  // the cross-check ever underestimates. (The previous form asserted only
+  // >= 0.95x on the raw grid, i.e. it tolerated a 5% underestimate.)
   const d = 1, prf = 8000, v = 80, Ep = 1.5e-4, lineL = 15, nL = 6, hatch = 0.5;
   const beam = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, avg_power_W: prf*Ep, is_cw: false};
   const segs = e.buildRasterScan(0, 0, lineL, nL, hatch, v, v*5, d, true);
 
+  // Brute-force reference peak (full pulse-by-pulse sum on the grid).
   const r_bf = e.computeScanFluence(beam, segs, 8);
   let peak_bf = 0;
   for (let i = 0; i < r_bf.grid.fluence.length; i++) {
     if (r_bf.grid.fluence[i] > peak_bf) peak_bf = r_bf.grid.fluence[i];
   }
 
+  // Safety-reported peak: separable grid combined with the analytical
+  // cross-check — the value the pass/fail verdict actually uses.
   const sp = {d_1e_mm: d, prf_hz: prf, pulse_energy_J: Ep, v_scan_mm_s: v,
     x0: 0, y0: 0, line_length_mm: lineL, n_lines: nL, hatch_mm: hatch,
     pattern: "raster", blanking: true, is_cw: false};
   const r_sep = e.computeScanFluence(beam, segs, 8, sp);
-  let peak_sep = 0;
-  for (let i = 0; i < r_sep.grid.fluence.length; i++) {
-    if (r_sep.grid.fluence[i] > peak_sep) peak_sep = r_sep.grid.fluence[i];
-  }
+  const sf = e.evaluateScanSafety(r_sep.grid,
+    {wl_nm: 532, d_1e_mm: d, tau_s: 1e-8, is_cw: false,
+      pulse_energy_J: Ep, prf_hz: prf, avg_power_W: prf*Ep},
+    r_sep.stats.total_time_s, "gaussian", 0,
+    {v_mm_s: v, line_spacing_mm: hatch, n_lines: nL});
 
-  // Separable should produce >= 95% of brute-force peak
-  // (both sample on the same grid, so they should be very close)
-  assert.ok(peak_sep >= peak_bf * 0.95,
-    `safety: sep peak ${peak_sep.toFixed(6)} must not be much lower than bf ${peak_bf.toFixed(6)}`);
+  // The reported peak must not underestimate the brute-force truth (no slack),
+  // and must be at least the analytical value it maxes against.
+  assert.ok(sf.peak_fluence >= peak_bf * (1 - 1e-9),
+    `safety peak ${sf.peak_fluence.toExponential(6)} underestimates brute-force ${peak_bf.toExponential(6)}`);
+  assert.ok(sf.peak_fluence >= sf.analytical_peak * (1 - 1e-9),
+    `safety peak ${sf.peak_fluence.toExponential(6)} below analytical ${sf.analytical_peak.toExponential(6)}`);
+});
+
+test("computeScanFluenceSegmentErf: regime picked from the fastest segment, not the first (A-21)", () => {
+  // A slow first segment (rho >= 1) followed by a fast one (rho < 1) must use
+  // the discrete regime for the whole path: the continuous erf formula would
+  // smear the fast segment's separated pulses and under-estimate its peak.
+  // Previously the regime was chosen from the first segment's velocity alone.
+  const d = 0.1, prf = 1000;
+  const beam = { d_1e_mm: d, prf_hz: prf, pulse_energy_J: 1e-5, avg_power_W: 1e-5 * prf, is_cw: false };
+  const slow = { ax: 0, ay: 0, bx: 10, by: 0, v_mm_s: 50 };    // rho ~ 1.41
+  const fast = { ax: 10, ay: 0, bx: 30, by: 0, v_mm_s: 200 };  // rho ~ 0.35
+  const g = e.createFluenceGrid(d, [slow, fast], 8);
+  const s = e.computeScanFluenceSegmentErf(g, [slow, fast], beam);
+  assert.strictEqual(s.regime, "discrete",
+    `mixed slow-then-fast path must use the discrete regime, got ${s.regime} (rho=${s.rho})`);
+  // A uniformly slow path is unchanged: it stays in the erf regime.
+  const u2 = { ax: 10, ay: 0, bx: 20, by: 0, v_mm_s: 50 };
+  const su = e.computeScanFluenceSegmentErf(e.createFluenceGrid(d, [slow, u2], 8), [slow, u2], beam);
+  assert.strictEqual(su.regime, "erf", `uniform slow path should stay erf, got ${su.regime}`);
+});
+
+test("skinMPE monotonicity underpins the T_point conservatism claim (A-22)", () => {
+  // evaluateScanSafety uses per-point T_point as the Rule-2 MPE denominator
+  // and argues it is conservative because skinMPE is non-decreasing in T.
+  // That holds except for one <=2.2% step down at the ICNIRP 400-1400 nm
+  // regime boundary (t = 1e-7 s, constant -> t^0.25), the standard's own
+  // discontinuity. Pin both facts so the claim can't silently rot.
+  const wls = [200, 308, 355, 532, 1064, 1400, 1550, 2000, 5000, 10600];
+  // (a) non-decreasing across every realistic accumulation window (t >= 1e-6 s)
+  for (const wl of wls) {
+    let prev = -Infinity;
+    for (let k = -6; k <= Math.log10(3e4) + 1e-9; k += 0.02) {
+      const m = e.skinMPE(wl, Math.pow(10, k));
+      if (!isFinite(m)) continue;
+      assert.ok(m >= prev * (1 - 1e-9),
+        `skinMPE(${wl}, 1e${k.toFixed(2)})=${m} decreased from ${prev}`);
+      prev = m;
+    }
+  }
+  // (b) the sole down-step is ICNIRP's own bounded 1e-7 s discontinuity
+  const step = e.skinMPE(532, 1e-7) / e.skinMPE(532, 0.999e-7);
+  assert.ok(step > 0.97 && step < 1.0,
+    `400-1400 nm 1e-7 s step ratio ${step} should be ICNIRP's ~0.978 step`);
+});
+
+test("createFluenceGridFromParams: capped grid stays isotropic and spans both extents (A-20)", () => {
+  // A long, thin (very non-square) scan that overflows MAX_GRID_CELLS. The
+  // downscale must keep a single spacing for both axes and still reach xmax
+  // AND ymax. Previously dx was rederived from the x-extent while ny was
+  // floored independently, leaving the y-axis ~1 cell short of the domain.
+  const sp = { d_1e_mm: 0.05, x0: 0, y0: 0, line_length_mm: 200, n_lines: 3,
+    hatch_mm: 0.5, pattern: "raster", is_cw: false };
+  const d = sp.d_1e_mm, margin = 3 * d;
+  const xmax = sp.x0 + sp.line_length_mm + margin;
+  const ymax = sp.y0 + (sp.n_lines - 1) * sp.hatch_mm + margin;
+  const g = e.createFluenceGridFromParams(sp, 32);
+  assert.ok(g.nx * g.ny > 1000000, "test domain should hit the cell cap");
+  assert.ok(g.nx * g.ny <= 4000000, `cell count ${g.nx * g.ny} must respect MAX_GRID_CELLS`);
+  const xcov = g.x_min_mm + (g.nx - 1) * g.dx_mm;
+  const ycov = g.y_min_mm + (g.ny - 1) * g.dx_mm;
+  assert.ok(xcov >= xmax - 1e-9, `x-coverage ${xcov} must reach xmax ${xmax}`);
+  assert.ok(ycov >= ymax - 1e-9, `y-coverage ${ycov} must reach ymax ${ymax}`);
 });
 
 test("separable: stats include method field", () => {

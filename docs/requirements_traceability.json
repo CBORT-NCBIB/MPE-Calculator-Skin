@@ -254,8 +254,9 @@
           "id": "REQ-TRACE-02",
           "description": "Deep copy of matched standard entries (mutation isolation)",
           "implementation": {"file": "web/engine.js", "functions": ["_deepCopy", "_stepBuilder"]},
-          "tests": ["tests/test_tracer.mjs (adversarial audit: deep copy isolation)"],
-          "trace_step": "matched_entry.value"
+          "tests": ["tests/test_tracer.mjs (T24, T32)"],
+          "trace_step": "matched_entry.value",
+          "notes": "The deep copy runs on every traced evaluation exercised by T24-T32; mutation isolation itself is not separately asserted by a dedicated test"
         },
         {
           "id": "REQ-TRACE-03",
@@ -269,9 +270,9 @@
           "id": "REQ-TRACE-04",
           "description": "Unique step IDs across entire trace including sub-steps",
           "implementation": {"file": "web/engine.js", "functions": ["createTracer"]},
-          "tests": ["tests/test_tracer.mjs (adversarial audit: step ID uniqueness)"],
+          "tests": ["tests/test_tracer.mjs (T28, T32)"],
           "trace_step": null,
-          "notes": "Step counter shared across sub-tracers to guarantee globally unique IDs"
+          "notes": "Step IDs are unique by construction (a step counter shared across sub-tracers); T28 produces sub-step traces and T32 schema-validates them, but ID uniqueness is not directly asserted by a dedicated test"
         },
         {
           "id": "REQ-TRACE-05",
@@ -309,16 +310,17 @@
           "id": "REQ-EXPORT-02",
           "description": "HTML Hazard Evaluation Worksheet export with institutional form layout",
           "implementation": {"file": "web/calculator.jsx", "functions": ["_generateTraceReport", "_downloadHTML"]},
-          "tests": ["Stage 4 adversarial audit (63 checks)"],
+          "tests": [],
           "trace_step": null,
-          "notes": "Sections: identification, inputs, MPE derivation, scanning, PA, standard integrity, reproducibility, signatures"
+          "notes": "Sections: identification, inputs, MPE derivation, scanning, PA, standard integrity, reproducibility, signatures. No dedicated automated test; the export is DOM/download code exercised via the e2e app load."
         },
         {
           "id": "REQ-EXPORT-03",
-          "description": "HTML escape on all user-derived values (XSS safety)",
-          "implementation": {"file": "web/calculator.jsx", "functions": ["_generateTraceReport"]},
-          "tests": ["Stage 4 adversarial audit (T7: XSS injection test)"],
-          "trace_step": null
+          "description": "HTML escape on all standard-derived values (XSS safety)",
+          "implementation": {"file": "web/calculator.jsx", "functions": ["_generateTraceReport", "doExport"]},
+          "tests": [],
+          "trace_step": null,
+          "notes": "Standard-derived strings (standard name, band name, rule) are escaped (& < > to character references) in both HTML report paths via a local esc() helper. Not covered by an automated test."
         }
       ]
     }

@@ -21,6 +21,7 @@ Unit convention (all standards must use these units in JSON):
 import json
 import math
 import os
+from importlib import resources as _resources
 from pathlib import Path
 
 import numpy as np
@@ -30,11 +31,26 @@ import numpy as np
 # ═══════════════════════════════════════════════════════════════
 _std = None
 
-# Default standard file location (relative to this module)
-_DEFAULT_STANDARD = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    '..', '..', 'web', 'standards', 'icnirp_2013.json'
-)
+_DEFAULT_STANDARD_FILE = "icnirp_2013.json"
+
+
+def _default_standard_data():
+    """Return the default standard (ICNIRP 2013) as a parsed dict.
+
+    Loads from packaged data via importlib.resources so it works from an
+    installed wheel as well as an editable/source checkout. Falls back to the
+    repository's web/standards copy only if the packaged data is unavailable.
+    """
+    try:
+        ref = _resources.files(__package__).joinpath("data", _DEFAULT_STANDARD_FILE)
+        return json.loads(ref.read_text(encoding="utf-8"))
+    except (FileNotFoundError, ModuleNotFoundError, AttributeError, TypeError):
+        fallback = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "web", "standards", _DEFAULT_STANDARD_FILE,
+        )
+        with open(fallback, "r") as f:
+            return json.load(f)
 
 # ═══════════════════════════════════════════════════════════════
 # Schema validation
@@ -102,8 +118,19 @@ def validate_standard(data):
                     errors.append(f"Band '{bname}' region {ri}: unknown formula '{formula}'")
                 if formula and formula != "discrete" and r.get("a") is None:
                     errors.append(f"Band '{bname}' region {ri}: formula '{formula}' requires 'a'")
-                if formula in ("power", "ca_power") and r.get("b") is None:
+                if formula in ("power", "ca_power", "power_offset") and r.get("b") is None:
                     errors.append(f"Band '{bname}' region {ri}: formula '{formula}' requires 'b'")
+                if formula == "power_offset" and r.get("c") is None:
+                    errors.append(f"Band '{bname}' region {ri}: formula 'power_offset' requires 'c'")
+                if formula == "discrete":
+                    lookup = r.get("lookup")
+                    if not lookup:
+                        errors.append(f"Band '{bname}' region {ri}: formula 'discrete' requires 'lookup'")
+                    elif lookup not in data:
+                        errors.append(
+                            f"Band '{bname}' region {ri}: discrete lookup table "
+                            f"'{lookup}' not found in the standard"
+                        )
 
     return errors
 
@@ -131,9 +158,8 @@ def load_standard(source=None):
     global _std
 
     if source is None:
-        source = _DEFAULT_STANDARD
-
-    if isinstance(source, dict):
+        data = _default_standard_data()
+    elif isinstance(source, dict):
         data = source
     elif isinstance(source, (str, Path)):
         path = Path(source)
@@ -167,6 +193,22 @@ def _ensure_loaded():
         load_standard(None)
 
 
+def _validate_wavelength(wl_nm):
+    """Coerce to float; require a finite wavelength within the standard's range.
+
+    Raises ValueError on NaN/inf or a value outside the loaded standard's
+    ``wl_range_nm``. Used by the functions whose out-of-range behavior would
+    otherwise be a plausible-but-wrong value rather than a safe NaN.
+    """
+    wl = float(wl_nm)
+    if not math.isfinite(wl):
+        raise ValueError(f"Wavelength must be a finite number, got {wl_nm!r}")
+    lo, hi = _std["standard"]["wl_range_nm"]
+    if wl < lo or wl > hi:
+        raise ValueError(f"Wavelength {wl} nm is outside the standard's range [{lo}, {hi}] nm")
+    return wl
+
+
 # ═══════════════════════════════════════════════════════════════
 # Correction factor C_A
 # ═══════════════════════════════════════════════════════════════
@@ -185,6 +227,7 @@ def ca(wl_nm):
         Correction factor (dimensionless).
     """
     _ensure_loaded()
+    wl_nm = _validate_wavelength(wl_nm)
     ca_def = _std["correction_factors"]["CA"]
     regions = ca_def["regions"]
 
@@ -257,13 +300,26 @@ def _eval_regions(regions, wl_nm, t):
 
     Returns NaN if t is outside all defined regions.
     """
+    # Time regions are half-open [t_min, t_max), except that the standard's
+    # maximum exposure duration (dur_range_s upper bound) is inclusive, mirroring
+    # the inclusive upper edge of the outermost wavelength band.
+    max_dur = None
+    if _std is not None:
+        try:
+            max_dur = _std["standard"]["dur_range_s"][1]
+        except (KeyError, TypeError, IndexError):
+            max_dur = None
+
     for r in regions:
         # Wavelength sub-filtering (used by UV photochemical sub-bands)
         if "wl_min_nm" in r and "wl_max_nm" in r:
             if wl_nm < r["wl_min_nm"] or wl_nm >= r["wl_max_nm"]:
                 continue
 
-        if r["t_min_s"] <= t < r["t_max_s"]:
+        in_time = r["t_min_s"] <= t < r["t_max_s"]
+        if not in_time and max_dur is not None and t == r["t_max_s"] == max_dur:
+            in_time = True
+        if in_time:
             return _eval_formula(r, wl_nm, t)
 
         # Special handling: "not_applicable" below t_min means this limit
@@ -365,15 +421,70 @@ def band_name(wl_nm):
     str
     """
     _ensure_loaded()
-    for db in _std["display_bands"]:
+    wl_nm = _validate_wavelength(wl_nm)
+    dbs = _std["display_bands"]
+    for db in dbs:
         if wl_nm >= db["wl_start_nm"] and wl_nm < db["wl_end_nm"]:
             return db["name"]
-    return _std["display_bands"][-1]["name"]
+    # inclusive upper edge of the outermost band
+    if wl_nm == dbs[-1]["wl_end_nm"]:
+        return dbs[-1]["name"]
+    raise ValueError(f"Wavelength {wl_nm} nm has no display band in the loaded standard")
 
 
 # ═══════════════════════════════════════════════════════════════
 # Repetitive pulse (standard-independent logic)
 # ═══════════════════════════════════════════════════════════════
+
+def _time_breakpoints():
+    """Sorted unique time-region boundaries across all bands of the standard."""
+    bps = set()
+    for band in _std["bands"]:
+        if band.get("mode") == "dual_limit":
+            region_sets = [band["thermal"]["regions"], band["photochemical"]["regions"]]
+        else:
+            region_sets = [band["regions"]]
+        for regions in region_sets:
+            for r in regions:
+                bps.add(float(r["t_min_s"]))
+                bps.add(float(r["t_max_s"]))
+    return sorted(bps)
+
+
+def _rule2_avg_irradiance_limit(wl_nm, T):
+    """Binding average-power (Rule 2) limit over the exposure window up to T.
+
+    Rule 2 treats the pulse train as continuous: a train at PRF f with per-pulse
+    radiant exposure H is permitted iff the average irradiance f*H does not exceed
+    MPE(T')/T' for every averaging window T' up to the total exposure T. The
+    binding value is
+
+        g_min = min over T' of MPE(T')/T'        (J/cm^2 per s = W/cm^2),
+
+    and the per-pulse Rule-2 limit is then g_min / f.
+
+    MPE(T')/T' is non-increasing within each analytic piece of MPE and can only
+    step up at a region breakpoint (e.g. the t^0.25 -> linear transition at 10 s),
+    so the minimum lies at a breakpoint approached from the left, or at T itself.
+    Evaluating that finite candidate set is exact -- no sub-sampling. This replaces
+    the previous endpoint-only estimate MPE(T)/(f*T), which for T > 10 s was up to
+    ~2.24 % too permissive (visible/NIR) because it missed the 10 s breakpoint.
+    """
+    _ensure_loaded()
+    T = float(T)
+    candidates = [T]
+    for b in _time_breakpoints():
+        if 0.0 < b <= T:
+            candidates.append(math.nextafter(b, 0.0))
+    g = float('inf')
+    for tprime in candidates:
+        if tprime <= 0.0:
+            continue
+        mpe = skin_mpe(wl_nm, tprime)
+        if math.isfinite(mpe):
+            g = min(g, mpe / tprime)
+    return g
+
 
 def rep_pulse(wl_nm, tau, prf, T):
     """Per-pulse MPE for repetitive-pulse skin exposure.
@@ -400,122 +511,13 @@ def rep_pulse(wl_nm, tau, prf, T):
         Number of pulses.
     """
     H_single = skin_mpe(wl_nm, tau)
-    H_total = skin_mpe(wl_nm, T)
+    g_min = _rule2_avg_irradiance_limit(wl_nm, T)
 
     prf = np.asarray(prf, dtype=float)
     N = prf * T
 
-    H_avg = H_total / np.maximum(N, 1.0)
-    H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_avg))
-
-    return H_pulse, N
-
-# ═══════════════════════════════════════════════════════════════
-# Large-area skin exposure correction
-# ═══════════════════════════════════════════════════════════════
-
-
-def large_area_irradiance_limit(wl_nm, t_s, area_cm2):
-    """Compute the large-area irradiance limit in W/cm².
-
-    Reads all parameters from the loaded standard's JSON.
-    Returns infinity if the correction does not apply.
-
-    Parameters
-    ----------
-    wl_nm : float
-        Wavelength in nm.
-    t_s : float
-        Exposure duration in seconds.
-    area_cm2 : float
-        Beam cross-sectional area in cm².
-
-    Returns
-    -------
-    float
-        Irradiance limit in W/cm², or inf if not applicable.
-    """
-    _ensure_loaded()
-    lac = _std.get("supplementary", {}).get("large_area_correction")
-    if lac is None:
-        return float('inf')
-    if "wl_min_nm" in lac and wl_nm < lac["wl_min_nm"]:
-        return float('inf')
-    if "t_min_s" in lac and t_s < lac["t_min_s"]:
-        return float('inf')
-    if not (area_cm2 > 0 and math.isfinite(area_cm2)):
-        return float('inf')
-    if area_cm2 < lac["threshold_cm2"]:
-        return float('inf')
-    if area_cm2 >= lac["cap_cm2"]:
-        return lac["cap_mW_cm2"] / 1000.0
-    coeff = lac.get("coefficient_mW_cm2_x_cm2",
-                    lac["cap_mW_cm2"] * lac["cap_cm2"])
-    return (coeff / area_cm2) / 1000.0
-
-
-def skin_mpe_area(wl_nm, t, area_cm2):
-    """Skin MPE with large-area correction applied.
-
-    Returns min(standard_MPE, large_area_limit × t).
-
-    Parameters
-    ----------
-    wl_nm : float
-        Wavelength in nm.
-    t : float
-        Exposure duration in seconds.
-    area_cm2 : float
-        Beam cross-sectional area in cm².
-
-    Returns
-    -------
-    float
-        MPE in J/cm².
-    """
-    H_standard = skin_mpe(wl_nm, t)
-    if not (area_cm2 > 0 and math.isfinite(area_cm2)):
-        return H_standard
-    E_limit = large_area_irradiance_limit(wl_nm, t, area_cm2)
-    if not math.isfinite(E_limit):
-        return H_standard
-    H_area = E_limit * t
-    return min(H_standard, H_area)
-
-
-def rep_pulse_area(wl_nm, tau, prf, T, area_cm2):
-    """Per-pulse MPE for repetitive-pulse skin exposure with large-area correction.
-
-    Rule 1: single-pulse MPE (no area correction, tau < t_min_s).
-    Rule 2: cumulative MPE for time T (area-corrected when T >= t_min_s).
-
-    Parameters
-    ----------
-    wl_nm : float
-        Wavelength in nm.
-    tau : float
-        Single pulse duration in seconds.
-    prf : float or array-like
-        Pulse repetition frequency in Hz.
-    T : float
-        Total exposure duration in seconds.
-    area_cm2 : float
-        Beam cross-sectional area in cm².
-
-    Returns
-    -------
-    H_pulse : float or ndarray
-        Per-pulse MPE in J/cm².
-    N : float or ndarray
-        Number of pulses.
-    """
-    H_single = skin_mpe(wl_nm, tau)
-    H_total = skin_mpe_area(wl_nm, T, area_cm2)
-
-    prf = np.asarray(prf, dtype=float)
-    N = prf * T
-
-    H_avg = H_total / np.maximum(N, 1.0)
-    H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_avg))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        H_rule2 = g_min / prf
+    H_pulse = np.where(N <= 1.0, H_single, np.minimum(H_single, H_rule2))
 
     return H_pulse, N

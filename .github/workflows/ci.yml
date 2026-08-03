@@ -33,6 +33,11 @@ jobs:
       - name: Run tests
         run: pytest tests/ -v
 
+      - name: Run Python conformance corpus
+        # test_conformance_py.py exits non-zero on any mismatch; run it
+        # explicitly so a failure is a distinct CI signal.
+        run: python tests/conformance/test_conformance_py.py
+
   # ── Python linting ─────────────────────────────────────────
   python-lint:
     runs-on: ubuntu-latest
@@ -48,7 +53,7 @@ jobs:
         run: pip install ruff
 
       - name: Lint with ruff
-        run: ruff check src/ tests/
+        run: ruff check src/ tests/ examples/
 
   # ── JavaScript engine tests (Node.js) ──────────────────────
   js-tests:
@@ -66,10 +71,11 @@ jobs:
 
       - name: Install dependencies for LSP Node-side tests
         working-directory: web
-        run: npm install
-        # web/package.json declares ajv as a devDependency; npm install
-        # picks it up for the LSP validator tests (which use the Node-side
-        # Ajv loader).  esbuild is also pulled but not used in this job.
+        run: npm ci
+        # web/package.json lists ajv as a dependency (it is inlined into the
+        # shipped bundle); npm ci installs it from the committed lockfile for
+        # the LSP validator and tracer tests (Node-side Ajv loader).  esbuild
+        # and Babel come along too but are unused in this job.
 
       - name: Run LSP validator tests
         run: node tests/lsp/test_validate.mjs
@@ -82,6 +88,21 @@ jobs:
 
       - name: Run LSP worker tests
         run: node tests/lsp/test_worker.mjs
+
+      # The tracer suites validate trace documents against web/trace/schema.json
+      # using Ajv from web/node_modules (installed above), so they run after the
+      # web `npm install` step.
+      - name: Run tracer tests
+        run: node tests/test_tracer.mjs
+
+      - name: Run tracer stage-2 tests
+        run: node tests/test_tracer_stage2.mjs
+
+      - name: Run T_point edge-case tests
+        run: node tests/verify_Tpoint_edge_cases.mjs
+
+      - name: Run JS conformance corpus
+        run: node tests/conformance/test_conformance_js.mjs
 
   # ── Browser end-to-end tests (Playwright) ──────────────────
   # Runs the e2e suite that exercises the real web/index.html in a real
@@ -116,7 +137,7 @@ jobs:
 
       - name: Install build dependencies (Babel)
         working-directory: web
-        run: npm install
+        run: npm ci
         # web/build.py needs @babel/core and @babel/preset-react to
         # pre-compile JSX.  Same step as the `build` job.
 
@@ -127,10 +148,10 @@ jobs:
 
       - name: Install root devDependencies (@playwright/test)
         run: npm install
-        # The root package.json declares @playwright/test and @types/node
-        # as devDependencies.  We use `npm install` (not `npm ci`) because
-        # package-lock.json is gitignored per the repo's existing
-        # convention; this matches what the other JS jobs do.
+        # The root package.json declares @playwright/test and @types/node as
+        # devDependencies.  Only the web/ build lockfile is committed (it pins
+        # the shipped bundle's toolchain); the root lockfile stays untracked,
+        # so this install uses `npm install`, not `npm ci`.
 
       # Cache the Chromium binary keyed by the resolved Playwright version
       # so cache invalidates correctly when Playwright is upgraded.  The
@@ -213,13 +234,25 @@ jobs:
 
       - name: Install build dependencies (Babel)
         working-directory: web
-        run: npm install
+        run: npm ci
         # web/package.json lists @babel/core and @babel/preset-react as
         # devDependencies; npm install pulls them in so build.py can
         # pre-compile JSX rather than falling back to runtime Babel.
 
       - name: Build index.html
         run: python web/build.py
+
+      # Content-level drift gate: with the committed web/package-lock.json,
+      # `npm ci` pins the exact esbuild/Babel/Ajv versions, so build.py is
+      # deterministic and a fresh build must byte-match the committed
+      # index.html. If it does not, the committed artifact is stale.
+      - name: Verify committed index.html matches a fresh build
+        run: |
+          if ! git diff --exit-code web/index.html; then
+            echo "FAIL: web/index.html is out of date with its sources."
+            echo "Run 'python web/build.py' and commit the result."
+            exit 1
+          fi
 
       - name: Verify build output
         run: |

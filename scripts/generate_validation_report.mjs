@@ -115,18 +115,23 @@ for (var s of suites) {
     "FAIL (" + r.passed + "/" + r.total + ", " + r.failed + " failures)");
 }
 
-// Build check
+// Build check. Snapshot web/index.html first: build.py regenerates it, and
+// this verification must not leave the working tree modified as a side effect.
 process.stdout.write("  Running: Build verification... ");
 var buildOk = false, buildMs = 0;
+var indexPath = resolve(repoRoot, "web/index.html");
+var indexBefore = existsSync(indexPath) ? readFileSync(indexPath) : null;
+var bStart = Date.now();
 try {
-  var bStart = Date.now();
   execSync("python3 web/build.py", { cwd: repoRoot, encoding: "utf-8", timeout: 60000 });
   buildOk = true;
   buildMs = Date.now() - bStart;
   console.log("PASS (" + buildMs + "ms)");
 } catch (e) {
-  buildMs = Date.now();
+  buildMs = Date.now() - bStart;
   console.log("FAIL");
+} finally {
+  if (indexBefore !== null) writeFileSync(indexPath, indexBefore);
 }
 
 // Ruff check
@@ -144,7 +149,12 @@ try {
 }
 
 console.log();
-var allPass = totalFailed === 0 && buildOk;
+// A suite that crashed at load reports total 0 / failed 0; require every suite
+// to have run (total > 0) and reported ok, plus a clean build and lint. The
+// previous check (totalFailed === 0 && buildOk) passed on a crashed suite and
+// ignored ruff entirely.
+var allSuitesOk = results.length > 0 && results.every(function(r) { return r.ok && r.total > 0; });
+var allPass = totalFailed === 0 && allSuitesOk && buildOk && ruffOk;
 console.log("═══════════════════════════════════════");
 console.log(allPass ? "  VALIDATION: PASS" : "  VALIDATION: FAIL");
 console.log("  Total: " + totalPassed + " passed, " + totalFailed + " failed (" + totalTests + " tests)");

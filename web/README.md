@@ -6,7 +6,7 @@ Interactive browser-based calculator for skin Maximum Permissible Exposure.
 
 - **`index.html`** : Standalone single-file application. Open directly in any browser. Loads React and Recharts from CDN.
 - **`calculator.jsx`** : React component source. Use this if integrating into an existing React project or build system.
-- **`engine.js`** : Standalone JavaScript calculation engine (Node.js compatible). Mirrors the Python engine exactly.
+- **`engine.js`** : Standalone JavaScript calculation engine (Node.js compatible). An independent implementation that reads the same standard data files as the Python engine; the two are cross-checked for equivalence by the conformance corpus in `tests/conformance/`.
 - **`standards/`** : JSON data files defining standard-specific MPE values. See `standards/README.md` for the schema.
 
 ## Quick Start
@@ -22,7 +22,7 @@ cd web
 python3 build.py
 ```
 
-This transforms `calculator.jsx` into a self-contained `<script type="text/babel">` block inside `index.html`, applying the necessary changes for browser embedding (stripping ESM imports, renaming Tooltip to avoid browser conflicts, inlining the standard JSON data). The build script requires only Python 3 (no additional packages).
+This pre-compiles `calculator.jsx` to a plain `<script>` block inside `index.html`, applying the changes needed for browser embedding (stripping ESM imports, renaming Tooltip to avoid browser conflicts, inlining the standard JSON data). The build requires Node.js with Babel and esbuild (installed via `npm install` in this directory) in addition to Python 3.
 
 ## Features
 
@@ -41,7 +41,7 @@ This transforms `calculator.jsx` into a self-contained `<script type="text/babel
 
 ## Deployment Options
 
-**Standalone page:** Upload `index.html` to any web server or hosting platform. It is completely self-contained.
+**Standalone page:** Upload `index.html` to any web server or hosting platform. The application code is inlined in the single file, but React, Recharts, and echarts load from CDNs, so the page needs internet access on first load.
 
 **Embed in existing site:** Add a link to the hosted `index.html`, or use an `<iframe>`:
 ```html
@@ -52,4 +52,4 @@ This transforms `calculator.jsx` into a self-contained `<script type="text/babel
 
 ## Standard
 
-All calculations use values from the loaded standard data file (default: ICNIRP 2013). See `standards/README.md` for how to switch standards. The JavaScript calculation engine has been verified against the Python reference implementation.
+All calculations use values from the loaded standard data file (default: ICNIRP 2013). See `standards/README.md` for how to switch standards. The JavaScript and Python engines are cross-checked for equivalence against a shared conformance corpus (`tests/conformance/`).

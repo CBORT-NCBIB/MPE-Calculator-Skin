@@ -71,6 +71,10 @@ function _validateStandard(data) {
           if (r.formula && r.formula !== "discrete" && r.a === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'a'");
           if (r.formula && (r.formula === "power" || r.formula === "ca_power" || r.formula === "power_offset") && r.b === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula '" + r.formula + "' requires 'b'");
           if (r.formula && r.formula === "power_offset" && r.c === undefined) errors.push("Band '" + band.name + "' region " + ri + ": formula 'power_offset' requires 'c'");
+          if (r.formula === "discrete") {
+            if (!r.lookup) errors.push("Band '" + band.name + "' region " + ri + ": formula 'discrete' requires 'lookup'");
+            else if (!(r.lookup in data)) errors.push("Band '" + band.name + "' region " + ri + ": discrete lookup table '" + r.lookup + "' not found in the standard");
+          }
         }
       }
     }
@@ -81,10 +85,14 @@ function _validateStandard(data) {
 function loadStandard(data) {
   _validationErrors = _validateStandard(data);
   if (_validationErrors.length > 0) {
+    // Fail closed: do not apply an invalid standard. The previously loaded
+    // standard (if any) stays active, so callers never compute against invalid
+    // data. Callers should check getValidationErrors() after loading.
     if (typeof console !== "undefined") {
-      console.error("Standard data validation errors:");
+      console.error("Standard data validation errors (standard not applied):");
       for (var i = 0; i < _validationErrors.length; i++) console.error("  - " + _validationErrors[i]);
     }
+    return;
   }
   _std = data;
 }
@@ -114,7 +122,7 @@ function getValidationErrors() { return _validationErrors; }
 // When trace is null/undefined (the default), zero trace logic executes.
 // ═══════════════════════════════════════════════════════════════
 
-var _ENGINE_VERSION = "2.7.0";
+var _ENGINE_VERSION = "3.0.0";
 var _ENGINE_BUILD_HASH = null; // set at build time or by caller
 
 // ── SHA-256 (pure JS, FIPS 180-4) ──────────────────────────────
@@ -492,13 +500,19 @@ function evalFormula(region, wl_nm, t, trace, regionPath) {
 // Returns NaN if t is outside all defined regions.
 // ═══════════════════════════════════════════════════════════════
 function evalRegions(regions, wl_nm, t, trace, pathPrefix) {
+  // Time regions are half-open [t_min, t_max), except that the standard's maximum
+  // exposure duration (dur_range_s upper bound) is inclusive, mirroring the
+  // inclusive upper edge of the outermost wavelength band.
+  var maxDur = (_std && _std.standard && _std.standard.dur_range_s)
+    ? _std.standard.dur_range_s[1] : undefined;
   for (var i = 0; i < regions.length; i++) {
     var r = regions[i];
     // Check wavelength sub-filtering (used by UV photochemical)
     if (r.wl_min_nm !== undefined && r.wl_max_nm !== undefined) {
       if (wl_nm < r.wl_min_nm || wl_nm >= r.wl_max_nm) continue;
     }
-    if (t >= r.t_min_s && t < r.t_max_s) {
+    if ((t >= r.t_min_s && t < r.t_max_s) ||
+        (maxDur !== undefined && t === r.t_max_s && r.t_max_s === maxDur)) {
       if (trace) {
         var regionPath = (pathPrefix || "") + "/regions/" + i;
         // Emit matched_entry without the full regions array — just the matched region
@@ -609,6 +623,60 @@ function skinMPE(wl_nm, t, trace) {
 // Repetitive pulse: Rules 1 and 2 (skin only, no Rule 3)
 // This logic is standard-independent.
 // ═══════════════════════════════════════════════════════════════
+function _nextDown(x) {
+  // Largest double strictly less than x, for x > 0 (matches Python math.nextafter(x, 0)).
+  if (!(x > 0) || !isFinite(x)) return x;
+  var buf = new ArrayBuffer(8);
+  var f = new Float64Array(buf);
+  var u = new BigUint64Array(buf);
+  f[0] = x;
+  u[0] = u[0] - 1n;
+  return f[0];
+}
+
+function _timeBreakpoints() {
+  var seen = {};
+  var out = [];
+  var bands = _std.bands;
+  for (var i = 0; i < bands.length; i++) {
+    var band = bands[i];
+    var regionSets = band.mode === "dual_limit"
+      ? [band.thermal.regions, band.photochemical.regions]
+      : [band.regions];
+    for (var s = 0; s < regionSets.length; s++) {
+      var regions = regionSets[s];
+      for (var r = 0; r < regions.length; r++) {
+        [regions[r].t_min_s, regions[r].t_max_s].forEach(function (b) {
+          if (!(b in seen)) { seen[b] = true; out.push(b); }
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function _rule2AvgIrradianceLimit(wl_nm, T) {
+  // Binding average-power (Rule 2) limit: min over averaging windows T' <= T of
+  // MPE(T')/T' (W/cm2). MPE(T')/T' is non-increasing within each analytic piece
+  // of MPE and only steps up at a region breakpoint (e.g. the t^0.25 -> linear
+  // transition at 10 s), so the minimum lies at a breakpoint approached from the
+  // left, or at T. Per-pulse Rule-2 limit is this value / prf. Exact -- replaces
+  // the previous endpoint estimate MPE(T)/(prf*T), which missed the 10 s window.
+  var candidates = [T];
+  var bps = _timeBreakpoints();
+  for (var i = 0; i < bps.length; i++) {
+    if (bps[i] > 0 && bps[i] <= T) candidates.push(_nextDown(bps[i]));
+  }
+  var g = Infinity;
+  for (var j = 0; j < candidates.length; j++) {
+    var tprime = candidates[j];
+    if (tprime <= 0) continue;
+    var mpe = skinMPE(wl_nm, tprime);
+    if (isFinite(mpe)) g = Math.min(g, mpe / tprime);
+  }
+  return g;
+}
+
 function repPulse(wl_nm, tau, prf, T, trace) {
   if (!isFinite(prf) || prf < 0 || !isFinite(T) || T <= 0) {
     return { rule1: NaN, rule2: NaN, H: NaN, N: 0, binding: "Invalid" };
@@ -634,7 +702,8 @@ function repPulse(wl_nm, tau, prf, T, trace) {
     return { rule1: rule1, rule2: rule1, H: rule1, N: N, binding: "Rule 1" };
   }
 
-  var rule2 = htotal / N;
+  var gMin = _rule2AvgIrradianceLimit(wl_nm, T);
+  var rule2 = gMin / prf;
   var H = Math.min(rule1, rule2);
   var binding = rule1 <= rule2 ? "Rule 1" : "Rule 2";
 
@@ -644,9 +713,9 @@ function repPulse(wl_nm, tau, prf, T, trace) {
       .withOutput(rule1, "J/cm2")
       .withSubSteps(r1Trace.getSteps());
 
-    trace.step("rep_pulse_rule2", "Rule 2: cumulative MPE / N")
-      .withInputs({ wl_nm: wl_nm, T_s: T, prf_hz: prf, N: N, H_total: htotal })
-      .withFormula("division", "H_total / N", { H_total: htotal, N: N }, htotal + " / " + N)
+    trace.step("rep_pulse_rule2", "Rule 2: exact average-power minimum g_min / prf")
+      .withInputs({ wl_nm: wl_nm, T_s: T, prf_hz: prf, N: N, g_min_W_cm2: gMin })
+      .withFormula("division", "g_min / prf", { g_min: gMin, prf: prf }, gMin + " / " + prf)
       .withOutput(rule2, "J/cm2")
       .withSubSteps(r2Trace.getSteps());
 
@@ -797,7 +866,11 @@ function bandName(wl_nm) {
       return db[i].name;
     }
   }
-  return db[db.length - 1].name;
+  // Inclusive upper edge of the outermost band; otherwise the wavelength is out
+  // of range -> return null rather than mislabeling it as the last band.
+  var last = db[db.length - 1];
+  if (wl_nm === last.wl_end_nm) return last.name;
+  return null;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -914,7 +987,10 @@ function paOptimalPRF(wl_nm, tau, T, trace) {
 // ═══════════════════════════════════════════════════════════════
 function getAperture(wl_nm) {
   if (!_std || !_std.supplementary || !_std.supplementary.limiting_apertures) {
-    return wl_nm < 100000 ? 3.5 : 11.0;
+    throw new Error(
+      "loaded standard does not define supplementary.limiting_apertures; " +
+      "the limiting aperture is not defaulted"
+    );
   }
   var regs = _std.supplementary.limiting_apertures.regions;
   for (var i = 0; i < regs.length; i++) {
@@ -932,9 +1008,14 @@ function beamEval(wl_nm, beam_dia_mm, trace) {
   var d = beam_dia_mm;
   var d_eval, regime;
 
-  // Read small-beam threshold from standard (default 1.0 mm if not specified)
+  // Small-beam threshold comes from the standard; it is not defaulted.
   var ap = _std && _std.supplementary && _std.supplementary.limiting_apertures;
-  var threshold = (ap && ap.small_beam_threshold_mm) || 1.0;
+  if (!ap || ap.small_beam_threshold_mm == null) {
+    throw new Error(
+      "loaded standard does not define limiting_apertures.small_beam_threshold_mm"
+    );
+  }
+  var threshold = ap.small_beam_threshold_mm;
 
   if (d < threshold) {
     d_eval = d;
@@ -1117,10 +1198,14 @@ function createFluenceGridFromParams(sp, ppd) {
 
   // Safety cap
   if (nx * ny > MAX_GRID_CELLS) {
+    // Cap the cell count, then pick a single isotropic spacing (dx serves both
+    // axes) large enough to still span BOTH extents. Previously dx was
+    // rederived from the x-extent alone while ny was floored independently, so
+    // the y-axis fell ~1 cell short of the domain on non-square scans (A-20).
     var scale = Math.sqrt(MAX_GRID_CELLS / (nx * ny));
-    nx = Math.floor(nx * scale);
-    ny = Math.floor(ny * scale);
-    dx = (xmax - xmin) / (nx - 1);
+    nx = Math.max(2, Math.floor(nx * scale));
+    ny = Math.max(2, Math.floor(ny * scale));
+    dx = Math.max((xmax - xmin) / (nx - 1), (ymax - ymin) / (ny - 1));
   }
 
   return {
@@ -1189,10 +1274,14 @@ function createFluenceGrid(d_1e_mm, segments, ppd) {
 
   // Safety cap: limit grid to 4M points (16 MB per array)
   if (nx * ny > MAX_GRID_CELLS) {
+    // Cap the cell count, then pick a single isotropic spacing (dx serves both
+    // axes) large enough to still span BOTH extents. Previously dx was
+    // rederived from the x-extent alone while ny was floored independently, so
+    // the y-axis fell ~1 cell short of the domain on non-square scans (A-20).
     var scale = Math.sqrt(MAX_GRID_CELLS / (nx * ny));
-    nx = Math.floor(nx * scale);
-    ny = Math.floor(ny * scale);
-    dx = (xmax - xmin) / (nx - 1);
+    nx = Math.max(2, Math.floor(nx * scale));
+    ny = Math.max(2, Math.floor(ny * scale));
+    dx = Math.max((xmax - xmin) / (nx - 1), (ymax - ymin) / (ny - 1));
   }
 
   return {
@@ -1528,8 +1617,7 @@ function computeScanFluenceCW(grid, d_1e_mm, avg_power_W, segments) {
 // ── Generalized segment-superposition fluence framework ─────────
 //
 // Implements the erf-based segment fluence formula for arbitrary
-// scan paths. See: "Generalized Gaussian Fluence Accumulation from
-// Arbitrary Scan Paths" (framework document, April 2026).
+// scan paths.
 //
 // Architecture: decomposes any scan path into contiguous linear
 // segments and sums the closed-form erf fluence from each.
@@ -1637,8 +1725,19 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
   var Ep = beam.pulse_energy_J || (prf > 0 ? P / prf : 0);
   var is_cw = beam.is_cw;
 
-  // Determine computation regime (framework Proposition 7.1)
-  var rho = is_cw ? Infinity : overlapParameter(w, prf, pathSegs[0].v_mm_s);
+  // Determine computation regime (framework Proposition 7.1) from the LEAST-
+  // overlapping (fastest) segment. The continuous erf formula smears
+  // separated pulses and under-estimates the peak when rho < 1, so erf is
+  // safe only when EVERY segment is overlap-heavy (rho >= 1). Previously rho
+  // came from the first segment alone, so a slow first segment could select
+  // erf for a faster later segment and under-count its peak (A-21).
+  var rho = Infinity;
+  if (!is_cw) {
+    for (var rseg = 0; rseg < pathSegs.length; rseg++) {
+      var rho_seg = overlapParameter(w, prf, pathSegs[rseg].v_mm_s);
+      if (rho_seg < rho) rho = rho_seg;
+    }
+  }
   var use_erf = is_cw || rho >= 1.0;
 
   var nx = grid.nx, ny = grid.ny;
@@ -1727,7 +1826,6 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
     var trunc_mm = 6 * sigma; // 6σ = 6·(w/2) = 3w truncation (matches erf regime)
     var trunc2 = trunc_mm * trunc_mm;
     var trunc_grid = Math.ceil(trunc_mm / dx);
-    var ds = pathSegs[0].v_mm_s / prf; // pulse spacing (mm)
 
     for (var si2 = 0; si2 < pathSegs.length; si2++) {
       var sg = pathSegs[si2];
@@ -1741,6 +1839,11 @@ function computeScanFluenceSegmentErf(grid, pathSegs, beam) {
 
       var ux = (sg.bx - sg.ax) / seg_len;
       var uy = (sg.by - sg.ay) / seg_len;
+      // Pulse spacing from THIS segment's velocity (mm); previously the first
+      // segment's velocity was used for every segment, mis-placing pulses on
+      // mixed-velocity paths (A-21). Guard v <= 0 so a stationary segment
+      // deposits one pulse rather than looping forever.
+      var ds = sg.v_mm_s > 0 ? sg.v_mm_s / prf : seg_len;
       var n_pulses = Math.max(1, Math.floor(seg_len / ds));
 
       for (var pk = 0; pk < n_pulses; pk++) {
@@ -2665,12 +2768,15 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   }
 
   // ── Per-point T_point setup ──
-  // T_point = last_visit_t - first_visit_t at each cell.
-  // skinMPE(wl, T) is monotonically non-decreasing, so using the shorter
-  // T_point (vs T_total) produces a smaller MPE denominator and a more
-  // conservative (higher) Rule 2 ratio. This is the physically correct
-  // time window: the duration over which energy actually accumulates at
-  // that specific point.
+  // T_point = last_visit_t - first_visit_t at each cell: the physically
+  // correct window over which energy accumulates at that point, used here as
+  // the Rule 2 MPE denominator.
+  // skinMPE(wl, T) is non-decreasing in T except for a single step down of
+  // <=2.2% at the ICNIRP 400-1400 nm regime boundary (t = 1e-7 s, the
+  // constant -> t^0.25 transition -- the standard's own discontinuity, not a
+  // bug; see AUDIT A-18). Above ~1e-7 s it is non-decreasing, so for any
+  // realistic accumulation window the shorter T_point yields a smaller MPE
+  // denominator and a more conservative (higher) Rule 2 ratio than T_total.
   var has_fvt = grid.first_visit_t && grid.first_visit_t.length > 0;
   var tau_floor;
   if (beam.is_cw) {
@@ -2768,9 +2874,8 @@ function evaluateScanSafety(grid, beam, T_s, dwell_mode, min_velocity, scan_para
   // NOTE: The analytical cross-check uses mpe_T (T_total), not T_point.
   // This is correct: the analytical peak represents the worst-case point
   // in a uniform raster where all lines contribute, so T_point ≈ T_total.
-  // For custom paths, scan_params may describe a fictitious raster (see
-  // engine archaeology report), so this cross-check adds conservatism
-  // that may not match the actual geometry.
+  // For custom paths, scan_params may describe a fictitious raster, so this
+  // cross-check adds conservatism that may not match the actual geometry.
   var analyticalPeak = NaN;
   var analyticalUsed = false;
   if (scan_params && scan_params.v_mm_s > 0) {

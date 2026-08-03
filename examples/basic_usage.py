@@ -6,14 +6,13 @@ using the loaded standard.
 """
 
 import numpy as np
+
 from laser_mpe import (
-    skin_mpe,
-    per_pulse_MPE,
-    get_Tmax_skin,
     get_skin_limiting_aperture,
+    get_Tmax_skin,
+    per_pulse_MPE,
     radiant_exposure_convert,
-    irradiance_from_radiant_exposure,
-    pulse_energy_from_radiant_exposure,
+    skin_mpe,
 )
 
 
@@ -99,7 +98,7 @@ def example_practical_calculation():
     # Safety ratio
     ratio = H_actual / H_mpe
 
-    print(f"\nLaser parameters:")
+    print("\nLaser parameters:")
     print(f"  Wavelength:     {wl} nm")
     print(f"  Pulse energy:   {pulse_energy_uJ} µJ")
     print(f"  Beam diameter:  {beam_diameter_mm} mm")

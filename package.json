@@ -7,7 +7,7 @@
   "author": "OCT Research (https://octresearch.org)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/itgall/MPE-Calculator-Skin"
+    "url": "https://github.com/CBORT-NCBIB/MPE-Calculator-Skin"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

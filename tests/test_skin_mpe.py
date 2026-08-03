@@ -316,13 +316,28 @@ class TestBoundaryConvention:
         assert not np.isnan(H_skin_ICNIRP_1800_2600(1e-9))
         assert not np.isnan(H_skin_ICNIRP_2600_1000um(1e-9))
 
-    def test_upper_bound_exclusive(self):
-        """t=3e4 exactly should return nan (upper bound is exclusive)."""
-        assert np.isnan(H_skin_ICNIRP_400_1400(0.500, 3e4))
-        assert np.isnan(H_skin_ICNIRP_1400_1500(3e4))
-        assert np.isnan(H_skin_ICNIRP_1500_1800(3e4))
-        assert np.isnan(H_skin_ICNIRP_1800_2600(3e4))
-        assert np.isnan(H_skin_ICNIRP_2600_1000um(3e4))
+    def test_max_duration_inclusive(self):
+        """t=3e4 (the standard's maximum duration) is inclusive, not NaN.
+
+        The standard declares dur_range_s = [1e-9, 3e4]; the upper bound is
+        inclusive. Previously every region used a strict `t < t_max`, so
+        skin_mpe(., 3e4) returned NaN -- and get_Tmax_skin(UV)=3e4 fed straight
+        back into skin_mpe produced NaN. Values just above 3e4 remain NaN.
+        """
+        assert not np.isnan(H_skin_ICNIRP_400_1400(0.500, 3e4))
+        assert not np.isnan(H_skin_ICNIRP_1400_1500(3e4))
+        assert not np.isnan(H_skin_ICNIRP_1500_1800(3e4))
+        assert not np.isnan(H_skin_ICNIRP_1800_2600(3e4))
+        assert not np.isnan(H_skin_ICNIRP_2600_1000um(3e4))
+        # just above the maximum stays out of range
+        assert np.isnan(skin_mpe(532, 3e4 + 1))
+
+    def test_tmax_composes_with_skin_mpe(self):
+        """get_Tmax_skin(wl) fed back into skin_mpe must not produce NaN."""
+        from laser_mpe import get_Tmax_skin
+        for wl in (250, 532, 1064, 2000):
+            tmax = get_Tmax_skin(wl)
+            assert not np.isnan(skin_mpe(wl, tmax)), f"skin_mpe({wl}, Tmax={tmax}) is NaN"
 
 
 # =====================================================================
@@ -364,6 +379,30 @@ class TestRepetitivePulse:
         assert H_rule2 < H_single
         assert_close(H_pulse[0], H_rule2, label="Rule 2 at high PRF")
 
+    def test_rule2_exact_subwindow_minimum(self):
+        """Rule 2 is the exact average-power minimum over sub-windows, not just T.
+
+        For T <= 10 s the binding window is T, so the exact result equals the old
+        endpoint estimate MPE(T)/(f*T). For T > 10 s the binding window is the
+        10 s breakpoint (MPE switches from t^0.25 to linear there), so the
+        per-pulse limit is slightly more conservative than the endpoint estimate.
+        """
+        import math
+        f = np.array([100.0])
+
+        # T <= 10 s: exact == endpoint
+        H1, _ = per_pulse_MPE(800, 10e-9, f, 1.0)
+        assert_close(H1[0], skin_mpe(800, 1.0) / (100.0 * 1.0), label="T=1s exact==endpoint")
+
+        # T = 100 s: exact is strictly more conservative than the endpoint estimate,
+        # by at most the 0.2 / (1.1*10^0.25) ~ 2.24% gap, and binds at the 10 s window.
+        H2, _ = per_pulse_MPE(800, 10e-9, f, 100.0)
+        endpoint2 = skin_mpe(800, 100.0) / (100.0 * 100.0)
+        assert H2[0] < endpoint2, "exact Rule 2 must be < endpoint for T>10s"
+        assert 0.97 < H2[0] / endpoint2 < 1.0
+        t10 = math.nextafter(10.0, 0.0)
+        assert_close(H2[0], (skin_mpe(800, t10) / t10) / 100.0, label="binds at 10s breakpoint")
+
     def test_min_of_rules(self):
         """Per-pulse MPE = min(Rule 1, Rule 2) for N > 1."""
         f_arr = np.logspace(0, 4, 50)
@@ -396,62 +435,112 @@ class TestEdgeCases:
         assert np.all(np.isfinite(H))
 
 
-# =====================================================================
-# Run all tests
-# =====================================================================
+class TestStandardValidation:
+    """The validator rejects malformed standards and load_standard fails closed."""
 
-def run_all_tests():
-    test_classes = [
-        TestCorrectionFactors,
-        TestUVBand,
-        Test_400_1400,
-        Test_1400_1500,
-        Test_1500_1800,
-        Test_1800_2600,
-        Test_2600_1000um,
-        TestBoundaryConvention,
-        TestUltraShortReturnsNan,
-        TestRepetitivePulse,
-        TestEdgeCases,
-    ]
+    def _std_copy(self):
+        import copy
 
-    total_passed = 0
-    total_failed = 0
-    failures = []
+        from laser_mpe import engine
+        engine._ensure_loaded()
+        return copy.deepcopy(engine._std)
 
-    for cls in test_classes:
-        instance = cls()
-        methods = [m for m in dir(instance) if m.startswith('test_')]
-        doc = (cls.__doc__ or "").strip().split('\n')[0]
-        print(f"\n{'─' * 65}")
-        print(f"  {cls.__name__}")
-        if doc:
-            print(f"  {doc}")
-        print(f"{'─' * 65}")
+    def test_valid_standard_passes(self):
+        from laser_mpe.engine import validate_standard
+        assert validate_standard(self._std_copy()) == []
 
-        for method_name in methods:
-            method = getattr(instance, method_name)
-            try:
-                method()
-                print(f"  ✅ {method_name}")
-                total_passed += 1
-            except Exception as e:
-                print(f"  ❌ {method_name}: {e}")
-                total_failed += 1
-                failures.append((cls.__name__, method_name, str(e)))
+    def test_broken_discrete_lookup_rejected(self):
+        """A discrete region whose lookup table does not exist must fail to load.
 
-    print(f"\n{'=' * 65}")
-    print(f"  RESULTS: {total_passed} passed, {total_failed} failed")
-    print(f"{'=' * 65}")
+        Previously this passed validation and silently degraded the UV limit to
+        the thermal-only value (e.g. 302 nm: 0.56 instead of 0.004 J/cm2, 140x).
+        """
+        import pytest
 
-    if failures:
-        print("\nFAILURES:")
-        for cls_name, method, err in failures:
-            print(f"  {cls_name}.{method}: {err}")
-
-    return total_failed == 0
+        from laser_mpe.engine import load_standard, validate_standard
+        bad = self._std_copy()
+        for band in bad["bands"]:
+            for r in band.get("photochemical", {}).get("regions", []):
+                if r.get("formula") == "discrete":
+                    r["lookup"] = "does_not_exist"
+        assert any("lookup" in e.lower() for e in validate_standard(bad))
+        with pytest.raises(ValueError):
+            load_standard(bad)
+        load_standard(None)  # restore default for other tests
 
 
-if __name__ == "__main__":
-    success = run_all_tests()
-    sys.exit(0 if success else 1)
+class TestInvalidInputRaises:
+    """ca() and band_name() fail loud on garbage instead of returning a wrong value."""
+
+    def test_ca_raises_on_invalid(self):
+        import pytest
+
+        from laser_mpe import ca
+        for bad in (float("nan"), float("inf"), -1, 0, 100, 2e6):
+            with pytest.raises(ValueError):
+                ca(bad)
+        # documented in-range default (FIR / below the C_A table) still applies
+        assert ca(200) == 1.0
+        assert ca(1500) == 1.0
+
+    def test_band_name_raises_on_invalid(self):
+        import pytest
+
+        from laser_mpe import band_name
+        for bad in (float("nan"), float("inf"), 100, 2e6):
+            with pytest.raises(ValueError):
+                band_name(bad)
+        assert band_name(1e6) == "Far-IR"  # inclusive top edge
+
+
+class TestSupplementaryFallbacksRemoved:
+    """Physics values come only from the loaded standard.
+
+    A missing supplementary block or key now fails loud instead of silently
+    substituting an ICNIRP default (AUDIT A-8). ANSI, for instance, defines no
+    UV successive-day de-rating, so applying ICNIRP's 2.5 factor to it would be
+    a wrong-standard result.
+    """
+
+    def _std_copy(self):
+        import copy
+
+        from laser_mpe import engine
+        engine._ensure_loaded()
+        return copy.deepcopy(engine._std)
+
+    def test_uv_derate_raises_when_standard_omits_block(self):
+        import pytest
+
+        from laser_mpe import uv_successive_day_derate
+        from laser_mpe.engine import load_standard
+        std = self._std_copy()
+        std.get("supplementary", {}).pop("uv_successive_day_derate", None)
+        load_standard(std)
+        try:
+            with pytest.raises(ValueError):
+                uv_successive_day_derate(300, 1.0)
+        finally:
+            load_standard(None)  # restore default for other tests
+
+    def test_large_area_raises_when_block_incomplete(self):
+        import pytest
+
+        from laser_mpe import large_area_MPE_skin
+        from laser_mpe.engine import load_standard
+        std = self._std_copy()
+        std["supplementary"]["large_area_correction"].pop("threshold_cm2", None)
+        load_standard(std)
+        try:
+            with pytest.raises(ValueError):
+                large_area_MPE_skin(500.0)
+        finally:
+            load_standard(None)  # restore default for other tests
+
+    def test_icnirp_default_still_computes(self):
+        # Regression: the default standard has every block, so nothing raises.
+        from laser_mpe import large_area_MPE_skin, uv_successive_day_derate
+        from laser_mpe.engine import load_standard
+        load_standard(None)
+        assert uv_successive_day_derate(300, 1.0) == 1.0 / 2.5
+        assert large_area_MPE_skin(500.0) == 10000.0 / 500.0

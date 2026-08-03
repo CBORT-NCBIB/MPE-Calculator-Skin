@@ -75,9 +75,17 @@ class TestTmax:
         """1400 nm is in the FIR band."""
         assert_close(get_Tmax_skin(1400), 10.0, label="Tmax boundary 1400nm")
 
-    def test_accepts_um_input(self):
-        """Wavelength < 10 treated as um."""
-        assert_close(get_Tmax_skin(0.532), 600.0, label="Tmax 0.532um")
+    def test_um_looking_input_raises(self):
+        """Micrometre-looking input (<= 10) is no longer silently rescaled to nm.
+
+        It is now treated as nm and, being below the standard's range, raises
+        instead of returning a plausible wrong value (A-9): previously
+        get_Tmax_skin(5) returned 10.0 by reading it as 5000 nm.
+        """
+        import pytest
+        for bad in (0.532, 5, 10):
+            with pytest.raises(ValueError):
+                get_Tmax_skin(bad)
 
     def test_out_of_range_raises(self):
         try:
@@ -110,17 +118,16 @@ class TestLimitingAperture:
         assert_close(result['diameter_mm'], 3.5, label="FIR <100um aperture")
 
     def test_fir_above_100um_aperture(self):
-        """FIR 100-1000 um: 11.0 mm"""
-        result = get_skin_limiting_aperture(0.3)  # 0.3 um? no, need 300 um
-        # 300 um = 0.300 mm. In our convention, 300 um < 10 so treated as um.
-        result = get_skin_limiting_aperture(300.0)  # 300 nm since > 10
-        assert_close(result['diameter_mm'], 3.5, label="300nm aperture")
-        # For 300 um, need to pass as um (< 10)... but 300 > 10.
-        # Let's test with explicit um: 150 um
-        # Actually 150 > 10 so treated as nm (0.15 um). We need wavelengths
-        # > 100 um. In nm that would be > 100000 nm.
+        """FIR at or above 100 um (>= 100000 nm): 11.0 mm."""
         result = get_skin_limiting_aperture(300000)  # 300,000 nm = 300 um
         assert_close(result['diameter_mm'], 11.0, label="300um aperture")
+
+    def test_um_looking_aperture_input_raises(self):
+        """A micrometre-looking value (<= 10) is treated as nm and, being below
+        the standard's range, raises rather than being silently rescaled (A-9)."""
+        import pytest
+        with pytest.raises(ValueError):
+            get_skin_limiting_aperture(0.3)
 
     def test_area_calculation(self):
         """Area = pi * (d/2)^2 with d in cm."""
@@ -142,12 +149,28 @@ class TestLimitingAperture:
 # =====================================================================
 
 class TestLargeArea:
-    """Verified against the standard (Table 7 note c."""
+    """Verified against the standard (Table 7 note c)."""
 
     def test_small_beam_returns_none(self):
         """Beam < 100 cm^2: standard Table 7 values apply."""
         assert large_area_MPE_skin(50.0) is None
         assert large_area_MPE_skin(99.9) is None
+
+    def test_invalid_area_raises(self):
+        """NaN/inf/non-positive area must raise, not return a confident 10 mW/cm^2."""
+        import math
+
+        import pytest
+        for bad in (float("nan"), float("inf"), 0.0, -5.0):
+            with pytest.raises(ValueError):
+                large_area_MPE_skin(bad)
+        assert math.isfinite(large_area_MPE_skin(500.0))
+
+    def test_applicability_gates(self):
+        """The correction only applies for wl >= 1400 nm and t >= 10 s when supplied."""
+        assert large_area_MPE_skin(500.0, wl_nm=532) is None       # visible: not applicable
+        assert large_area_MPE_skin(500.0, t_s=1.0) is None         # t < 10 s: not applicable
+        assert_close(large_area_MPE_skin(500.0, wl_nm=2000, t_s=100), 20.0, label="in range")
 
     def test_100_to_1000_cm2(self):
         """100-1000 cm^2: MPE = 10,000 / A_s mW/cm^2."""
@@ -202,6 +225,13 @@ class TestUVDerate:
         """De-rated value is exactly H/2.5."""
         assert_close(uv_successive_day_derate(355, 3e-3), 3e-3 / 2.5, label="3e-3 derate")
 
+    def test_um_looking_input_no_longer_derates(self):
+        """A micrometre-looking value (<= 10) is treated as nm, so it falls
+        outside the UV band and is not de-rated (A-9). Previously 0.3 was
+        silently rescaled to 300 nm and de-rated to H/2.5.
+        """
+        assert_close(uv_successive_day_derate(0.3, 1.0), 1.0, label="0.3 nm: no derate")
+
 
 # =====================================================================
 # Unit Conversions
@@ -255,58 +285,3 @@ class TestUnitConversions:
         result = radiant_exposure_convert(H_arr, 'mJ/cm2')
         expected = np.array([10.0, 20.0, 100.0])
         npt.assert_allclose(result, expected, err_msg="array conversion")
-
-
-# =====================================================================
-# Run all tests
-# =====================================================================
-
-def run_all_tests():
-    test_classes = [
-        TestTmax,
-        TestLimitingAperture,
-        TestLargeArea,
-        TestUVDerate,
-        TestUnitConversions,
-    ]
-
-    total_passed = 0
-    total_failed = 0
-    failures = []
-
-    for cls in test_classes:
-        instance = cls()
-        methods = [m for m in dir(instance) if m.startswith('test_')]
-        doc = (cls.__doc__ or "").strip().split('\n')[0]
-        print(f"\n{'─' * 65}")
-        print(f"  {cls.__name__}")
-        if doc:
-            print(f"  {doc}")
-        print(f"{'─' * 65}")
-
-        for method_name in methods:
-            method = getattr(instance, method_name)
-            try:
-                method()
-                print(f"  ✅ {method_name}")
-                total_passed += 1
-            except Exception as e:
-                print(f"  ❌ {method_name}: {e}")
-                total_failed += 1
-                failures.append((cls.__name__, method_name, str(e)))
-
-    print(f"\n{'=' * 65}")
-    print(f"  RESULTS: {total_passed} passed, {total_failed} failed")
-    print(f"{'=' * 65}")
-
-    if failures:
-        print("\nFAILURES:")
-        for cls_name, method, err in failures:
-            print(f"  {cls_name}.{method}: {err}")
-
-    return total_failed == 0
-
-
-if __name__ == "__main__":
-    success = run_all_tests()
-    sys.exit(0 if success else 1)

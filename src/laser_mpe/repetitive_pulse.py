@@ -11,8 +11,6 @@ This module uses the generic data-driven engine. The repetitive-pulse
 logic is standard-independent.
 """
 
-import numpy as np
-
 from . import engine as _engine
 
 
@@ -40,17 +38,4 @@ def per_pulse_MPE(wl_nm, tau, f_array, T):
     N : ndarray
         Number of pulses (f * T).
     """
-    H_single = _engine.skin_mpe(wl_nm, tau)
-    H_total = _engine.skin_mpe(wl_nm, T)
-
-    f_array = np.asarray(f_array, dtype=float)
-    N = f_array * T
-
-    H_avg_per_pulse = H_total / np.maximum(N, 1.0)
-
-    H_pulse = np.where(
-        N <= 1.0,
-        H_single,
-        np.minimum(H_single, H_avg_per_pulse)
-    )
-    return H_pulse, N
+    return _engine.rep_pulse(wl_nm, tau, f_array, T)

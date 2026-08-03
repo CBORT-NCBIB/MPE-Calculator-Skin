@@ -89,13 +89,6 @@ def check(label, actual, expected, rtol=1e-9):
     except AssertionError:
         failed += 1
         errors.append(f"  {label}: expected {expected}, got {actual}")
-    except Exception:
-        # Handle typo in AssertionError -> AssertionError
-        if abs(actual - expected) <= abs(expected) * rtol + 1e-15:
-            passed += 1
-        else:
-            failed += 1
-            errors.append(f"  {label}: expected {expected}, got {actual} (diff={abs(actual-expected):.2e})")
 
 def section(title):
     print(f"\n{'─' * 70}")
@@ -143,7 +136,7 @@ check("UV_thermal(0.250, t=100)=nan", H_skin_ICNIRP_UV_thermal(0.250, 100.0), 'n
 for wl in [0.180, 0.200, 0.250, 0.280, 0.301]:
     for t in [1e-9, 1e-3, 1.0, 100.0, 1000.0, 29999.0]:
         check(f"UV_photochem({wl}, {t})=3e-3", H_skin_ICNIRP_UV_photochemical(wl, t), 3e-3)
-check("UV_photochem(0.200, 3e4)=nan", H_skin_ICNIRP_UV_photochemical(0.200, 3e4), 'nan')
+check("UV_photochem(0.200, 3e4)=3e-3", H_skin_ICNIRP_UV_photochemical(0.200, 3e4), 3e-3)  # t=3e4 inclusive (A-3)
 check("UV_photochem(0.200, 0.5e-9)=nan", H_skin_ICNIRP_UV_photochemical(0.200, 0.5e-9), 'nan')
 
 # --- Photochemical: 0.302-0.315: standard discrete 1-nm step values ---
@@ -167,11 +160,11 @@ check("UV_photochem(0.350, 9.9s)=inf", H_skin_ICNIRP_UV_photochemical(0.350, 9.9
 check("UV_photochem(0.350, 10s)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 10.0), 1.0)
 check("UV_photochem(0.350, 500s)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 500.0), 1.0)
 check("UV_photochem(0.350, 999s)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 999.0), 1.0)
-# 1e3 <= t < 3e4: Standard keeps H = 1.0 constant (entire 10s to 30ks range)
+# 1e3 <= t <= 3e4: Standard keeps H = 1.0 constant (entire 10s to 30ks range, top edge inclusive)
 check("UV_photochem(0.350, 1000s)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 1000.0), 1.0)
 check("UV_photochem(0.350, 5000s)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 5000.0), 1.0)
 check("UV_photochem(0.350, 29999s)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 29999.0), 1.0)
-check("UV_photochem(0.350, 3e4)=nan", H_skin_ICNIRP_UV_photochemical(0.350, 3e4), 'nan')
+check("UV_photochem(0.350, 3e4)=1.0", H_skin_ICNIRP_UV_photochemical(0.350, 3e4), 1.0)  # t=3e4 inclusive (A-3)
 
 # --- Dual limit logic ---
 # At 0.250 um, t=1s: thermal=0.56*1^0.25=0.56, photochem=3e-3 -> min=3e-3
@@ -221,9 +214,9 @@ for wl_um, wl_nm, CA in [(0.500, 500, 1.0), (1.064, 1064, 5.0)]:
         check(f"400-1400({wl_nm}nm, {t:.0e})={expected:.4e}",
               H_skin_ICNIRP_400_1400(wl_um, t), expected)
 
-# Out of range
+# Below the domain (t < 1 ns) -> nan; the top edge t = 3e4 s is inclusive (A-3)
 check("400-1400(500nm, 0.5e-9)=nan", H_skin_ICNIRP_400_1400(0.500, 0.5e-9), 'nan')
-check("400-1400(500nm, 3e4)=nan", H_skin_ICNIRP_400_1400(0.500, 3e4), 'nan')
+check("400-1400(500nm, 3e4)=6000", H_skin_ICNIRP_400_1400(0.500, 3e4), 0.2 * 1.0 * 3e4)
 
 # =================================================================
 section("Part 4: 1400-1500 nm (standard tables 5 and 7)")
@@ -238,12 +231,12 @@ for t in [1e-3, 5e-3, 0.01, 0.1, 1.0, 5.0, 9.999]:
     expected = 0.56 * (t ** 0.25)
     check(f"1400-1500({t:.4f})={expected:.6f}", H_skin_ICNIRP_1400_1500(t), expected)
 
-# Row 3: 10 <= t < 3e4: E = 0.1 -> H = 0.1 * t
+# Row 3: 10 <= t <= 3e4: E = 0.1 -> H = 0.1 * t
 for t in [10.0, 100.0, 1000.0, 29999.0]:
     check(f"1400-1500({t:.0f})={0.1*t:.1f}", H_skin_ICNIRP_1400_1500(t), 0.1 * t)
 
 check("1400-1500(0.5e-9)=nan", H_skin_ICNIRP_1400_1500(0.5e-9), 'nan')
-check("1400-1500(3e4)=nan", H_skin_ICNIRP_1400_1500(3e4), 'nan')
+check("1400-1500(3e4)=3000", H_skin_ICNIRP_1400_1500(3e4), 0.1 * 3e4)  # t=3e4 inclusive (A-3)
 
 # =================================================================
 section("Part 5: 1500-1800 nm (standard tables 5 and 7)")
@@ -258,7 +251,7 @@ for t in [10.0, 100.0, 1000.0]:
     check(f"1500-1800({t:.0f})={0.1*t:.1f}", H_skin_ICNIRP_1500_1800(t), 0.1 * t)
 
 check("1500-1800(0.5e-9)=nan", H_skin_ICNIRP_1500_1800(0.5e-9), 'nan')
-check("1500-1800(3e4)=nan", H_skin_ICNIRP_1500_1800(3e4), 'nan')
+check("1500-1800(3e4)=3000", H_skin_ICNIRP_1500_1800(3e4), 0.1 * 3e4)  # t=3e4 inclusive (A-3)
 
 # =================================================================
 section("Part 6: 1800-2600 nm (standard tables 5 and 7)")
@@ -273,12 +266,12 @@ for t in [1e-3, 0.01, 0.1, 1.0, 9.999]:
     expected = 0.56 * (t ** 0.25)
     check(f"1800-2600({t})={expected:.6f}", H_skin_ICNIRP_1800_2600(t), expected)
 
-# Row 3: 10 <= t < 3e4: E = 0.1 -> H = 0.1 * t
+# Row 3: 10 <= t <= 3e4: E = 0.1 -> H = 0.1 * t
 for t in [10.0, 100.0]:
     check(f"1800-2600({t:.0f})={0.1*t:.1f}", H_skin_ICNIRP_1800_2600(t), 0.1 * t)
 
 check("1800-2600(0.5e-9)=nan", H_skin_ICNIRP_1800_2600(0.5e-9), 'nan')
-check("1800-2600(3e4)=nan", H_skin_ICNIRP_1800_2600(3e4), 'nan')
+check("1800-2600(3e4)=3000", H_skin_ICNIRP_1800_2600(3e4), 0.1 * 3e4)  # t=3e4 inclusive (A-3)
 
 # =================================================================
 section("Part 7: 2600-1000 um (standard tables 5 and 7)")
@@ -293,12 +286,12 @@ for t in [1e-7, 1e-5, 0.1, 1.0, 9.999]:
     expected = 0.56 * (t ** 0.25)
     check(f"2600+({t})={expected:.6e}", H_skin_ICNIRP_2600_1000um(t), expected)
 
-# Row 3: 10 <= t < 3e4: E = 0.1 -> H = 0.1 * t
+# Row 3: 10 <= t <= 3e4: E = 0.1 -> H = 0.1 * t
 for t in [10.0, 100.0]:
     check(f"2600+({t:.0f})={0.1*t:.1f}", H_skin_ICNIRP_2600_1000um(t), 0.1 * t)
 
 check("2600+(0.5e-9)=nan", H_skin_ICNIRP_2600_1000um(0.5e-9), 'nan')
-check("2600+(3e4)=nan", H_skin_ICNIRP_2600_1000um(3e4), 'nan')
+check("2600+(3e4)=3000", H_skin_ICNIRP_2600_1000um(3e4), 0.1 * 3e4)  # t=3e4 inclusive (A-3)
 
 # =================================================================
 section("Part 8: Wrapper dispatch at wavelength boundaries")
